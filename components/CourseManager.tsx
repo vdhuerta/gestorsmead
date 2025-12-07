@@ -652,29 +652,40 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
               const cleanRut = cleanRutFormat(rowStrings[0]);
               rutsToEnroll.push(cleanRut);
               
-              // Apply Normalization to Critical Fields
-              usersToUpsert.push({
-                  rut: cleanRut,
-                  names: rowStrings[1] || '',
-                  paternalSurname: rowStrings[2] || '',
-                  maternalSurname: rowStrings[3] || '',
-                  email: rowStrings[4] || '',
-                  phone: rowStrings[5] || '',
-                  
-                  // Normalize against master lists
-                  academicRole: normalizeValue(rowStrings[6], listRoles),
-                  faculty: normalizeValue(rowStrings[7], listFaculties),
-                  department: normalizeValue(rowStrings[8], listDepts),
-                  career: normalizeValue(rowStrings[9], listCareers),
-                  contractType: normalizeValue(rowStrings[10], listContracts),
-                  teachingSemester: normalizeValue(rowStrings[11], listSemesters),
-                  
-                  campus: rowStrings[12] || '',
-                  systemRole: UserRole.ESTUDIANTE
-              });
+              // CRITICAL FIX: Only update user details if the row contains names.
+              // If the row is "sparse" (only RUT, empty names), do NOT push to usersToUpsert
+              // This prevents overwriting existing users with empty strings.
+              const hasName = rowStrings[1] && rowStrings[1].length > 1;
+              const hasSurname = rowStrings[2] && rowStrings[2].length > 1;
+
+              if (hasName || hasSurname) {
+                  // Apply Normalization to Critical Fields
+                  usersToUpsert.push({
+                      rut: cleanRut,
+                      names: rowStrings[1] || '',
+                      paternalSurname: rowStrings[2] || '',
+                      maternalSurname: rowStrings[3] || '',
+                      email: rowStrings[4] || '',
+                      phone: rowStrings[5] || '',
+                      
+                      // Normalize against master lists
+                      academicRole: normalizeValue(rowStrings[6], listRoles),
+                      faculty: normalizeValue(rowStrings[7], listFaculties),
+                      department: normalizeValue(rowStrings[8], listDepts),
+                      career: normalizeValue(rowStrings[9], listCareers),
+                      contractType: normalizeValue(rowStrings[10], listContracts),
+                      teachingSemester: normalizeValue(rowStrings[11], listSemesters),
+                      
+                      campus: rowStrings[12] || '',
+                      systemRole: UserRole.ESTUDIANTE
+                  });
+              }
           }
 
-          upsertUsers(usersToUpsert);
+          if (usersToUpsert.length > 0) {
+              await upsertUsers(usersToUpsert);
+          }
+          
           const result = await bulkEnroll(rutsToEnroll, selectedCourseId);
           setEnrollMsg({ type: 'success', text: `¡Éxito! Procesado Masivo: ${result.success} nuevos inscritos, ${result.skipped} ya estaban en el curso.` });
           setUploadFile(null);
@@ -960,7 +971,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                               <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Link de la Clase (Meet/Zoom)</label>
+                                  <label className="block text-sm font-medium text-slate-700 mb-1">Link de la Clase (Meet/Zoom)</label>
                                 <input type="url" placeholder="https://meet.google.com/..." value={formData.linkClase} onChange={e => setFormData({...formData, linkClase: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#647FBC] text-sm"/>
                               </div>
                               <div>
@@ -1257,16 +1268,20 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                     <tr key={enr.id} className="hover:bg-blue-50/50 transition-colors">
                                                         <td className="px-6 py-4 font-medium text-slate-900 bg-white sticky left-0 border-r border-slate-100">
                                                             <div className="flex flex-col">
-                                                                <span>{student?.paternalSurname} {student?.maternalSurname}, {student?.names}</span>
+                                                                {(student?.names || student?.paternalSurname) ? (
+                                                                    <span>{student.paternalSurname} {student.maternalSurname || ''}, {student.names}</span>
+                                                                ) : (
+                                                                    <span className="text-slate-400 italic font-normal">Sin información detallada</span>
+                                                                )}
                                                                 <span className="text-xs text-slate-400 font-mono">{enr.rut}</span>
                                                             </div>
                                                         </td>
-                                                        <td className={`px-4 py-4 ${!student?.email ? 'text-red-300 italic' : 'text-slate-600'}`}>{student?.email || 'Sin correo'}</td>
-                                                        <td className={`px-4 py-4 ${roleError ? 'text-red-500 font-bold' : 'text-slate-600'}`}>{student?.academicRole || 'Sin Rol'}</td>
-                                                        <td className={`px-4 py-4 ${contractError ? 'text-red-500 font-bold' : 'text-slate-600'}`}>{student?.contractType || 'Sin Contrato'}</td>
-                                                        <td className={`px-4 py-4 ${facultyError ? 'text-red-500' : 'text-slate-600'}`}>{student?.faculty || '-'}</td>
-                                                        <td className={`px-4 py-4 ${deptError ? 'text-red-500' : 'text-slate-600'}`}>{student?.department || '-'}</td>
-                                                        <td className={`px-4 py-4 ${careerError ? 'text-red-500' : 'text-slate-600'}`}>{student?.career || '-'}</td>
+                                                        <td className={`px-4 py-4 ${!student?.email ? 'text-slate-400 italic text-xs' : 'text-slate-600'}`}>{student?.email || '-'}</td>
+                                                        <td className={`px-4 py-4 ${roleError ? 'text-slate-400' : 'text-slate-600'}`}>{student?.academicRole || '-'}</td>
+                                                        <td className={`px-4 py-4 ${contractError ? 'text-slate-400' : 'text-slate-600'}`}>{student?.contractType || '-'}</td>
+                                                        <td className={`px-4 py-4 ${facultyError ? 'text-slate-400' : 'text-slate-600'}`}>{student?.faculty || '-'}</td>
+                                                        <td className={`px-4 py-4 ${deptError ? 'text-slate-400' : 'text-slate-600'}`}>{student?.department || '-'}</td>
+                                                        <td className={`px-4 py-4 ${careerError ? 'text-slate-400' : 'text-slate-600'}`}>{student?.career || '-'}</td>
                                                         <td className="px-4 py-4 text-center"><span className={`px-2 py-1 rounded-full text-xs font-bold ${enr.state === ActivityState.APROBADO ? 'bg-green-100 text-green-700' : enr.state === ActivityState.REPROBADO ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>{enr.state}</span></td>
                                                     </tr>
                                                 );
@@ -1334,10 +1349,15 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                         ? 'text-red-600 font-bold'
                                                         : 'text-slate-800 font-bold';
 
+                                                  // Defensive rendering for user name
+                                                  const displayName = (user && user.names) 
+                                                      ? `${user.paternalSurname} ${user.maternalSurname || ''}, ${user.names}` 
+                                                      : enr.rut;
+
                                                   return (
                                                       <tr key={enr.id} className="hover:bg-blue-50/30">
-                                                          <td className="px-2 py-2 max-w-[160px] sticky left-0 bg-white border-r border-slate-100 font-medium text-slate-700 truncate" title={user ? `${user.paternalSurname} ${user.maternalSurname || ''}, ${user.names}` : enr.rut}>
-                                                              {user ? `${user.paternalSurname} ${user.maternalSurname || ''}, ${user.names}` : enr.rut}
+                                                          <td className="px-2 py-2 max-w-[160px] sticky left-0 bg-white border-r border-slate-100 font-medium text-slate-700 truncate" title={displayName}>
+                                                              {displayName}
                                                           </td>
                                                           {/* Session Checkboxes - tighter */}
                                                           {['attendanceSession1', 'attendanceSession2', 'attendanceSession3', 'attendanceSession4', 'attendanceSession5', 'attendanceSession6'].map((key) => (
