@@ -384,10 +384,15 @@ CREATE TABLE IF NOT EXISTS public.users (
     title text
 );
 
--- Asegurar columnas críticas si la tabla ya existe
-ALTER TABLE public.users ADD COLUMN IF NOT EXISTS system_role text DEFAULT 'Estudiante';
+-- CORRECCIÓN CRÍTICA DE LOGIN
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password text;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS system_role text DEFAULT 'Estudiante';
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS photo_url text;
+
+-- CORRECCIÓN CRÍTICA DE DUPLICADOS (ERROR 23505)
+-- Eliminar la restricción de unicidad en email si existe, para permitir carga masiva con correos repetidos
+ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_email_key;
+DROP INDEX IF EXISTS users_email_key;
 
 -- 2. TABLA ACTIVIDADES (Cursos y Charlas)
 CREATE TABLE IF NOT EXISTS public.activities (

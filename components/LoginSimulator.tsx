@@ -57,7 +57,8 @@ export const LoginSimulator: React.FC<LoginSimulatorProps> = ({ onLogin }) => {
                 .from('users')
                 .select('*')
                 .ilike('email', email)
-                .single();
+                .limit(1) // CRITICAL FIX: Limit to 1 to handle potential duplicates if constraint is dropped
+                .maybeSingle(); // CRITICAL FIX: Use maybeSingle() instead of single() to avoid error on multiples
              
              if (data) {
                  // Mapear de snake_case a camelCase para uso interno

@@ -234,10 +234,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 2. DB Upsert (Bulk)
     if (dbPayloads.length > 0) {
-        const { error } = await supabase.from('users').upsert(dbPayloads);
+        // Enforce PK upsert (RUT)
+        const { error } = await supabase.from('users').upsert(dbPayloads, { onConflict: 'rut' });
+        
         if (error) {
             console.error("Error upserting users:", error.message, JSON.stringify(error));
-            // Revertir optimistic update si es crítico, o notificar
+            if (error.code === '23505') {
+                 // duplicate key value violates unique constraint "users_email_key"
+                 alert("⚠️ ERROR CRÍTICO DE BASE DE DATOS:\n\nSe detectaron correos electrónicos duplicados en la carga masiva.\nSupabase rechaza usuarios diferentes (RUTs distintos) compartiendo el mismo email.\n\nSOLUCIÓN: Vaya a la pestaña 'Arquitectura' y ejecute el nuevo Script SQL de Reparación que elimina esta restricción.");
+            } else {
+                 alert(`Error al guardar en base de datos: ${error.message}`);
+            }
         }
     }
 
