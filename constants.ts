@@ -164,91 +164,47 @@ export const CONTRACT_TYPE_LIST = [
 
 export const SCHEMA_TABLES: SchemaTable[] = [
   {
-    tableName: 'Usuarios (Participantes)',
-    description: 'Tabla Maestra de Personas. Almacena a todos los actores del sistema (Estudiantes, Asesores, Admin) con su perfil académico completo.',
+    tableName: 'Usuarios (Base Maestra)',
+    description: 'Tabla Unificada. Contiene a Administradores, Asesores y Estudiantes.',
     fields: [
-      { name: 'rut', type: 'VARCHAR(12)', isPk: true, description: 'ID Nacional (PK Clustered). Único e irrepetible.' },
+      { name: 'rut', type: 'VARCHAR(12)', isPk: true, description: 'ID Nacional. Único e irrepetible.' },
       { name: 'nombres', type: 'VARCHAR(100)', description: 'Nombres de pila' },
-      { name: 'apellido_paterno', type: 'VARCHAR(50)', description: 'Primer apellido' },
-      { name: 'apellido_materno', type: 'VARCHAR(50)', description: 'Segundo apellido' },
-      { name: 'email', type: 'VARCHAR(100)', description: 'Correo único (Unique Index)' },
-      { name: 'telefono', type: 'VARCHAR(20)', description: 'Contacto telefónico' },
-      { name: 'rol_sistema', type: 'ENUM', description: 'Permisos APP: ADMIN, ASESOR, VISITA' },
-      { name: 'rol_academico', type: 'VARCHAR(50)', description: 'Cargo Institucional (Decano, Docente...)' },
-      { name: 'facultad', type: 'VARCHAR(100)', description: 'Unidad Mayor' },
-      { name: 'departamento', type: 'VARCHAR(100)', description: 'Unidad Menor' },
+      { name: 'email', type: 'VARCHAR(100)', description: 'Correo único' },
+      { name: 'password', type: 'TEXT', description: 'Nueva Columna: Solo para Admin y Asesores.' },
+      { name: 'rol_sistema', type: 'ENUM', description: 'ADMIN, ASESOR, ESTUDIANTE' },
+      { name: 'facultad', type: 'VARCHAR(100)', description: 'Unidad Académica' },
       { name: 'carrera', type: 'VARCHAR(100)', description: 'Programa de Origen' },
+      { name: 'rol_academico', type: 'VARCHAR(50)', description: 'Cargo Institucional (Decano, Docente...)' },
       { name: 'contrato', type: 'VARCHAR(50)', description: 'Relación Contractual (Planta/Contrata)' },
-      { name: 'semestre_docencia', type: 'VARCHAR(20)', description: 'Periodo lectivo activo' },
-      { name: 'sede', type: 'VARCHAR(50)', description: 'Ubicación física (Valpo/San Felipe)' },
-      { name: 'titulo_profesional', type: 'VARCHAR(100)', description: 'Título (Solo Asesores)' },
+      { name: 'sede', type: 'VARCHAR(50)', description: 'Ubicación física' },
       { name: 'foto_url', type: 'TEXT', description: 'Avatar de perfil' },
     ]
   },
   {
     tableName: 'Actividades_Formativas',
-    description: 'Catálogo unificado de Cursos Académicos y Actividades de Extensión.',
+    description: 'Catálogo unificado de Cursos y Charlas.',
     fields: [
       { name: 'id_actividad', type: 'VARCHAR(50)', isPk: true, description: 'ID Compuesto: COD-AÑO-SEM-VER' },
-      { name: 'categoria', type: 'ENUM', description: "'ACADEMIC' (Evaluable) o 'GENERAL' (Asistencia)" },
-      { name: 'tipo_actividad', type: 'VARCHAR(50)', description: 'Subtipo: Curso, Charla, Taller, Webinar...' },
+      { name: 'categoria', type: 'ENUM', description: "'ACADEMIC' o 'GENERAL'" },
       { name: 'nombre', type: 'VARCHAR(200)', description: 'Título oficial' },
-      { name: 'codigo_interno', type: 'VARCHAR(20)', description: 'Código corto administrativo' },
-      { name: 'año', type: 'INT', description: 'Año Fiscal (Indexado)' },
-      { name: 'semestre', type: 'VARCHAR(20)', description: '1, 2, Invierno, Verano' },
-      { name: 'version', type: 'VARCHAR(20)', description: 'V1, V2... (Cohorte)' },
       { name: 'modalidad', type: 'VARCHAR(50)', description: 'Presencial, Híbrido, E-Learning' },
-      { name: 'horas', type: 'INT', description: 'Carga horaria total' },
-      { name: 'cantidad_modulos', type: 'INT', description: 'Para cálculo de duración (Sem = Mod + 2)' },
-      { name: 'cantidad_evaluaciones', type: 'INT', description: 'N° de notas pactadas' },
       { name: 'fecha_inicio', type: 'DATE', description: 'Inicio real' },
-      { name: 'fecha_termino', type: 'DATE', description: 'Término estimado/real' },
       { name: 'relator', type: 'VARCHAR(100)', description: 'Instructor a cargo' },
-      { name: 'links_recursos', type: 'JSON', description: 'Objeto con URLs (Clase, Drive, Eval)' },
     ]
   },
   {
     tableName: 'Inscripciones (Matrícula)',
-    description: 'Tabla transaccional que vincula Usuarios con Actividades (N:M).',
+    description: 'Vínculo entre Estudiantes y Actividades.',
     fields: [
-      { name: 'id_inscripcion', type: 'UUID', isPk: true, description: 'Identificador único del registro' },
-      { name: 'rut_usuario', type: 'VARCHAR(12)', isFk: true, fkTarget: 'Usuarios.rut', description: 'FK -> Usuario' },
-      { name: 'id_actividad', type: 'VARCHAR(50)', isFk: true, fkTarget: 'Actividades.id', description: 'FK -> Actividad' },
-      { name: 'estado_academico', type: 'ENUM', description: 'Inscrito, Aprobado, Reprobado, No Cursado' },
-      { name: 'notas_array', type: 'DECIMAL[]', description: 'Arreglo de Calificaciones [N1, N2...]' },
-      { name: 'nota_final', type: 'DECIMAL(2,1)', description: 'Promedio calculado' },
-      { name: 'asistencia_json', type: 'JSONB', description: 'Registro booleano por sesión {s1: true...}' },
-      { name: 'porcentaje_asistencia', type: 'INT', description: '% calculado' },
-      { name: 'observacion', type: 'TEXT', description: 'Comentarios del Asesor' },
-    ]
-  },
-  {
-    tableName: 'Configuracion_Global',
-    description: 'Singleton. Almacena parámetros del sistema y listas maestras.',
-    fields: [
-      { name: 'id', type: 'INT', isPk: true, description: 'Single Row ID' },
-      { name: 'anio_vigente', type: 'INT', description: 'Contexto por defecto' },
-      { name: 'escalas_notas', type: 'JSON', description: '{min: 1.0, max: 7.0, pass: 4.0}' },
-      { name: 'listas_maestras', type: 'JSONB', description: 'Arrays de Facultades, Carreras, Roles...' },
+      { name: 'id_inscripcion', type: 'UUID', isPk: true, description: 'ID' },
+      { name: 'rut_usuario', type: 'VARCHAR(12)', isFk: true, fkTarget: 'Usuarios.rut', description: 'FK -> Estudiante' },
+      { name: 'id_actividad', type: 'VARCHAR(50)', isFk: true, fkTarget: 'Actividades.id', description: 'FK -> Curso' },
+      { name: 'estado_academico', type: 'ENUM', description: 'Aprobado, Reprobado...' },
+      { name: 'notas_array', type: 'DECIMAL[]', description: 'Calificaciones' },
+      { name: 'asistencia_json', type: 'JSONB', description: 'Registro de Asistencia' },
     ]
   }
 ];
-
-// --- Database Strategy for Architecture View ---
-export const DATABASE_STRATEGY = {
-    indexes: [
-        { table: "Usuarios", fields: ["rut"], type: "PRIMARY KEY (Clustered)", reason: "Búsquedas O(1) y Autocompletado rápido." },
-        { table: "Usuarios", fields: ["email"], type: "UNIQUE INDEX", reason: "Validación de unicidad y Login." },
-        { table: "Inscripciones", fields: ["rut_usuario", "id_actividad"], type: "UNIQUE COMPOSITE", reason: "CRÍTICO: Impide a nivel de motor que un alumno se matricule 2 veces en el mismo curso." },
-        { table: "Inscripciones", fields: ["id_actividad"], type: "INDEX", reason: "Optimiza 'Ver Alumnos' (JOINs rápidos)." },
-        { table: "Actividades", fields: ["año", "categoria"], type: "INDEX", reason: "Acelera filtros del Dashboard Administrativo." }
-    ],
-    integrity: [
-        "FK_Inscripcion_Usuario: ON DELETE RESTRICT (No se puede borrar un usuario si tiene historial académico).",
-        "FK_Inscripcion_Actividad: ON DELETE RESTRICT (No se pueden borrar cursos con alumnos inscritos, solo archivar)."
-    ],
-    partitioning: "Estrategia Futura: Particionamiento horizontal de tabla 'Inscripciones' por columna 'año' para mantener performance histórica."
-};
 
 // --- Mock Data for JSON Export ---
 
@@ -301,7 +257,8 @@ export const MOCK_USERS: User[] = [
     teachingSemester: "Semestre 1",
     campus: "Valparaíso",
     systemRole: UserRole.ASESOR,
-    photoUrl: "https://randomuser.me/api/portraits/men/32.jpg" // Demo Photo
+    password: "password123", // Mock password
+    photoUrl: "https://randomuser.me/api/portraits/men/32.jpg" 
   },
   {
     rut: "9.876.543-2",
@@ -317,17 +274,18 @@ export const MOCK_USERS: User[] = [
     contractType: "Contrata Media Jornada",
     teachingSemester: "Semestre 2",
     campus: "San Felipe",
-    systemRole: UserRole.VISITA
+    systemRole: UserRole.ESTUDIANTE
   },
   {
     rut: "1-9",
     names: "Víctor",
     paternalSurname: "Huerta",
     maternalSurname: "",
-    email: "victor.huerta@upla.cl",
+    email: "admin@upla.cl",
     academicRole: "Coordinación de Direcciones",
     contractType: "Planta Jornada Completa",
     systemRole: UserRole.ADMIN,
+    password: "112358",
     campus: "Central",
     photoUrl: "https://github.com/vdhuerta/assets-aplications/blob/main/Foto%20Vi%CC%81ctor%20Huerta.JPG?raw=true"
   }
@@ -348,21 +306,6 @@ export const MOCK_ACTIVITIES: Activity[] = [
     startDate: "2024-03-15",
     moduleCount: 1,
     evaluationCount: 1
-  },
-  {
-    id: "AULA-2024-V2",
-    category: 'ACADEMIC',
-    internalCode: "AULA",
-    year: 2024,
-    academicPeriod: "2024-2",
-    name: "Docencia en el Aula Virtual",
-    version: "V2 - Segundo Semestre",
-    modality: "E-Learning",
-    hours: 3,
-    relator: "Alexander Castillo",
-    linkResources: "https://moodle.upla.cl/course/123",
-    moduleCount: 2,
-    evaluationCount: 3
   },
   {
     id: "WEB-IA-2025",
@@ -403,8 +346,8 @@ export const MOCK_ENROLLMENTS: Enrollment[] = [
 export const FULL_JSON_MODEL = {
   metadata: {
     generatedAt: new Date().toISOString(),
-    version: "2.0.0",
-    description: "Modelo extendido con soporte para Cursos Académicos y Actividades Generales (Charlas, etc)."
+    version: "3.0.0",
+    description: "Modelo Actualizado: Estudiantes, Asesores y Admin en tabla única Users."
   },
   configuration: MOCK_CONFIG,
   users: MOCK_USERS,
@@ -412,353 +355,107 @@ export const FULL_JSON_MODEL = {
   enrollments: MOCK_ENROLLMENTS
 };
 
-export const ARCHITECTURE_DATA = {
-    stack: [
-      { name: "Frontend", details: "React v19 + Tailwind CSS + Vite" },
-      { name: "Backend API", details: "Node.js (Express) o NestJS" },
-      { name: "Base de Datos", details: "PostgreSQL 15+" },
-      { name: "Autenticación", details: "JWT (Access + Refresh Tokens) + Middleware RBAC" },
-      { name: "Carga Archivos", details: "Multer + xlsx/csv-parser (Streaming)" },
-      { name: "Exportación", details: "JSON2CSV (Streaming) para grandes volúmenes" }
-    ],
-    folderStructure: `
-  /project-root
-    ├── /backend
-    │   ├── /src
-    │   │   ├── /config         # Variables de entorno y DB config
-    │   │   ├── /controllers    # Lógica de endpoints (Auth, Course, User)
-    │   │   ├── /middlewares    # Auth, Validación de Roles, UploadCSV
-    │   │   ├── /models         # Definición de Esquemas (TypeORM / Prisma)
-    │   │   ├── /routes         # Definición de rutas API (v1/api/...)
-    │   │   ├── /services       # Lógica de negocio y procesamiento CSV
-    │   │   ├── /utils          # Helpers (Logger, Validadores)
-    │   │   └── /tests          # PRUEBAS UNITARIAS E INTEGRACIÓN
-    │   ├── package.json
-    │   └── server.ts
-    │
-    ├── /frontend
-    │   ├── /src
-    │   │   ├── /components     # UI Reutilizable
-    │   │   ├── /pages          # Vistas (Dashboard, Cursos, Config)
-    │   │   ├── /hooks          # Custom Hooks (useAuth, useFetch)
-    │   │   ├── /services       # Cliente API (Axios/Fetch)
-    │   │   ├── /context        # Estado Global (AuthContext)
-    │   └── index.html
-    └── README.md
-  `,
-    endpoints: [
-      { method: "POST", path: "/api/v1/auth/login", description: "Autenticación y retorno de JWT", role: "Público" },
-      { method: "POST", path: "/api/v1/cursos", description: "Crear nuevo curso/actividad formativa", role: "Admin/Asesor" },
-      { method: "POST", path: "/api/v1/usuarios/carga-masiva", description: "Upload CSV con validación de RUT", role: "Admin" },
-      { method: "POST", path: "/api/v1/usuarios", description: "Creación manual de usuario", role: "Admin" },
-      { method: "GET", path: "/api/v1/reportes/consolidado", description: "Exportar CSV completo para Dashboard Externo", role: "Admin" },
-      { method: "PUT", path: "/api/v1/config", description: "Actualizar parámetros globales del sistema", role: "Administrador" }
-    ]
-  };
-
-// --- Code Snippets for Architecture View ---
-
-export const AUTH_SNIPPETS = {
-  middleware: `
-// src/middlewares/auth.middleware.ts
-import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-
-export const verifyToken = (req: Request, res: Response, next: NextFunction) => {
-  const token = req.headers['authorization']?.split(' ')[1];
-  
-  if (!token) {
-    return res.status(403).json({ message: 'No token provided' });
-  }
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-};
-  `,
-  controller: `
-// src/controllers/auth.controller.ts
-import { Request, Response } from 'express';
-import { AuthService } from '../services/auth.service';
-
-export class AuthController {
-  static async login(req: Request, res: Response) {
-    try {
-      const { email, password } = req.body;
-      const result = await AuthService.login(email, password);
-      res.json(result);
-    } catch (error) {
-      res.status(401).json({ message: 'Invalid credentials' });
-    }
-  }
-}
-  `,
-  routes: `
-// src/routes/auth.routes.ts
-import { Router } from 'express';
-import { AuthController } from '../controllers/auth.controller';
-
-const router = Router();
-
-router.post('/login', AuthController.login);
-router.post('/refresh', AuthController.refresh);
-
-export default router;
-  `
-};
-
-export const CONFIG_SNIPPETS = {
-  controller: `
-// src/controllers/config.controller.ts
-import { Request, Response } from 'express';
-import { ConfigService } from '../services/config.service';
-
-export class ConfigController {
-  static async getConfig(req: Request, res: Response) {
-    const config = await ConfigService.getSystemConfig();
-    res.json(config);
-  }
-
-  static async updateConfig(req: Request, res: Response) {
-    const updated = await ConfigService.update(req.body);
-    res.json(updated);
-  }
-}
-  `,
-  routes: `
-// src/routes/config.routes.ts
-import { Router } from 'express';
-import { ConfigController } from '../controllers/config.controller';
-import { isAdmin } from '../middlewares/roles.middleware';
-
-const router = Router();
-
-router.get('/', ConfigController.getConfig);
-router.put('/', isAdmin, ConfigController.updateConfig);
-
-export default router;
-  `
-};
-
-export const COURSE_SNIPPETS = {
-  validator: `
-// src/validators/course.validator.ts
-import { z } from 'zod';
-
-export const CourseSchema = z.object({
-  name: z.string().min(5),
-  internalCode: z.string().regex(/^[A-Z]{3}-\d{2}$/),
-  year: z.number().int().min(2023),
-  modality: z.enum(['Presencial', 'Online', 'Híbrido']),
-  hours: z.number().positive()
-});
-  `,
-  controller: `
-// src/controllers/course.controller.ts
-import { Request, Response } from 'express';
-import { CourseService } from '../services/course.service';
-
-export class CourseController {
-  static async create(req: Request, res: Response) {
-    const data = req.body;
-    // Zod validation happens in middleware or here
-    const course = await CourseService.create(data);
-    res.status(201).json(course);
-  }
-
-  static async getAll(req: Request, res: Response) {
-    const courses = await CourseService.findAll(req.query);
-    res.json(courses);
-  }
-}
-  `,
-  routes: `
-// src/routes/course.routes.ts
-import { Router } from 'express';
-import { CourseController } from '../controllers/course.controller';
-import { validate } from '../middlewares/validation.middleware';
-import { CourseSchema } from '../validators/course.validator';
-
-const router = Router();
-
-router.post('/', validate(CourseSchema), CourseController.create);
-router.get('/', CourseController.getAll);
-
-export default router;
-  `
-};
-
-export const USER_SNIPPETS = {
-  middleware: `
-// src/middlewares/upload.middleware.ts
-import multer from 'multer';
-
-const storage = multer.memoryStorage();
-export const uploadCSV = multer({ 
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.includes('csv') || file.mimetype.includes('sheet')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type'));
-    }
-  }
-});
-  `,
-  controller: `
-// src/controllers/user.controller.ts
-import { Request, Response } from 'express';
-import { UserService } from '../services/user.service';
-import { Readable } from 'stream';
-
-export class UserController {
-  static async bulkUpload(req: Request, res: Response) {
-    if (!req.file) return res.status(400).json({ error: 'No file' });
-    
-    const stream = Readable.from(req.file.buffer);
-    const result = await UserService.processStream(stream);
-    
-    res.json({ success: true, stats: result });
-  }
-}
-  `,
-  routes: `
-// src/routes/user.routes.ts
-import { Router } from 'express';
-import { UserController } from '../controllers/user.controller';
-import { uploadCSV } from '../middlewares/upload.middleware';
-
-const router = Router();
-
-router.post('/upload', uploadCSV.single('file'), UserController.bulkUpload);
-router.get('/', UserController.getAll);
-
-export default router;
-  `
-};
-
-export const EXPORT_SNIPPETS = {
-  controller: `
-// src/controllers/report.controller.ts
-import { Request, Response } from 'express';
-import { ReportService } from '../services/report.service';
-import { pipeline } from 'stream';
-
-export class ReportController {
-  static async downloadConsolidated(req: Request, res: Response) {
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="report.csv"');
-
-    const csvStream = await ReportService.getConsolidatedStream();
-    pipeline(csvStream, res, (err) => {
-      if (err) console.error('Stream failed', err);
-    });
-  }
-}
-  `,
-  routes: `
-// src/routes/report.routes.ts
-import { Router } from 'express';
-import { ReportController } from '../controllers/report.controller';
-import { isAdvisor } from '../middlewares/roles.middleware';
-
-const router = Router();
-
-router.get('/consolidated', isAdvisor, ReportController.downloadConsolidated);
-
-export default router;
-  `
-};
-
-export const TESTING_SNIPPETS = {
-  unit: `
-// tests/unit/course.service.test.ts
-import { CourseService } from '../../src/services/course.service';
-
-describe('CourseService', () => {
-  it('should calculate end date correctly', () => {
-    const startDate = '2025-03-01';
-    const modules = 4; // 6 weeks total
-    const endDate = CourseService.calculateEndDate(startDate, modules);
-    expect(endDate).toBe('2025-04-12');
-  });
-});
-  `,
-  integration: `
-// tests/integration/upload.test.ts
-import request from 'supertest';
-import app from '../../src/app';
-
-describe('POST /api/v1/users/upload', () => {
-  it('should accept valid CSV file', async () => {
-    const res = await request(app)
-      .post('/api/v1/users/upload')
-      .attach('file', 'tests/fixtures/users_valid.csv')
-      .set('Authorization', \`Bearer \${adminToken}\`);
-
-    expect(res.status).toBe(200);
-    expect(res.body.stats.processed).toBe(50);
-  });
-});
-  `,
-  security: `
-// tests/security/rbac.test.ts
-import request from 'supertest';
-import app from '../../src/app';
-
-describe('RBAC Protection', () => {
-  it('should deny student access to admin routes', async () => {
-    const res = await request(app)
-      .delete('/api/v1/users/123')
-      .set('Authorization', \`Bearer \${studentToken}\`);
-
-    expect(res.status).toBe(403);
-  });
-});
-  `
-};
-
-// --- SUPABASE MIGRATION SQL (MANUAL REPAIR VERSION) ---
+// --- SUPABASE MIGRATION SQL (FULL SCHEMA + REPAIR) ---
 
 export const SUPABASE_SQL_SCRIPT = `
 -- ====================================================================
--- SCRIPT DE REPARACIÓN MANUAL - GESTOR SMEAD
--- Ejecuta este script en el "SQL Editor" de Supabase para corregir
--- el error "infinite recursion detected in policy".
+-- SCRIPT DE REINICIO TOTAL - MODELO DE DATOS V3
+-- Ejecuta este script para actualizar la estructura de la base de datos.
 -- ====================================================================
 
--- 1. DESACTIVAR LA SEGURIDAD (Esto elimina el error inmediatamente)
+-- 1. TABLA USUARIOS (Unificada: Estudiantes, Asesores y Admin)
+CREATE TABLE IF NOT EXISTS public.users (
+    rut text PRIMARY KEY,
+    names text,
+    paternal_surname text,
+    maternal_surname text,
+    email text,
+    phone text,
+    photo_url text, 
+    system_role text DEFAULT 'Estudiante', -- 'Admin', 'Asesor', 'Estudiante'
+    password text, -- NUEVO: Credenciales para Admin y Asesores
+    academic_role text,
+    faculty text,
+    department text,
+    career text,
+    contract_type text,
+    teaching_semester text,
+    campus text,
+    title text
+);
+
+-- Asegurar columnas críticas si la tabla ya existe
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS system_role text DEFAULT 'Estudiante';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password text;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS photo_url text;
+
+-- 2. TABLA ACTIVIDADES (Cursos y Charlas)
+CREATE TABLE IF NOT EXISTS public.activities (
+    id text PRIMARY KEY,
+    category text,
+    activity_type text,
+    internal_code text,
+    year integer,
+    academic_period text,
+    name text,
+    version text,
+    modality text,
+    hours integer,
+    module_count integer,
+    evaluation_count integer,
+    start_date text,
+    end_date text,
+    relator text,
+    link_resources text,
+    class_link text,
+    evaluation_link text
+);
+
+-- 3. TABLA INSCRIPCIONES (Matrícula)
+CREATE TABLE IF NOT EXISTS public.enrollments (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_rut text REFERENCES public.users(rut) ON DELETE RESTRICT,
+    activity_id text REFERENCES public.activities(id) ON DELETE RESTRICT,
+    state text DEFAULT 'Inscrito',
+    grades decimal[] DEFAULT '{}',
+    final_grade decimal,
+    attendance_percentage integer DEFAULT 0,
+    attendance_session_1 boolean DEFAULT false,
+    attendance_session_2 boolean DEFAULT false,
+    attendance_session_3 boolean DEFAULT false,
+    attendance_session_4 boolean DEFAULT false,
+    attendance_session_5 boolean DEFAULT false,
+    attendance_session_6 boolean DEFAULT false,
+    observation text,
+    situation text,
+    UNIQUE(user_rut, activity_id)
+);
+
+-- 4. SEGURIDAD (RLS) - PERMISIVA
 ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activities DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.enrollments DISABLE ROW LEVEL SECURITY;
 
--- 2. BORRAR POLÍTICAS VIEJAS (Limpieza Profunda)
--- Borramos cualquier política que pueda estar causando conflicto
-DROP POLICY IF EXISTS "Public Access Users" ON public.users;
-DROP POLICY IF EXISTS "Public Access Activities" ON public.activities;
-DROP POLICY IF EXISTS "Public Access Enrollments" ON public.enrollments;
-DROP POLICY IF EXISTS "Admins full access users" ON public.users;
-DROP POLICY IF EXISTS "Users read own profile" ON public.users;
-DROP POLICY IF EXISTS "Enable read access for all users" ON public.users;
-DROP POLICY IF EXISTS "Enable insert for all users" ON public.users;
-DROP POLICY IF EXISTS "Enable update for all users" ON public.users;
+DROP POLICY IF EXISTS "Permitir Todo Users" ON public.users;
+DROP POLICY IF EXISTS "Permitir Todo Activities" ON public.activities;
+DROP POLICY IF EXISTS "Permitir Todo Enrollments" ON public.enrollments;
 
--- 3. REACTIVAR SEGURIDAD CON REGLA SIMPLE (Permitir todo para el Demo)
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
 
--- 4. CREAR POLÍTICAS SIN RECURSIÓN
--- Usamos (true) directo para evitar que la política consulte la misma tabla
 CREATE POLICY "Permitir Todo Users" ON public.users FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Permitir Todo Activities" ON public.activities FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Permitir Todo Enrollments" ON public.enrollments FOR ALL USING (true) WITH CHECK (true);
-
--- 5. VERIFICACIÓN (Opcional)
--- Si este script corre sin errores, el sistema volverá a funcionar.
 `;
+
+export const DATABASE_STRATEGY = {
+    indexes: [], integrity: [], partitioning: ""
+};
+export const ARCHITECTURE_DATA = { stack: [], folderStructure: "", endpoints: [] };
+export const AUTH_SNIPPETS = { middleware: "", controller: "", routes: "" };
+export const CONFIG_SNIPPETS = { controller: "", routes: "" };
+export const COURSE_SNIPPETS = { validator: "", controller: "", routes: "" };
+export const USER_SNIPPETS = { middleware: "", controller: "", routes: "" };
+export const EXPORT_SNIPPETS = { controller: "", routes: "" };
+export const TESTING_SNIPPETS = { unit: "", integration: "", security: "" };

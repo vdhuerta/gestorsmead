@@ -2,7 +2,7 @@
 export enum UserRole {
   ADMIN = 'Administrador',
   ASESOR = 'Asesor',
-  VISITA = 'Visita'
+  ESTUDIANTE = 'Estudiante' // Antes Visita
 }
 
 export enum ActivityState {
@@ -41,8 +41,9 @@ export interface User {
   email: string;
   phone?: string;
   photoUrl?: string; // New: Profile Picture URL (Base64 or Link)
+  password?: string; // New: Solo para Asesores y Admin
   
-  // Campos Académicos / Administrativos
+  // Campos Académicos / Administrativos (Base Maestra)
   academicRole?: string; // "Rol" en planilla (ej: Decano, Docente)
   faculty?: string;
   department?: string;

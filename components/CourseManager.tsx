@@ -101,7 +101,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       contractType: '',
       teachingSemester: '',
       campus: '',
-      systemRole: UserRole.VISITA
+      systemRole: UserRole.ESTUDIANTE
   });
 
   // --- AUTOCOMPLETE & VALIDATION STATE ---
@@ -595,7 +595,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       setManualForm({
           rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '',
           academicRole: '', faculty: '', department: '', career: '', contractType: '',
-          teachingSemester: '', campus: '', systemRole: UserRole.VISITA
+          teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE
       });
       setIsFoundInMaster(false);
       setIsAlreadyEnrolled(false);
@@ -654,7 +654,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                   teachingSemester: normalizeValue(rowStrings[11], listSemesters),
                   
                   campus: rowStrings[12] || '',
-                  systemRole: UserRole.VISITA
+                  systemRole: UserRole.ESTUDIANTE
               });
           }
 

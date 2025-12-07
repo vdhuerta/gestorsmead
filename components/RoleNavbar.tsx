@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { UserRole, User } from '../types';
 
@@ -11,8 +12,8 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'dashboard', label: 'Inicio', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR, UserRole.VISITA] },
-  { id: 'participants', label: 'Base Maestra', allowedRoles: [UserRole.ADMIN] }, 
+  { id: 'dashboard', label: 'Inicio', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR, UserRole.ESTUDIANTE] },
+  { id: 'participants', label: 'Base Maestra Estudiantes', allowedRoles: [UserRole.ADMIN] }, 
   { id: 'advisors', label: 'Gestión Asesores', allowedRoles: [UserRole.ADMIN] }, 
   { id: 'courses', label: 'Gestión Cursos', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] },
   { id: 'generalActivities', label: 'Gestión Actividades', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] }, 
@@ -67,7 +68,6 @@ export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabCh
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           
-          {/* Logo y Rol Actual */}
           <div className="flex items-center gap-3">
             <div className="bg-transparent rounded-lg">
               <img 
@@ -87,7 +87,6 @@ export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabCh
             </div>
           </div>
           
-          {/* Navegación Desktop */}
           <div className="hidden md:flex items-center gap-1 bg-slate-50 p-1 rounded-lg border border-slate-100">
             {availableTabs.map((tab) => (
               <button 
@@ -105,7 +104,6 @@ export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabCh
             ))}
           </div>
 
-          {/* User Menu / Logout */}
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
                 <p className="text-sm font-bold text-slate-700">{user.names}</p>
@@ -123,7 +121,6 @@ export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabCh
           </div>
         </div>
         
-        {/* Mobile Nav Scrollable */}
         <div className="md:hidden flex overflow-x-auto pb-3 gap-2 scrollbar-hide pt-1">
             {availableTabs.map((tab) => (
               <button 
