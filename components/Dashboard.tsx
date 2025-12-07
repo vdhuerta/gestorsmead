@@ -528,41 +528,72 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   }
 
   // =========================================================
-  // VISTA 2: ASESOR (OPERATIVO)
+  // VISTA 2: ASESOR (OPERATIVO - MODO EQUIPO COLABORATIVO)
   // =========================================================
   if (user.systemRole === UserRole.ASESOR) {
-      // Filtrar actividades donde el Asesor es el Relator (Coincidencia parcial de apellido)
-      const myAcademicCourses = activities.filter(a => 
-          (!a.category || a.category === 'ACADEMIC') && 
-          a.relator && 
-          (a.relator.toLowerCase().includes(user.paternalSurname.toLowerCase()) || 
-           a.relator.toLowerCase().includes(user.names.split(' ')[0].toLowerCase()))
-      );
+      
+      // 1. CARGA GLOBAL DE CURSOS (Sin filtrar por relator)
+      const allAcademicCourses = activities.filter(a => (!a.category || a.category === 'ACADEMIC'));
+      const allExtensionActivities = activities.filter(a => a.category === 'GENERAL');
 
-      const myExtensionActivities = activities.filter(a => 
-          a.category === 'GENERAL' && 
-          a.relator && 
-          (a.relator.toLowerCase().includes(user.paternalSurname.toLowerCase()) ||
-           a.relator.toLowerCase().includes(user.names.split(' ')[0].toLowerCase()))
-      );
+      // 2. OBTENER LISTA DE ASESORES (Para el panel de equipo)
+      const activeAdvisors = users.filter(u => u.systemRole === UserRole.ASESOR);
 
       return (
           <div className="animate-fadeIn space-y-8">
-              <div className="bg-gradient-to-r from-indigo-500 to-blue-600 rounded-2xl p-8 shadow-md text-white">
-                  <h2 className="text-3xl font-bold mb-2">Bienvenido, {user.names}</h2>
-                  <p className="text-indigo-100 max-w-3xl">
-                      Panel de Gestión Académica. Aquí encontrarás un resumen de tus cursos asignados y actividades de extensión vigentes.
-                  </p>
+              
+              <div className="flex flex-col md:flex-row gap-6">
+                  {/* PANEL DE BIENVENIDA */}
+                  <div className="flex-1 bg-gradient-to-r from-indigo-500 to-blue-600 rounded-2xl p-8 shadow-md text-white">
+                      <h2 className="text-3xl font-bold mb-2">Espacio de Gestión Colaborativa</h2>
+                      <p className="text-indigo-100 max-w-xl text-sm">
+                          Has ingresado al panel unificado de Asesores. Todos los miembros del equipo tienen visibilidad completa sobre la Base Maestra y el Catálogo de Actividades.
+                      </p>
+                  </div>
+
+                  {/* PANEL DE EQUIPO (Visualización de Asesores) */}
+                  <div className="w-full md:w-auto bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-center min-w-[300px]">
+                      <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 text-center tracking-wider">Equipo de Asesores Activo</h3>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                          {activeAdvisors.map((adv) => {
+                              const isMe = adv.rut === user.rut;
+                              return (
+                                  <div key={adv.rut} className="relative group flex flex-col items-center">
+                                      <div className={`w-10 h-10 rounded-full overflow-hidden border-2 ${isMe ? 'border-green-400 ring-2 ring-green-100' : 'border-slate-100'}`}>
+                                          {adv.photoUrl ? (
+                                              <img src={adv.photoUrl} alt={adv.names} className="w-full h-full object-cover" />
+                                          ) : (
+                                              <div className="w-full h-full bg-slate-100 flex items-center justify-center text-slate-400 text-xs font-bold">
+                                                  {adv.names.charAt(0)}
+                                              </div>
+                                          )}
+                                      </div>
+                                      {/* Tooltip */}
+                                      <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 bg-slate-800 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap transition-opacity pointer-events-none z-10">
+                                          {adv.names} {isMe && '(Tú)'}
+                                      </div>
+                                      {/* Online Status Dot (Only for self as confirmed, others visual) */}
+                                      {isMe && (
+                                          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full"></span>
+                                      )}
+                                  </div>
+                              );
+                          })}
+                          <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-[10px] text-slate-400 font-bold ml-1">
+                              {activeAdvisors.length}
+                          </div>
+                      </div>
+                  </div>
               </div>
 
-              {/* TABLA 1: MIS CURSOS ACADÉMICOS */}
+              {/* TABLA 1: CATALOGO GLOBAL ACADÉMICO */}
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
                       <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                           <svg className="w-5 h-5 text-[#647FBC]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
-                          Mis Cursos Académicos
+                          Catálogo Global de Cursos Académicos
                       </h3>
-                      <span className="bg-[#647FBC] text-white text-xs font-bold px-2 py-1 rounded-full">{myAcademicCourses.length}</span>
+                      <span className="bg-[#647FBC] text-white text-xs font-bold px-2 py-1 rounded-full">{allAcademicCourses.length}</span>
                   </div>
                   <div className="overflow-x-auto">
                       <table className="w-full text-sm text-left">
@@ -570,27 +601,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                               <tr>
                                   <th className="px-6 py-3">Código</th>
                                   <th className="px-6 py-3">Nombre del Curso</th>
+                                  <th className="px-6 py-3">Relator (Responsable)</th>
                                   <th className="px-6 py-3">Modalidad</th>
-                                  <th className="px-6 py-3">Periodo</th>
                                   <th className="px-6 py-3 text-center">Inscritos</th>
                               </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                              {myAcademicCourses.map(course => {
+                              {allAcademicCourses.map(course => {
                                   const enrolledCount = enrollments.filter(e => e.activityId === course.id).length;
+                                  // Highlight user's own courses slightly
+                                  const isMyCourse = course.relator && user.paternalSurname && course.relator.toLowerCase().includes(user.paternalSurname.toLowerCase());
+                                  
                                   return (
-                                      <tr key={course.id} className="hover:bg-slate-50 transition-colors">
+                                      <tr key={course.id} className={`transition-colors ${isMyCourse ? 'bg-blue-50/40 hover:bg-blue-50' : 'hover:bg-slate-50'}`}>
                                           <td className="px-6 py-4 font-mono text-slate-500 text-xs">{course.internalCode || course.id}</td>
                                           <td className="px-6 py-4 font-medium text-slate-800">{course.name}</td>
-                                          <td className="px-6 py-4 text-slate-600">{course.modality}</td>
-                                          <td className="px-6 py-4 text-slate-500">{course.academicPeriod || course.year}</td>
+                                          <td className="px-6 py-4 text-slate-600">
+                                              {course.relator}
+                                              {isMyCourse && <span className="ml-2 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">MIO</span>}
+                                          </td>
+                                          <td className="px-6 py-4 text-slate-500">{course.modality}</td>
                                           <td className="px-6 py-4 text-center font-bold text-[#647FBC]">{enrolledCount}</td>
                                       </tr>
                                   );
                               })}
-                              {myAcademicCourses.length === 0 && (
+                              {allAcademicCourses.length === 0 && (
                                   <tr>
-                                      <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">No tienes cursos académicos asignados actualmente.</td>
+                                      <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">No hay cursos académicos registrados en la Base Maestra.</td>
                                   </tr>
                               )}
                           </tbody>
@@ -598,14 +635,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                   </div>
               </div>
 
-              {/* TABLA 2: MIS ACTIVIDADES DE EXTENSIÓN */}
+              {/* TABLA 2: ACTIVIDADES DE EXTENSIÓN GLOBAL */}
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
                       <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                           <svg className="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                          Mis Actividades de Extensión
+                          Todas las Actividades de Extensión
                       </h3>
-                      <span className="bg-teal-600 text-white text-xs font-bold px-2 py-1 rounded-full">{myExtensionActivities.length}</span>
+                      <span className="bg-teal-600 text-white text-xs font-bold px-2 py-1 rounded-full">{allExtensionActivities.length}</span>
                   </div>
                   <div className="overflow-x-auto">
                       <table className="w-full text-sm text-left">
@@ -613,13 +650,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                               <tr>
                                   <th className="px-6 py-3">Tipo</th>
                                   <th className="px-6 py-3">Nombre Actividad</th>
+                                  <th className="px-6 py-3">Relator</th>
                                   <th className="px-6 py-3">Fecha</th>
-                                  <th className="px-6 py-3">Modalidad</th>
                                   <th className="px-6 py-3 text-right">Recursos</th>
                               </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                              {myExtensionActivities.map(act => (
+                              {allExtensionActivities.map(act => (
                                   <tr key={act.id} className="hover:bg-slate-50 transition-colors">
                                       <td className="px-6 py-4">
                                           <span className="bg-teal-50 text-teal-700 px-2 py-1 rounded text-xs font-bold border border-teal-100">
@@ -627,8 +664,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                           </span>
                                       </td>
                                       <td className="px-6 py-4 font-medium text-slate-800">{act.name}</td>
+                                      <td className="px-6 py-4 text-slate-600">{act.relator || 'N/A'}</td>
                                       <td className="px-6 py-4 text-slate-600">{formatDateCL(act.startDate)}</td>
-                                      <td className="px-6 py-4 text-slate-500">{act.modality}</td>
                                       <td className="px-6 py-4 text-right">
                                           {act.linkResources ? (
                                               <a href={act.linkResources} target="_blank" rel="noreferrer" className="text-teal-600 hover:text-teal-800 font-bold text-xs underline">
@@ -640,9 +677,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                       </td>
                                   </tr>
                               ))}
-                              {myExtensionActivities.length === 0 && (
+                              {allExtensionActivities.length === 0 && (
                                   <tr>
-                                      <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">No tienes actividades de extensión registradas.</td>
+                                      <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">No hay actividades de extensión registradas.</td>
                                   </tr>
                               )}
                           </tbody>
