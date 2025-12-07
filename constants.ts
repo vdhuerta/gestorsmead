@@ -723,127 +723,42 @@ describe('RBAC Protection', () => {
   `
 };
 
-// --- SUPABASE MIGRATION SQL ---
+// --- SUPABASE MIGRATION SQL (MANUAL REPAIR VERSION) ---
 
 export const SUPABASE_SQL_SCRIPT = `
 -- ====================================================================
--- SUPABASE MIGRATION SCRIPT FOR GESTOR SMEAD (FIX RECURSION)
--- Version: 1.2.0
--- Description: Disables RLS to clear bad policies and recreates clean ones.
+-- SCRIPT DE REPARACIÓN MANUAL - GESTOR SMEAD
+-- Ejecuta este script en el "SQL Editor" de Supabase para corregir
+-- el error "infinite recursion detected in policy".
 -- ====================================================================
 
--- 1. Enable UUID Extension
-create extension if not exists "uuid-ossp";
-
--- 2. ENUMS
--- We drop types if they exist to ensure clean state or allow updates
-drop type if exists user_role cascade;
-create type user_role as enum ('Administrador', 'Asesor', 'Visita');
-
-drop type if exists activity_category cascade;
-create type activity_category as enum ('ACADEMIC', 'GENERAL');
-
-drop type if exists activity_state cascade;
-create type activity_state as enum ('Inscrito', 'Aprobado', 'Reprobado', 'No Cursado', 'Pendiente', 'En Curso');
-
--- 3. USERS TABLE
-create table if not exists public.users (
-  rut text primary key,
-  names text not null,
-  paternal_surname text not null,
-  maternal_surname text,
-  email text unique not null,
-  phone text,
-  photo_url text,
-  system_role user_role default 'Visita'::user_role,
-  academic_role text,
-  faculty text,
-  department text,
-  career text,
-  contract_type text,
-  teaching_semester text,
-  campus text,
-  title text,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
--- 4. ACTIVITIES TABLE
-create table if not exists public.activities (
-  id text primary key,
-  category activity_category default 'ACADEMIC',
-  internal_code text,
-  activity_type text,
-  year int,
-  academic_period text,
-  name text not null,
-  version text,
-  modality text,
-  hours int default 0,
-  module_count int default 0,
-  evaluation_count int default 3,
-  start_date date,
-  end_date date,
-  relator text,
-  link_resources text,
-  class_link text,
-  evaluation_link text,
-  created_at timestamptz default now()
-);
-
--- 5. ENROLLMENTS TABLE
-create table if not exists public.enrollments (
-  id uuid primary key default uuid_generate_v4(),
-  user_rut text not null references public.users(rut) on delete restrict,
-  activity_id text not null references public.activities(id) on delete cascade,
-  state activity_state default 'Inscrito',
-  grades numeric[] default '{}',
-  final_grade numeric(3,1),
-  attendance_session_1 boolean default false,
-  attendance_session_2 boolean default false,
-  attendance_session_3 boolean default false,
-  attendance_session_4 boolean default false,
-  attendance_session_5 boolean default false,
-  attendance_session_6 boolean default false,
-  attendance_percentage int default 0,
-  observation text,
-  situation text,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now(),
-  unique(user_rut, activity_id)
-);
-
--- 6. INDEXES
-create index if not exists idx_users_email on public.users(email);
-create index if not exists idx_activities_year on public.activities(year);
-create index if not exists idx_enrollments_activity on public.enrollments(activity_id);
-create index if not exists idx_enrollments_rut on public.enrollments(user_rut);
-
--- 7. CLEANUP OLD POLICIES & FIX RECURSION
--- Critical Step: Disable RLS momentarily to stop infinite recursion loop
+-- 1. DESACTIVAR LA SEGURIDAD (Esto elimina el error inmediatamente)
 ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activities DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.enrollments DISABLE ROW LEVEL SECURITY;
 
--- Drop known legacy policies
-DROP POLICY IF EXISTS "Admins full access users" ON public.users;
-DROP POLICY IF EXISTS "Users read own profile" ON public.users;
-DROP POLICY IF EXISTS "Public read activities" ON public.activities;
-DROP POLICY IF EXISTS "Staff manage activities" ON public.activities;
-DROP POLICY IF EXISTS "Users read own enrollments" ON public.enrollments;
-DROP POLICY IF EXISTS "Staff manage enrollments" ON public.enrollments;
+-- 2. BORRAR POLÍTICAS VIEJAS (Limpieza Profunda)
+-- Borramos cualquier política que pueda estar causando conflicto
 DROP POLICY IF EXISTS "Public Access Users" ON public.users;
 DROP POLICY IF EXISTS "Public Access Activities" ON public.activities;
 DROP POLICY IF EXISTS "Public Access Enrollments" ON public.enrollments;
+DROP POLICY IF EXISTS "Admins full access users" ON public.users;
+DROP POLICY IF EXISTS "Users read own profile" ON public.users;
+DROP POLICY IF EXISTS "Enable read access for all users" ON public.users;
+DROP POLICY IF EXISTS "Enable insert for all users" ON public.users;
+DROP POLICY IF EXISTS "Enable update for all users" ON public.users;
 
--- 8. RE-ENABLE SECURITY WITH CLEAN STATE
+-- 3. REACTIVAR SEGURIDAD CON REGLA SIMPLE (Permitir todo para el Demo)
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
 
--- 9. CREATE NON-RECURSIVE POLICIES (DEMO MODE)
--- These policies use (true) which avoids querying the table itself
-CREATE POLICY "Public Access Users" ON public.users FOR ALL USING (true);
-CREATE POLICY "Public Access Activities" ON public.activities FOR ALL USING (true);
-CREATE POLICY "Public Access Enrollments" ON public.enrollments FOR ALL USING (true);
+-- 4. CREAR POLÍTICAS SIN RECURSIÓN
+-- Usamos (true) directo para evitar que la política consulte la misma tabla
+CREATE POLICY "Permitir Todo Users" ON public.users FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir Todo Activities" ON public.activities FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir Todo Enrollments" ON public.enrollments FOR ALL USING (true) WITH CHECK (true);
+
+-- 5. VERIFICACIÓN (Opcional)
+-- Si este script corre sin errores, el sistema volverá a funcionar.
 `;

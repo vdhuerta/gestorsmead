@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Activity, Enrollment, SystemConfig, ActivityState } from '../types';
 import { MOCK_CONFIG } from '../constants';
@@ -10,6 +9,7 @@ interface DataContextType {
   enrollments: Enrollment[];
   config: SystemConfig;
   isLoading: boolean;
+  error: string | null; // Added Error state
   addActivity: (activity: Activity) => Promise<void>;
   getUser: (rut: string) => User | undefined;
   deleteUser: (rut: string) => Promise<void>;
@@ -28,6 +28,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [activities, setActivities] = useState<Activity[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   // Config se mantiene local por ahora
   const [config, setConfig] = useState<SystemConfig>(() => {
@@ -42,12 +43,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchData = async () => {
     setIsLoading(true);
+    setError(null); // Reset error state on retry
     try {
         // 1. Fetch Users
         const usersResponse = await supabase.from('users').select('*');
         if (usersResponse.error) {
-            console.error("Supabase Error (Users):", usersResponse.error.message, JSON.stringify(usersResponse.error));
-            throw new Error(`Error cargando usuarios: ${usersResponse.error.message}`);
+            console.error("Supabase Error (Users):", usersResponse.error.message);
+            throw usersResponse.error; // Throw to catch block to set global error
         }
         
         // Map DB snake_case to TS camelCase
@@ -74,8 +76,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // 2. Fetch Activities
         const actsResponse = await supabase.from('activities').select('*');
         if (actsResponse.error) {
-            console.error("Supabase Error (Activities):", actsResponse.error.message, JSON.stringify(actsResponse.error));
-            throw new Error(`Error cargando actividades: ${actsResponse.error.message}`);
+             throw actsResponse.error;
         }
 
         const mappedActs: Activity[] = (actsResponse.data || []).map((a: any) => ({
@@ -103,8 +104,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // 3. Fetch Enrollments
         const enrResponse = await supabase.from('enrollments').select('*');
         if (enrResponse.error) {
-            console.error("Supabase Error (Enrollments):", enrResponse.error.message, JSON.stringify(enrResponse.error));
-            throw new Error(`Error cargando inscripciones: ${enrResponse.error.message}`);
+             throw enrResponse.error;
         }
 
         const mappedEnr: Enrollment[] = (enrResponse.data || []).map((e: any) => ({
@@ -128,7 +128,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     } catch (error: any) {
         console.error("CRITICAL ERROR FETCHING DATA:", error.message || error);
-        // No bloqueamos la UI completa, pero los datos estarán vacíos.
+        setError(JSON.stringify(error));
     } finally {
         setIsLoading(false);
     }
@@ -356,7 +356,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <DataContext.Provider value={{ 
-        users, activities, enrollments, config, isLoading,
+        users, activities, enrollments, config, isLoading, error,
         addActivity, upsertUsers, updateConfig, resetData,
         enrollUser, bulkEnroll, updateEnrollment, getUser, deleteUser
     }}>

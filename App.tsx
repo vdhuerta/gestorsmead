@@ -1,10 +1,11 @@
+
 import React, { useState } from 'react';
 import { User } from './types';
 import { LoginSimulator } from './components/LoginSimulator';
 import { RoleNavbar, TabType } from './components/RoleNavbar';
 import { Dashboard } from './components/Dashboard';
 
-import { SCHEMA_TABLES, FULL_JSON_MODEL } from './constants';
+import { SCHEMA_TABLES, FULL_JSON_MODEL, SUPABASE_SQL_SCRIPT } from './constants';
 import { SchemaNode } from './components/SchemaNode';
 import { JsonViewer } from './components/JsonViewer';
 import { AiAssistant } from './components/AiAssistant';
@@ -28,12 +29,58 @@ const TABLE_COLORS = [
 const MainContent: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
-  const { resetData } = useData();
+  const { resetData, error } = useData();
 
   const handleLogout = () => {
     setUser(null);
     setActiveTab('dashboard');
   };
+
+  // --- CRITICAL DATABASE ERROR SCREEN ---
+  // If "infinite recursion" (code 42P17) or other critical errors occur, show Recovery Mode
+  if (error && (error.includes("infinite recursion") || error.includes("42P17"))) {
+      return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-50 p-6 animate-fadeIn">
+              <div className="bg-white rounded-xl shadow-2xl border-l-8 border-red-600 max-w-4xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+                  <div className="p-8 pb-4">
+                      <h1 className="text-3xl font-bold text-red-700 flex items-center gap-3">
+                          <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                          Error Crítico de Base de Datos
+                      </h1>
+                      <p className="text-slate-600 mt-2 text-lg">
+                          Se ha detectado un conflicto de <strong>Recursión Infinita</strong> en las políticas de seguridad de Supabase.
+                          Esto impide que la aplicación cargue datos.
+                      </p>
+                  </div>
+                  
+                  <div className="px-8 py-4 bg-slate-50 border-y border-slate-200">
+                      <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide mb-2">Instrucciones de Solución:</h3>
+                      <ol className="list-decimal pl-5 space-y-2 text-slate-700 text-sm">
+                          <li>Copia el siguiente Script SQL "Nuclear" (botón abajo).</li>
+                          <li>Ve al <strong>SQL Editor</strong> en tu proyecto de Supabase.</li>
+                          <li>Pega el código y ejecútalo. Esto limpiará todas las políticas conflictivas.</li>
+                          <li>Recarga esta página.</li>
+                      </ol>
+                  </div>
+
+                  <div className="flex-1 overflow-hidden relative bg-[#1e293b]">
+                      <div className="absolute top-2 right-2 z-10">
+                          <button 
+                              onClick={() => navigator.clipboard.writeText(SUPABASE_SQL_SCRIPT)}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded font-bold text-sm shadow-lg transition-colors flex items-center gap-2"
+                          >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                              Copiar SQL de Reparación
+                          </button>
+                      </div>
+                      <pre className="p-6 text-xs font-mono text-blue-200 overflow-auto custom-scrollbar h-full">
+                          {SUPABASE_SQL_SCRIPT}
+                      </pre>
+                  </div>
+              </div>
+          </div>
+      );
+  }
 
   // 1. Si no hay usuario, mostrar Login
   if (!user) {
