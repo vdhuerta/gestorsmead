@@ -185,7 +185,6 @@ export const supabase = createClient(url, key);`}
           </div>
       ) : (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fadeIn pb-12">
-      {/* ... (Existing Architecture View Content) ... */}
       
       {/* Columna Izquierda: Estructura y Stack */}
       <div className="space-y-8">
@@ -560,6 +559,8 @@ export const supabase = createClient(url, key);`}
             </div>
           </div>
 
+      </div>
+      
       </div>
       )}
 
