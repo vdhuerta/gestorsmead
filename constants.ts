@@ -321,14 +321,15 @@ export const MOCK_USERS: User[] = [
   },
   {
     rut: "1-9",
-    names: "Admin",
-    paternalSurname: "Sistema",
-    maternalSurname: "Demo",
-    email: "admin@upla.cl",
+    names: "Víctor",
+    paternalSurname: "Huerta",
+    maternalSurname: "",
+    email: "victor.huerta@upla.cl",
     academicRole: "Coordinación de Direcciones",
     contractType: "Planta Jornada Completa",
     systemRole: UserRole.ADMIN,
-    campus: "Central"
+    campus: "Central",
+    photoUrl: "https://github.com/vdhuerta/assets-aplications/blob/main/Foto%20Vi%CC%81ctor%20Huerta.JPG?raw=true"
   }
 ];
 
@@ -726,24 +727,28 @@ describe('RBAC Protection', () => {
 
 export const SUPABASE_SQL_SCRIPT = `
 -- ====================================================================
--- SUPABASE MIGRATION SCRIPT FOR GESTOR SMEAD
--- Version: 1.0.0
--- Description: Creates schema for Users, Activities, and Enrollments
--- with Row Level Security (RLS) enabled.
+-- SUPABASE MIGRATION SCRIPT FOR GESTOR SMEAD (FIX RECURSION)
+-- Version: 1.2.0
+-- Description: Disables RLS to clear bad policies and recreates clean ones.
 -- ====================================================================
 
--- 1. Enable UUID Extension (Standard for Supabase IDs)
+-- 1. Enable UUID Extension
 create extension if not exists "uuid-ossp";
 
--- 2. ENUMS (Match TypeScript Enums)
+-- 2. ENUMS
+-- We drop types if they exist to ensure clean state or allow updates
+drop type if exists user_role cascade;
 create type user_role as enum ('Administrador', 'Asesor', 'Visita');
+
+drop type if exists activity_category cascade;
 create type activity_category as enum ('ACADEMIC', 'GENERAL');
+
+drop type if exists activity_state cascade;
 create type activity_state as enum ('Inscrito', 'Aprobado', 'Reprobado', 'No Cursado', 'Pendiente', 'En Curso');
 
--- 3. USERS TABLE (Base Maestra)
--- Note: In a real Supabase app, you might sync this with auth.users via triggers.
-create table public.users (
-  rut text primary key, -- Business Key
+-- 3. USERS TABLE
+create table if not exists public.users (
+  rut text primary key,
   names text not null,
   paternal_surname text not null,
   maternal_surname text,
@@ -751,8 +756,6 @@ create table public.users (
   phone text,
   photo_url text,
   system_role user_role default 'Visita'::user_role,
-  
-  -- Academic/Administrative Fields
   academic_role text,
   faculty text,
   department text,
@@ -760,55 +763,42 @@ create table public.users (
   contract_type text,
   teaching_semester text,
   campus text,
-  title text, -- For Advisors
-
+  title text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
 
--- 4. ACTIVITIES TABLE (Cursos y Charlas)
-create table public.activities (
-  id text primary key, -- 'CODE-YEAR-SEM-VER' (Natural Key)
+-- 4. ACTIVITIES TABLE
+create table if not exists public.activities (
+  id text primary key,
   category activity_category default 'ACADEMIC',
   internal_code text,
-  activity_type text, -- 'Taller', 'Charla', etc.
+  activity_type text,
   year int,
   academic_period text,
   name text not null,
   version text,
   modality text,
   hours int default 0,
-  
-  -- Management
   module_count int default 0,
   evaluation_count int default 3,
-  
-  -- Logistics
   start_date date,
   end_date date,
   relator text,
-  
-  -- Links (Stored as JSON or Text columns)
   link_resources text,
   class_link text,
   evaluation_link text,
-  
   created_at timestamptz default now()
 );
 
--- 5. ENROLLMENTS TABLE (Matrículas)
-create table public.enrollments (
+-- 5. ENROLLMENTS TABLE
+create table if not exists public.enrollments (
   id uuid primary key default uuid_generate_v4(),
   user_rut text not null references public.users(rut) on delete restrict,
   activity_id text not null references public.activities(id) on delete cascade,
-  
   state activity_state default 'Inscrito',
-  
-  -- Academic Performance
-  grades numeric[] default '{}', -- Array of grades
+  grades numeric[] default '{}',
   final_grade numeric(3,1),
-  
-  -- Attendance Logic
   attendance_session_1 boolean default false,
   attendance_session_2 boolean default false,
   attendance_session_3 boolean default false,
@@ -816,56 +806,44 @@ create table public.enrollments (
   attendance_session_5 boolean default false,
   attendance_session_6 boolean default false,
   attendance_percentage int default 0,
-  
-  -- Feedback
   observation text,
   situation text,
-  
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
-
-  -- Constraint: Prevent duplicate enrollment in same activity
   unique(user_rut, activity_id)
 );
 
--- 6. INDEXES FOR PERFORMANCE
-create index idx_users_email on public.users(email);
-create index idx_activities_year on public.activities(year);
-create index idx_enrollments_activity on public.enrollments(activity_id);
-create index idx_enrollments_rut on public.enrollments(user_rut);
+-- 6. INDEXES
+create index if not exists idx_users_email on public.users(email);
+create index if not exists idx_activities_year on public.activities(year);
+create index if not exists idx_enrollments_activity on public.enrollments(activity_id);
+create index if not exists idx_enrollments_rut on public.enrollments(user_rut);
 
--- 7. ENABLE ROW LEVEL SECURITY (RLS)
-alter table public.users enable row level security;
-alter table public.activities enable row level security;
-alter table public.enrollments enable row level security;
+-- 7. CLEANUP OLD POLICIES & FIX RECURSION
+-- Critical Step: Disable RLS momentarily to stop infinite recursion loop
+ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.activities DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.enrollments DISABLE ROW LEVEL SECURITY;
 
--- 8. RLS POLICIES (Simplified Examples)
+-- Drop known legacy policies
+DROP POLICY IF EXISTS "Admins full access users" ON public.users;
+DROP POLICY IF EXISTS "Users read own profile" ON public.users;
+DROP POLICY IF EXISTS "Public read activities" ON public.activities;
+DROP POLICY IF EXISTS "Staff manage activities" ON public.activities;
+DROP POLICY IF EXISTS "Users read own enrollments" ON public.enrollments;
+DROP POLICY IF EXISTS "Staff manage enrollments" ON public.enrollments;
+DROP POLICY IF EXISTS "Public Access Users" ON public.users;
+DROP POLICY IF EXISTS "Public Access Activities" ON public.activities;
+DROP POLICY IF EXISTS "Public Access Enrollments" ON public.enrollments;
 
--- USERS: Admins see all, Users see themselves
-create policy "Admins full access users" on public.users
-  for all using ( auth.email() in (select email from public.users where system_role = 'Administrador') );
+-- 8. RE-ENABLE SECURITY WITH CLEAN STATE
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
 
-create policy "Users read own profile" on public.users
-  for select using ( email = auth.email() );
-
--- ACTIVITIES: Public read for students, Write for Admins/Asesores
-create policy "Public read activities" on public.activities
-  for select using ( true );
-
-create policy "Staff manage activities" on public.activities
-  for all using ( 
-    auth.email() in (select email from public.users where system_role in ('Administrador', 'Asesor'))
-  );
-
--- ENROLLMENTS: Users read own, Staff read all
-create policy "Users read own enrollments" on public.enrollments
-  for select using ( 
-    user_rut in (select rut from public.users where email = auth.email()) 
-  );
-
-create policy "Staff manage enrollments" on public.enrollments
-  for all using ( 
-    auth.email() in (select email from public.users where system_role in ('Administrador', 'Asesor'))
-  );
-
+-- 9. CREATE NON-RECURSIVE POLICIES (DEMO MODE)
+-- These policies use (true) which avoids querying the table itself
+CREATE POLICY "Public Access Users" ON public.users FOR ALL USING (true);
+CREATE POLICY "Public Access Activities" ON public.activities FOR ALL USING (true);
+CREATE POLICY "Public Access Enrollments" ON public.enrollments FOR ALL USING (true);
 `;

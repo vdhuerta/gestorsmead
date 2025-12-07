@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { UserRole, User } from '../types';
 import { useData } from '../context/DataContext';
@@ -308,7 +307,7 @@ export const ParticipantManager: React.FC = () => {
     const reader = new FileReader();
     const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
 
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       let rows: any[][] = [];
       
       if (isExcel) {
@@ -380,7 +379,7 @@ export const ParticipantManager: React.FC = () => {
         }
       }
 
-      const result = upsertUsers(validUsers);
+      const result = await upsertUsers(validUsers);
       
       setFileReport({
           total: processedRows,

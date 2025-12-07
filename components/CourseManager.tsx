@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { useData } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole } from '../types';
@@ -607,7 +606,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       const reader = new FileReader();
       const isExcel = uploadFile.name.endsWith('.xlsx') || uploadFile.name.endsWith('.xls');
 
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
           let rows: any[][] = [];
           if (isExcel) {
               const data = e.target?.result;
@@ -660,7 +659,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           }
 
           upsertUsers(usersToUpsert);
-          const result = bulkEnroll(rutsToEnroll, selectedCourseId);
+          const result = await bulkEnroll(rutsToEnroll, selectedCourseId);
           setEnrollMsg({ type: 'success', text: `¡Éxito! Procesado Masivo: ${result.success} nuevos inscritos, ${result.skipped} ya estaban en el curso.` });
           setUploadFile(null);
       };
@@ -856,7 +855,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                           
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Modalidad *</label>
-                            <select value={formData.modalidad} onChange={e => setFormData({...formData, modalidad: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#647FBC]">
+                            <select value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#647FBC]">
                                 {listModalities.map(mod => <option key={mod} value={mod}>{mod}</option>)}
                             </select>
                           </div>
