@@ -46,8 +46,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     setError(null); // Reset error state on retry
     try {
-        // 1. Fetch Users
-        const usersResponse = await supabase.from('users').select('*');
+        // 1. Fetch Users - FIX: Added range to bypass default 1000 limit
+        const usersResponse = await supabase.from('users').select('*').range(0, 9999);
         if (usersResponse.error) {
             console.error("Supabase Error (Users):", usersResponse.error.message);
             throw usersResponse.error; // Throw to catch block to set global error
@@ -75,8 +75,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }));
         setUsers(mappedUsers);
 
-        // 2. Fetch Activities
-        const actsResponse = await supabase.from('activities').select('*');
+        // 2. Fetch Activities - FIX: Added range
+        const actsResponse = await supabase.from('activities').select('*').range(0, 9999);
         if (actsResponse.error) {
              throw actsResponse.error;
         }
@@ -103,8 +103,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }));
         setActivities(mappedActs);
 
-        // 3. Fetch Enrollments
-        const enrResponse = await supabase.from('enrollments').select('*');
+        // 3. Fetch Enrollments - FIX: Added range
+        const enrResponse = await supabase.from('enrollments').select('*').range(0, 9999);
         if (enrResponse.error) {
              throw enrResponse.error;
         }
@@ -139,7 +139,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // --- ACTIONS ---
 
   const addActivity = async (activity: Activity) => {
-    // 1. Optimistic Update
+    // 1. Optimistic Update (UI reacts instantly)
     setActivities(prev => {
         const idx = prev.findIndex(a => a.id === activity.id);
         if (idx >= 0) {
@@ -176,6 +176,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (error) {
         console.error("Error saving activity:", error.message, JSON.stringify(error));
         alert(`Error guardando actividad: ${error.message}`);
+        fetchData(); // Rollback/Refresh on error
     }
   };
 
@@ -184,23 +185,26 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteUser = async (rut: string) => {
+      // Optimistic delete
       setUsers(prev => prev.filter(u => u.rut !== rut));
       const { error } = await supabase.from('users').delete().eq('rut', rut);
-      if (error) console.error("Error deleting user:", error.message);
+      if (error) {
+          console.error("Error deleting user:", error.message);
+          fetchData(); // Rollback if failed
+      }
   };
 
+  // FIX: Removed Optimistic Update for Bulk operations to prevent "Ghost Data"
   const upsertUsers = async (incomingUsers: User[]) => {
     let added = 0;
     let updated = 0;
-
-    // 1. Optimistic Update Logic
-    const nextUsers = [...users];
     const dbPayloads: any[] = [];
 
+    // Calculate stats just for reporting
     incomingUsers.forEach(incUser => {
-        const existingIdx = nextUsers.findIndex(u => u.rut === incUser.rut);
-        
-        // Prepare DB Payload (snake_case)
+        const exists = users.some(u => u.rut === incUser.rut);
+        if (exists) updated++; else added++;
+
         dbPayloads.push({
             rut: incUser.rut,
             names: incUser.names,
@@ -210,7 +214,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             phone: incUser.phone,
             photo_url: incUser.photoUrl,
             system_role: incUser.systemRole,
-            password: incUser.password, // Added password here too
+            password: incUser.password,
             academic_role: incUser.academicRole,
             faculty: incUser.faculty,
             department: incUser.department,
@@ -220,50 +224,32 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             campus: incUser.campus,
             title: incUser.title
         });
-
-        if (existingIdx >= 0) {
-            nextUsers[existingIdx] = { ...nextUsers[existingIdx], ...incUser };
-            updated++;
-        } else {
-            nextUsers.push(incUser);
-            added++;
-        }
     });
 
-    setUsers(nextUsers);
-
-    // 2. DB Upsert (Bulk)
     if (dbPayloads.length > 0) {
-        // Enforce PK upsert (RUT)
+        // DB Operation FIRST
         const { error } = await supabase.from('users').upsert(dbPayloads, { onConflict: 'rut' });
         
         if (error) {
             console.error("Error upserting users:", error.message, JSON.stringify(error));
             if (error.code === '23505') {
-                 // duplicate key value violates unique constraint "users_email_key"
-                 alert("⚠️ ERROR CRÍTICO DE BASE DE DATOS:\n\nSe detectaron correos electrónicos duplicados en la carga masiva.\nSupabase rechaza usuarios diferentes (RUTs distintos) compartiendo el mismo email.\n\nSOLUCIÓN: Vaya a la pestaña 'Arquitectura' y ejecute el nuevo Script SQL de Reparación que elimina esta restricción.");
+                 alert("⚠️ ERROR CRÍTICO DE BASE DE DATOS:\n\nSe detectaron correos electrónicos duplicados.\nLa operación fue rechazada por seguridad.");
             } else {
                  alert(`Error al guardar en base de datos: ${error.message}`);
             }
+            return { added: 0, updated: 0 }; // Report failure
         }
+        
+        // Refresh local state only on success
+        await fetchData();
     }
 
     return { added, updated };
   };
 
   const enrollUser = async (rut: string, activityId: string) => {
+      // Check local logic first
       if (enrollments.some(e => e.rut === rut && e.activityId === activityId)) return;
-
-      const newEnrollment: Enrollment = {
-          id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(), 
-          rut,
-          activityId,
-          state: ActivityState.INSCRITO,
-          grades: [],
-          attendancePercentage: 0
-      };
-
-      setEnrollments(prev => [...prev, newEnrollment]);
 
       const { data, error } = await supabase.from('enrollments').insert({
           user_rut: rut,
@@ -271,36 +257,35 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           state: 'Inscrito'
       }).select();
 
-      if (data && data[0]) {
-          setEnrollments(prev => prev.map(e => e.rut === rut && e.activityId === activityId ? { ...e, id: data[0].id } : e));
-      }
       if (error) {
-          console.error("Error enrolling user:", error.message, JSON.stringify(error));
+          console.error("Error enrolling user:", error.message);
+          alert("Error al matricular: " + error.message);
+      } else {
+          // Add to local state only if DB confirms
+          const newEnrollment: Enrollment = {
+              id: data[0].id,
+              rut,
+              activityId,
+              state: ActivityState.INSCRITO,
+              grades: [],
+              attendancePercentage: 0
+          };
+          setEnrollments(prev => [...prev, newEnrollment]);
       }
   };
 
+  // FIX: Removed Optimistic Update to prevent inconsistency
   const bulkEnroll = async (ruts: string[], activityId: string) => {
       let success = 0;
       let skipped = 0;
       const dbPayloads: any[] = [];
-      const localNewEnrollments: Enrollment[] = [];
 
       ruts.forEach(rut => {
+          // Check against local cache to count skipped, but DB will also enforce unique constraint
           if (enrollments.some(e => e.rut === rut && e.activityId === activityId)) {
               skipped++;
           } else {
               success++;
-              const tempId = crypto.randomUUID ? crypto.randomUUID() : `temp-${Math.random()}`;
-              
-              localNewEnrollments.push({
-                  id: tempId,
-                  rut,
-                  activityId,
-                  state: ActivityState.INSCRITO,
-                  grades: [],
-                  attendancePercentage: 0
-              });
-
               dbPayloads.push({
                   user_rut: rut,
                   activity_id: activityId,
@@ -309,13 +294,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
       });
 
-      if (localNewEnrollments.length > 0) {
-          setEnrollments(prev => [...prev, ...localNewEnrollments]);
+      if (dbPayloads.length > 0) {
           const { error } = await supabase.from('enrollments').insert(dbPayloads);
           if (error) {
               console.error("Bulk enroll error:", error.message, JSON.stringify(error));
+              alert("Error en carga masiva a la BD: " + error.message);
+              // Do not update local state if failed
+              return { success: 0, skipped: ruts.length };
           } else {
-              fetchData(); 
+              // On success, refresh data to get IDs and ensure consistency
+              await fetchData(); 
           }
       }
 
@@ -323,6 +311,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateEnrollment = async (id: string, updates: Partial<Enrollment>) => {
+      // Optimistic update allowed for single cell edits (grades/attendance) for UI responsiveness
       setEnrollments(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
 
       const dbUpdates: any = {};
@@ -340,7 +329,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (updates.attendanceSession6 !== undefined) dbUpdates.attendance_session_6 = updates.attendanceSession6;
 
       const { error } = await supabase.from('enrollments').update(dbUpdates).eq('id', id);
-      if (error) console.error("Error updating enrollment:", error.message);
+      if (error) {
+          console.error("Error updating enrollment:", error.message);
+          // Ideally revert here, but for grades keeping it optimistic is usually UX preferred unless critical error
+          alert("Error guardando nota/asistencia: " + error.message);
+      }
   };
 
   const updateConfig = (newConfig: SystemConfig) => {
