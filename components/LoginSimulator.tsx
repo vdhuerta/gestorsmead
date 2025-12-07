@@ -127,7 +127,8 @@ export const LoginSimulator: React.FC<LoginSimulatorProps> = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen bg-[#F9F8F6] flex items-center justify-center p-4">
-      <div className="relative bg-white rounded-2xl shadow-xl max-w-md w-full border border-[#91ADC8]/30 mt-12 overflow-hidden">
+      {/* SE ELIMINÓ overflow-hidden DE AQUÍ PARA QUE EL LOGO NO SE CORTE */}
+      <div className="relative bg-white rounded-2xl shadow-xl max-w-md w-full border border-[#91ADC8]/30 mt-12">
         
         <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 z-10">
             <div className="w-24 h-24 bg-white rounded-full shadow-lg flex items-center justify-center p-1 border-4 border-[#F9F8F6]">
@@ -139,7 +140,7 @@ export const LoginSimulator: React.FC<LoginSimulatorProps> = ({ onLogin }) => {
             </div>
         </div>
 
-        <div className="bg-[#647FBC] p-8 pt-16 text-center flex flex-col items-center">
+        <div className="bg-[#647FBC] p-8 pt-16 text-center flex flex-col items-center rounded-t-2xl">
           <h1 className="text-2xl font-bold text-white mb-1">GestorSMEAD</h1>
           <p className="text-blue-100 text-sm">Plataforma de Gestión Académica</p>
         </div>

@@ -145,7 +145,8 @@ export const AdvisorManager: React.FC = () => {
       upsertUsers([advisorPayload]);
       setMessage({ type: 'success', text: isEditing ? 'Perfil de Asesor actualizado.' : 'Nuevo Asesor registrado exitosamente.' });
       
-      if (!isEditing) resetForm();
+      // FIX: Always reset form after successful submit to exit edit mode
+      resetForm();
       setTimeout(() => setMessage(null), 3000);
   };
 
@@ -351,7 +352,7 @@ export const AdvisorManager: React.FC = () => {
                                         <p className="text-xs text-slate-500 font-mono mb-1">{adv.rut}</p>
                                         
                                         <div className="flex items-center gap-1 mb-2">
-                                            <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                                            <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 00-2-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
                                             <p className="text-xs text-blue-600 font-medium truncate">{adv.email}</p>
                                         </div>
 

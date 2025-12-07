@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { useData } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole } from '../types';
@@ -1291,7 +1292,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                   <th className="px-2 py-3 text-center w-20">Final</th>
                                                   {/* Reduced padding/width for Status and Certificate */}
                                                   <th className="px-1 py-3 text-center w-24 text-xs">Estado</th>
-                                                  <th className="px-1 py-3 text-center w-32 text-xs">Cert.</th>
+                                                  <th className="px-1 py-3 text-center w-32 text-xs">Certificado</th>
                                               </tr>
                                           </thead>
                                           <tbody className="divide-y divide-slate-100">

@@ -13,7 +13,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Inicio', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR, UserRole.ESTUDIANTE] },
-  { id: 'participants', label: 'Base Maestra Estudiantes', allowedRoles: [UserRole.ADMIN] }, 
+  { id: 'participants', label: 'Base Maestra', allowedRoles: [UserRole.ADMIN] }, 
   { id: 'advisors', label: 'Gestión Asesores', allowedRoles: [UserRole.ADMIN] }, 
   { id: 'courses', label: 'Gestión Cursos', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] },
   { id: 'generalActivities', label: 'Gestión Actividades', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] }, 
@@ -93,7 +93,7 @@ export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabCh
                 key={tab.id}
                 onClick={() => onTabChange(tab.id)}
                 title={tab.label}
-                className={`px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center justify-center ${
+                className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center ${
                   activeTab === tab.id 
                     ? 'bg-[#647FBC] text-white shadow-md' 
                     : 'text-slate-500 hover:text-[#647FBC] hover:bg-[#647FBC]/10'
