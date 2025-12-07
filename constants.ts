@@ -721,3 +721,151 @@ describe('RBAC Protection', () => {
 });
   `
 };
+
+// --- SUPABASE MIGRATION SQL ---
+
+export const SUPABASE_SQL_SCRIPT = `
+-- ====================================================================
+-- SUPABASE MIGRATION SCRIPT FOR GESTOR SMEAD
+-- Version: 1.0.0
+-- Description: Creates schema for Users, Activities, and Enrollments
+-- with Row Level Security (RLS) enabled.
+-- ====================================================================
+
+-- 1. Enable UUID Extension (Standard for Supabase IDs)
+create extension if not exists "uuid-ossp";
+
+-- 2. ENUMS (Match TypeScript Enums)
+create type user_role as enum ('Administrador', 'Asesor', 'Visita');
+create type activity_category as enum ('ACADEMIC', 'GENERAL');
+create type activity_state as enum ('Inscrito', 'Aprobado', 'Reprobado', 'No Cursado', 'Pendiente', 'En Curso');
+
+-- 3. USERS TABLE (Base Maestra)
+-- Note: In a real Supabase app, you might sync this with auth.users via triggers.
+create table public.users (
+  rut text primary key, -- Business Key
+  names text not null,
+  paternal_surname text not null,
+  maternal_surname text,
+  email text unique not null,
+  phone text,
+  photo_url text,
+  system_role user_role default 'Visita'::user_role,
+  
+  -- Academic/Administrative Fields
+  academic_role text,
+  faculty text,
+  department text,
+  career text,
+  contract_type text,
+  teaching_semester text,
+  campus text,
+  title text, -- For Advisors
+
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- 4. ACTIVITIES TABLE (Cursos y Charlas)
+create table public.activities (
+  id text primary key, -- 'CODE-YEAR-SEM-VER' (Natural Key)
+  category activity_category default 'ACADEMIC',
+  internal_code text,
+  activity_type text, -- 'Taller', 'Charla', etc.
+  year int,
+  academic_period text,
+  name text not null,
+  version text,
+  modality text,
+  hours int default 0,
+  
+  -- Management
+  module_count int default 0,
+  evaluation_count int default 3,
+  
+  -- Logistics
+  start_date date,
+  end_date date,
+  relator text,
+  
+  -- Links (Stored as JSON or Text columns)
+  link_resources text,
+  class_link text,
+  evaluation_link text,
+  
+  created_at timestamptz default now()
+);
+
+-- 5. ENROLLMENTS TABLE (Matrículas)
+create table public.enrollments (
+  id uuid primary key default uuid_generate_v4(),
+  user_rut text not null references public.users(rut) on delete restrict,
+  activity_id text not null references public.activities(id) on delete cascade,
+  
+  state activity_state default 'Inscrito',
+  
+  -- Academic Performance
+  grades numeric[] default '{}', -- Array of grades
+  final_grade numeric(3,1),
+  
+  -- Attendance Logic
+  attendance_session_1 boolean default false,
+  attendance_session_2 boolean default false,
+  attendance_session_3 boolean default false,
+  attendance_session_4 boolean default false,
+  attendance_session_5 boolean default false,
+  attendance_session_6 boolean default false,
+  attendance_percentage int default 0,
+  
+  -- Feedback
+  observation text,
+  situation text,
+  
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+
+  -- Constraint: Prevent duplicate enrollment in same activity
+  unique(user_rut, activity_id)
+);
+
+-- 6. INDEXES FOR PERFORMANCE
+create index idx_users_email on public.users(email);
+create index idx_activities_year on public.activities(year);
+create index idx_enrollments_activity on public.enrollments(activity_id);
+create index idx_enrollments_rut on public.enrollments(user_rut);
+
+-- 7. ENABLE ROW LEVEL SECURITY (RLS)
+alter table public.users enable row level security;
+alter table public.activities enable row level security;
+alter table public.enrollments enable row level security;
+
+-- 8. RLS POLICIES (Simplified Examples)
+
+-- USERS: Admins see all, Users see themselves
+create policy "Admins full access users" on public.users
+  for all using ( auth.email() in (select email from public.users where system_role = 'Administrador') );
+
+create policy "Users read own profile" on public.users
+  for select using ( email = auth.email() );
+
+-- ACTIVITIES: Public read for students, Write for Admins/Asesores
+create policy "Public read activities" on public.activities
+  for select using ( true );
+
+create policy "Staff manage activities" on public.activities
+  for all using ( 
+    auth.email() in (select email from public.users where system_role in ('Administrador', 'Asesor'))
+  );
+
+-- ENROLLMENTS: Users read own, Staff read all
+create policy "Users read own enrollments" on public.enrollments
+  for select using ( 
+    user_rut in (select rut from public.users where email = auth.email()) 
+  );
+
+create policy "Staff manage enrollments" on public.enrollments
+  for all using ( 
+    auth.email() in (select email from public.users where system_role in ('Administrador', 'Asesor'))
+  );
+
+`;
