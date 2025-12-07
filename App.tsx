@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User } from './types';
 import { LoginSimulator } from './components/LoginSimulator';
 import { RoleNavbar, TabType } from './components/RoleNavbar';
@@ -17,6 +17,7 @@ import { GeneralActivityManager } from './components/GeneralActivityManager'; //
 import { ParticipantManager } from './components/ParticipantManager';
 import { AdvisorManager } from './components/AdvisorManager'; // Nuevo Componente
 import { DataProvider, useData } from './context/DataContext';
+import { checkConnection } from './services/supabaseClient'; // Importar checker
 
 // Color Mapping for Visuals - Updated to New Institutional Palette
 const TABLE_COLORS = [
@@ -30,14 +31,31 @@ const MainContent: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const { resetData, error } = useData();
+  
+  // Estado de conexión
+  const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'error'>('checking');
+  const [connectionMsg, setConnectionMsg] = useState('');
+
+  // Verificar conexión al montar
+  useEffect(() => {
+      const verify = async () => {
+          const result = await checkConnection();
+          if (result.success) {
+              setConnectionStatus('connected');
+          } else {
+              setConnectionStatus('error');
+              setConnectionMsg(result.message || 'Error desconocido');
+          }
+      };
+      verify();
+  }, []);
 
   const handleLogout = () => {
     setUser(null);
     setActiveTab('dashboard');
   };
 
-  // --- CRITICAL DATABASE ERROR SCREEN ---
-  // If "infinite recursion" (code 42P17) or other critical errors occur, show Recovery Mode
+  // --- CRITICAL DATABASE ERROR SCREEN (Recursion) ---
   if (error && (error.includes("infinite recursion") || error.includes("42P17"))) {
       return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-50 p-6 animate-fadeIn">
@@ -49,7 +67,6 @@ const MainContent: React.FC = () => {
                       </h1>
                       <p className="text-slate-600 mt-2 text-lg">
                           Se ha detectado un conflicto de <strong>Recursión Infinita</strong> en las políticas de seguridad de Supabase.
-                          Esto impide que la aplicación cargue datos.
                       </p>
                   </div>
                   
@@ -84,7 +101,22 @@ const MainContent: React.FC = () => {
 
   // 1. Si no hay usuario, mostrar Login
   if (!user) {
-    return <LoginSimulator onLogin={setUser} />;
+    return (
+        <>
+            {/* CONNECTION STATUS BAR */}
+            {connectionStatus === 'error' && (
+                <div className="bg-red-600 text-white text-xs py-2 px-4 text-center font-bold relative z-50">
+                    ⚠️ Error de Conexión a Supabase: {connectionMsg}. Revisa services/supabaseClient.ts
+                </div>
+            )}
+            {connectionStatus === 'connected' && (
+                <div className="bg-emerald-600 text-white text-[10px] py-1 px-4 text-center font-bold relative z-50">
+                    ✓ Conectado a Supabase
+                </div>
+            )}
+            <LoginSimulator onLogin={setUser} />
+        </>
+    );
   }
 
   // 2. Renderizado condicional del contenido principal
@@ -173,6 +205,15 @@ const MainContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#F9F8F6] text-slate-900 font-sans pb-10">
+      
+      {/* CONNECTION ERROR BANNER */}
+      {connectionStatus === 'error' && (
+          <div className="bg-red-600 text-white px-4 py-2 text-center text-sm font-bold shadow-md relative z-50">
+              ⚠️ Alerta: No se pudo conectar a la Base de Datos. Los cambios NO se guardarán. 
+              <br/><span className="font-normal opacity-90 text-xs">Error: {connectionMsg}</span>
+          </div>
+      )}
+
       <RoleNavbar 
         user={user} 
         activeTab={activeTab} 
@@ -187,9 +228,9 @@ const MainContent: React.FC = () => {
         <div className="fixed bottom-6 left-6 z-50 group flex items-center gap-3 animate-fadeIn">
             <div className="relative">
                 {/* Pulse Animation Ring (Thicker, On/Off effect) */}
-                <div className="absolute -inset-1 rounded-full border-4 border-green-500/60 animate-pulse"></div>
+                <div className={`absolute -inset-1 rounded-full border-4 ${connectionStatus === 'error' ? 'border-red-500/60' : 'border-green-500/60'} animate-pulse`}></div>
                 {/* Static Ring (Thicker) */}
-                <div className="absolute inset-0 rounded-full border-4 border-green-500"></div>
+                <div className={`absolute inset-0 rounded-full border-4 ${connectionStatus === 'error' ? 'border-red-500' : 'border-green-500'}`}></div>
                 
                 <div className="relative w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-xl bg-slate-200">
                     {user.photoUrl ? (
@@ -205,7 +246,9 @@ const MainContent: React.FC = () => {
             {/* Tooltip / Name Label */}
             <div className="hidden group-hover:block bg-slate-800 text-white text-xs py-1 px-3 rounded shadow-lg transition-opacity whitespace-nowrap">
                 <p className="font-bold">{user.names}</p>
-                <p className="text-[10px] text-green-400">● En Línea</p>
+                <p className={`text-[10px] ${connectionStatus === 'error' ? 'text-red-400' : 'text-green-400'}`}>
+                    ● {connectionStatus === 'error' ? 'Sin Conexión' : 'En Línea'}
+                </p>
             </div>
         </div>
 
