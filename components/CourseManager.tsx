@@ -65,6 +65,21 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('enrollment');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
+  // --- AUTO-JUMP LOGIC FROM DASHBOARD ---
+  useEffect(() => {
+      const jumpId = localStorage.getItem('jumpto_course_id');
+      if (jumpId && academicActivities.length > 0) {
+          // Verify if exists
+          const exists = academicActivities.find(a => a.id === jumpId);
+          if (exists) {
+              setSelectedCourseId(jumpId);
+              setView('details');
+          }
+          // Clear intent
+          localStorage.removeItem('jumpto_course_id');
+      }
+  }, [academicActivities]); // Depend on activities loaded
+
   // --- CREATE FORM STATE ---
   const [formData, setFormData] = useState({
     internalCode: '',

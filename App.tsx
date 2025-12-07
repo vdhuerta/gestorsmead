@@ -123,7 +123,7 @@ const MainContent: React.FC = () => {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard user={user} />;
+        return <Dashboard user={user} onNavigate={setActiveTab} />;
       
       case 'courses':
         // Gestion Cursos Académicos

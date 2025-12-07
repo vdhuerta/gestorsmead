@@ -114,6 +114,18 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         setView('edit');
     };
 
+    // --- AUTO-JUMP LOGIC FROM DASHBOARD ---
+    useEffect(() => {
+        const jumpId = localStorage.getItem('jumpto_activity_id');
+        if (jumpId && generalActivities.length > 0) {
+            const found = generalActivities.find(a => a.id === jumpId);
+            if (found) {
+                handleEdit(found);
+            }
+            localStorage.removeItem('jumpto_activity_id');
+        }
+    }, [generalActivities]);
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         

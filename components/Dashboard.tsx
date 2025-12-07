@@ -5,6 +5,7 @@ import { DataExporter } from './DataExporter';
 import { useData } from '../context/DataContext';
 import { SmartSelect } from './SmartSelect';
 import { FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST, ACADEMIC_ROLES } from '../constants';
+import { TabType } from './RoleNavbar'; // Import TabType for navigation
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area
@@ -14,6 +15,7 @@ import { jsPDF } from 'jspdf';
 
 interface DashboardProps {
   user: User;
+  onNavigate?: (tab: TabType) => void; // Prop para navegación entre pestañas
 }
 
 // Colores Institucionales
@@ -48,7 +50,7 @@ const formatDateCL = (dateStr: string | undefined): string => {
     return `${d}-${m}-${y}`;
 };
 
-export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
   const { activities, users, enrollments, enrollUser, upsertUsers, config } = useData();
   
   // State for Asesor View
@@ -437,6 +439,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
     return (
         <div className="animate-fadeIn space-y-12">
+            {/* ... (Previous content) ... */}
             <div className="bg-gradient-to-r from-[#AED6CF] to-teal-100 rounded-2xl p-8 shadow-sm text-center">
                 <h2 className="text-3xl font-bold text-teal-800 mb-2">Portal del Estudiante</h2>
                 <p className="text-teal-700 max-w-2xl mx-auto">
@@ -520,9 +523,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                     </div>
                 )}
             </div>
-
-            {/* 3. CALENDARIO - (Same as before) */}
-            {/* ... */}
         </div>
     );
   }
@@ -613,15 +613,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                   const isMyCourse = course.relator && user.paternalSurname && course.relator.toLowerCase().includes(user.paternalSurname.toLowerCase());
                                   
                                   return (
-                                      <tr key={course.id} className={`transition-colors ${isMyCourse ? 'bg-blue-50/40 hover:bg-blue-50' : 'hover:bg-slate-50'}`}>
+                                      <tr 
+                                        key={course.id} 
+                                        onClick={() => {
+                                            if (onNavigate) {
+                                                localStorage.setItem('jumpto_course_id', course.id);
+                                                onNavigate('courses');
+                                            }
+                                        }}
+                                        title="Click para gestionar este curso"
+                                        className={`transition-colors cursor-pointer group ${isMyCourse ? 'bg-blue-50/40 hover:bg-blue-100' : 'hover:bg-blue-50'}`}
+                                      >
                                           <td className="px-6 py-4 font-mono text-slate-500 text-xs">{course.internalCode || course.id}</td>
-                                          <td className="px-6 py-4 font-medium text-slate-800">{course.name}</td>
+                                          <td className="px-6 py-4 font-medium text-slate-800 group-hover:text-blue-700 transition-colors">{course.name}</td>
                                           <td className="px-6 py-4 text-slate-600">
                                               {course.relator}
                                               {isMyCourse && <span className="ml-2 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">MIO</span>}
                                           </td>
                                           <td className="px-6 py-4 text-slate-500">{course.modality}</td>
-                                          <td className="px-6 py-4 text-center font-bold text-[#647FBC]">{enrolledCount}</td>
+                                          <td className="px-6 py-4 text-center font-bold text-[#647FBC] group-hover:scale-110 transition-transform">{enrolledCount}</td>
                                       </tr>
                                   );
                               })}
@@ -657,18 +667,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                               {allExtensionActivities.map(act => (
-                                  <tr key={act.id} className="hover:bg-slate-50 transition-colors">
+                                  <tr 
+                                    key={act.id} 
+                                    onClick={() => {
+                                        if (onNavigate) {
+                                            localStorage.setItem('jumpto_activity_id', act.id);
+                                            onNavigate('generalActivities');
+                                        }
+                                    }}
+                                    title="Click para gestionar esta actividad"
+                                    className="hover:bg-slate-50 transition-colors cursor-pointer group"
+                                  >
                                       <td className="px-6 py-4">
-                                          <span className="bg-teal-50 text-teal-700 px-2 py-1 rounded text-xs font-bold border border-teal-100">
+                                          <span className="bg-teal-50 text-teal-700 px-2 py-1 rounded text-xs font-bold border border-teal-100 group-hover:bg-teal-100">
                                               {act.activityType || 'General'}
                                           </span>
                                       </td>
-                                      <td className="px-6 py-4 font-medium text-slate-800">{act.name}</td>
+                                      <td className="px-6 py-4 font-medium text-slate-800 group-hover:text-teal-700 transition-colors">{act.name}</td>
                                       <td className="px-6 py-4 text-slate-600">{act.relator || 'N/A'}</td>
                                       <td className="px-6 py-4 text-slate-600">{formatDateCL(act.startDate)}</td>
                                       <td className="px-6 py-4 text-right">
                                           {act.linkResources ? (
-                                              <a href={act.linkResources} target="_blank" rel="noreferrer" className="text-teal-600 hover:text-teal-800 font-bold text-xs underline">
+                                              <a 
+                                                href={act.linkResources} 
+                                                target="_blank" 
+                                                rel="noreferrer" 
+                                                className="text-teal-600 hover:text-teal-800 font-bold text-xs underline z-10 relative"
+                                                onClick={(e) => e.stopPropagation()} // Prevent row click
+                                              >
                                                   Ver Recursos
                                               </a>
                                           ) : (
