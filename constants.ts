@@ -359,7 +359,7 @@ export const FULL_JSON_MODEL = {
 
 export const SUPABASE_SQL_SCRIPT = `
 -- ====================================================================
--- SCRIPT DE REINICIO TOTAL - MODELO DE DATOS V3
+-- SCRIPT DE REINICIO TOTAL - MODELO DE DATOS V3 (REPARADO)
 -- Ejecuta este script para actualizar la estructura de la base de datos.
 -- ====================================================================
 
@@ -384,7 +384,7 @@ CREATE TABLE IF NOT EXISTS public.users (
     title text
 );
 
--- CORRECCIÓN CRÍTICA DE LOGIN
+-- CORRECCIÓN CRÍTICA DE LOGIN Y ROLES
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password text;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS system_role text DEFAULT 'Estudiante';
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS photo_url text;
@@ -421,7 +421,7 @@ CREATE TABLE IF NOT EXISTS public.enrollments (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     user_rut text REFERENCES public.users(rut) ON DELETE RESTRICT,
     activity_id text REFERENCES public.activities(id) ON DELETE RESTRICT,
-    state text DEFAULT 'Inscrito',
+    state text DEFAULT 'Inscrito', -- CRITICO: Columna 'state' requerida por el código
     grades decimal[] DEFAULT '{}',
     final_grade decimal,
     attendance_percentage integer DEFAULT 0,
@@ -435,6 +435,9 @@ CREATE TABLE IF NOT EXISTS public.enrollments (
     situation text,
     UNIQUE(user_rut, activity_id)
 );
+
+-- CORRECCIÓN CRÍTICA DE COLUMNA FALTANTE
+ALTER TABLE public.enrollments ADD COLUMN IF NOT EXISTS state text DEFAULT 'Inscrito';
 
 -- 4. SEGURIDAD (RLS) - PERMISIVA
 ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
@@ -452,6 +455,9 @@ ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Permitir Todo Users" ON public.users FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Permitir Todo Activities" ON public.activities FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Permitir Todo Enrollments" ON public.enrollments FOR ALL USING (true) WITH CHECK (true);
+
+-- 5. RECARGAR CACHÉ DE ESQUEMA (Para error 'Could not find column')
+NOTIFY pgrst, 'reload config';
 `;
 
 export const DATABASE_STRATEGY = {

@@ -200,8 +200,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let updated = 0;
     const dbPayloads: any[] = [];
 
+    // CRITICAL FIX: Deduplicate incoming users based on RUT to prevent "ON CONFLICT DO UPDATE command cannot affect row a second time"
+    const uniqueIncomingUsers = Array.from(new Map(incomingUsers.map(u => [u.rut, u])).values());
+
     // Calculate stats just for reporting
-    incomingUsers.forEach(incUser => {
+    uniqueIncomingUsers.forEach(incUser => {
         const exists = users.some(u => u.rut === incUser.rut);
         if (exists) updated++; else added++;
 
@@ -278,9 +281,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const bulkEnroll = async (ruts: string[], activityId: string) => {
       let success = 0;
       let skipped = 0;
+      
+      // CRITICAL FIX: Deduplicate RUTs to avoid batch insert errors
+      const uniqueRuts = [...new Set(ruts)];
       const dbPayloads: any[] = [];
 
-      ruts.forEach(rut => {
+      uniqueRuts.forEach(rut => {
           // Check against local cache to count skipped, but DB will also enforce unique constraint
           if (enrollments.some(e => e.rut === rut && e.activityId === activityId)) {
               skipped++;
@@ -300,7 +306,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               console.error("Bulk enroll error:", error.message, JSON.stringify(error));
               alert("Error en carga masiva a la BD: " + error.message);
               // Do not update local state if failed
-              return { success: 0, skipped: ruts.length };
+              return { success: 0, skipped: uniqueRuts.length };
           } else {
               // On success, refresh data to get IDs and ensure consistency
               await fetchData(); 
