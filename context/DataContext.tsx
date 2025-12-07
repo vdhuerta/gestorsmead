@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Activity, Enrollment, SystemConfig, ActivityState } from '../types';
 import { MOCK_CONFIG } from '../constants';
@@ -62,6 +63,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             phone: u.phone,
             photoUrl: u.photo_url,
             systemRole: u.system_role,
+            password: u.password, // CRITICAL FIX: Include password for auth
             academicRole: u.academic_role,
             faculty: u.faculty,
             department: u.department,
@@ -208,6 +210,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             phone: incUser.phone,
             photo_url: incUser.photoUrl,
             system_role: incUser.systemRole,
+            password: incUser.password, // Added password here too
             academic_role: incUser.academicRole,
             faculty: incUser.faculty,
             department: incUser.department,

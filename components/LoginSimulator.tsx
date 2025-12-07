@@ -1,14 +1,15 @@
 
 import React, { useState } from 'react';
 import { UserRole, User } from '../types';
-import { useData } from '../context/DataContext'; // Usar contexto real para validar passwords
+import { useData } from '../context/DataContext';
+import { supabase } from '../services/supabaseClient'; // Importar cliente para fallback
 
 interface LoginSimulatorProps {
   onLogin: (user: User) => void;
 }
 
 export const LoginSimulator: React.FC<LoginSimulatorProps> = ({ onLogin }) => {
-  const { users } = useData(); // Acceso a la base de datos real cargada en memoria
+  const { users } = useData(); 
   const [credentials, setCredentials] = useState({ email: '', password: '' });
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -19,14 +20,15 @@ export const LoginSimulator: React.FC<LoginSimulatorProps> = ({ onLogin }) => {
     setError(null);
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError(null);
 
-    setTimeout(() => {
+    try {
         const { email, password } = credentials;
 
-        // 1. VALIDACIÓN ADMINISTRADOR MAESTRO (Hardcoded para seguridad de acceso)
+        // 1. VALIDACIÓN ADMINISTRADOR MAESTRO (Hardcoded para seguridad de acceso/rescate)
         if (email === 'admin@upla.cl' && password === '112358') {
             const adminUser: User = {
                 rut: '1-9',
@@ -38,18 +40,56 @@ export const LoginSimulator: React.FC<LoginSimulatorProps> = ({ onLogin }) => {
                 photoUrl: 'https://github.com/vdhuerta/assets-aplications/blob/main/Foto%20Vi%CC%81ctor%20Huerta.JPG?raw=true'
             };
             onLogin(adminUser);
+            setIsLoading(false);
             return;
         }
 
-        // 2. VALIDACIÓN BASE DE DATOS (ASESORES)
-        const dbUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+        // 2. VALIDACIÓN BASE DE DATOS (ASESORES / ADMINS / DOCENTES)
+        
+        // A. Intento 1: Buscar en Memoria (Contexto Global)
+        // Esto es rápido, pero puede fallar si la carga inicial de "users" aún no termina.
+        let foundUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
 
-        if (dbUser) {
-            // Validar si tiene rol de Asesor o Admin
-            if (dbUser.systemRole === UserRole.ASESOR || dbUser.systemRole === UserRole.ADMIN) {
-                // Verificar password (simulación simple, en prod usar bcrypt)
-                if (dbUser.password === password) {
-                    onLogin(dbUser);
+        // B. Intento 2: Fallback directo a Supabase (Si no está en memoria)
+        // Esto soluciona el problema de latencia o listas incompletas en la carga inicial.
+        if (!foundUser) {
+             const { data, error } = await supabase
+                .from('users')
+                .select('*')
+                .ilike('email', email)
+                .single();
+             
+             if (data) {
+                 // Mapear de snake_case a camelCase para uso interno
+                 foundUser = {
+                     rut: data.rut,
+                     names: data.names,
+                     paternalSurname: data.paternal_surname,
+                     maternalSurname: data.maternal_surname,
+                     email: data.email,
+                     phone: data.phone,
+                     photoUrl: data.photo_url,
+                     systemRole: data.system_role,
+                     password: data.password, // Asegurar lectura de password
+                     academicRole: data.academic_role,
+                     faculty: data.faculty,
+                     department: data.department,
+                     career: data.career,
+                     contractType: data.contract_type,
+                     teachingSemester: data.teaching_semester,
+                     campus: data.campus,
+                     title: data.title
+                 };
+             }
+        }
+
+        // 3. Verificación de Credenciales
+        if (foundUser) {
+            // Validar si tiene rol permitido para Login con Password
+            if (foundUser.systemRole === UserRole.ASESOR || foundUser.systemRole === UserRole.ADMIN) {
+                // Verificar password
+                if (foundUser.password === password) {
+                    onLogin(foundUser);
                     return;
                 } else {
                     setError('Contraseña incorrecta.');
@@ -58,11 +98,15 @@ export const LoginSimulator: React.FC<LoginSimulatorProps> = ({ onLogin }) => {
                 setError('Este usuario no tiene perfil de administración. Ingrese como Estudiante.');
             }
         } else {
-            setError('Usuario no encontrado.');
+            setError('Usuario no encontrado en la Base de Datos.');
         }
 
+    } catch (err) {
+        console.error("Login Error:", err);
+        setError("Error de conexión al intentar validar credenciales.");
+    } finally {
         setIsLoading(false);
-    }, 800);
+    }
   };
 
   const handleGuestAccess = () => {
@@ -140,7 +184,17 @@ export const LoginSimulator: React.FC<LoginSimulatorProps> = ({ onLogin }) => {
               )}
 
               <button type="submit" disabled={isLoading} className="w-full bg-[#647FBC] text-white py-3 rounded-lg font-bold text-sm hover:bg-blue-800 transition-colors shadow-md disabled:opacity-70 flex justify-center items-center gap-2">
-                {isLoading ? 'Autenticando...' : 'Acceso Administrativo / Asesor'}
+                {isLoading ? (
+                    <>
+                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Verificando...
+                    </>
+                ) : (
+                    'Acceso Administrativo / Asesor'
+                )}
               </button>
           </form>
 
