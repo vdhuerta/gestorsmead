@@ -145,6 +145,10 @@ export const ParticipantManager: React.FC = () => {
         return;
     }
     
+    // Check existing role to avoid accidental downgrade manually
+    const existing = getUser(manualForm.rut);
+    const roleToSave = existing ? existing.systemRole : (manualForm.systemRole as UserRole);
+
     const newUser: User = {
         rut: manualForm.rut,
         names: manualForm.names,
@@ -159,12 +163,14 @@ export const ParticipantManager: React.FC = () => {
         teachingSemester: manualForm.teachingSemester,
         campus: manualForm.campus,
         academicRole: manualForm.academicRole,
-        systemRole: manualForm.systemRole as UserRole
+        systemRole: roleToSave,
+        password: existing?.password, // Preserve password
+        photoUrl: existing?.photoUrl  // Preserve photo
     };
 
     upsertUsers([newUser]);
     setManualStatus('success');
-    setStatusMsg(isEditing ? 'Estudiante actualizado.' : 'Estudiante creado.');
+    setStatusMsg(isEditing ? 'Usuario actualizado.' : 'Usuario creado.');
 
     setTimeout(() => {
         setManualStatus('idle');
@@ -220,13 +226,29 @@ export const ParticipantManager: React.FC = () => {
         const rowStrings = row.map(cell => cell ? String(cell).trim() : '');
         if (!rowStrings[0]) continue;
 
+        const rut = cleanRutFormat(rowStrings[0]);
+        
+        // --- CRITICAL PROTECTION LOGIC START ---
+        // Verificar si el usuario ya existe en la Base Maestra
+        const existingUser = users.find(u => u.rut === rut);
+
+        // Si existe y es ASESOR o ADMIN, mantenemos sus credenciales y roles.
+        // Si no existe, se asume ESTUDIANTE.
+        const protectedRole = existingUser ? existingUser.systemRole : UserRole.ESTUDIANTE;
+        const protectedPassword = existingUser ? existingUser.password : undefined;
+        const protectedPhoto = existingUser ? existingUser.photoUrl : undefined;
+        const protectedTitle = existingUser ? existingUser.title : undefined;
+        // --- CRITICAL PROTECTION LOGIC END ---
+
         validUsers.push({
-             rut: cleanRutFormat(rowStrings[0]),
+             rut: rut,
              names: rowStrings[1] || '',
              paternalSurname: rowStrings[2] || '',
              maternalSurname: rowStrings[3] || '',
              email: rowStrings[4] || '',
              phone: rowStrings[5] || '',
+             
+             // Datos Académicos (estos sí se actualizan desde el Excel)
              academicRole: normalizeValue(rowStrings[6], listRoles),
              faculty: normalizeValue(rowStrings[7], listFaculties),
              department: normalizeValue(rowStrings[8], listDepts),
@@ -234,7 +256,12 @@ export const ParticipantManager: React.FC = () => {
              contractType: normalizeValue(rowStrings[10], listContracts),
              teachingSemester: normalizeValue(rowStrings[11], listSemesters),
              campus: rowStrings[12] || '',
-             systemRole: UserRole.ESTUDIANTE
+             
+             // Datos Protegidos del Sistema
+             systemRole: protectedRole,
+             password: protectedPassword,
+             photoUrl: protectedPhoto,
+             title: protectedTitle
         });
       }
 
