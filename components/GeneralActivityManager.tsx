@@ -31,7 +31,7 @@ const formatDateCL = (dateStr: string | undefined): string => {
 };
 
 export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ currentUser }) => {
-    const { activities, addActivity } = useData();
+    const { activities, addActivity, deleteActivity } = useData();
     
     // FILTER: Only General Activities
     const generalActivities = activities.filter(a => a.category === 'GENERAL');
@@ -158,6 +158,21 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         
         setView('list');
         setSelectedActivity(null);
+    };
+
+    const handleDelete = async () => {
+        if (!selectedActivity) return;
+        
+        const password = prompt(`ADVERTENCIA: Está a punto de ELIMINAR la actividad:\n\n"${selectedActivity.name}"\n\nEsta acción es irreversible. Para confirmar, ingrese su contraseña de ADMINISTRADOR:`);
+        
+        if (password === currentUser.password) {
+            await deleteActivity(selectedActivity.id);
+            alert("Actividad eliminada correctamente.");
+            setView('list');
+            setSelectedActivity(null);
+        } else if (password !== null) {
+            alert("Contraseña incorrecta. Acción cancelada.");
+        }
     };
 
     if (view === 'list') {
@@ -315,8 +330,18 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                           </div>
                     </div>
 
-                    <div className="flex justify-end pt-6">
-                         <button type="submit" className="bg-teal-600 text-white px-8 py-3 rounded-lg font-bold shadow-md hover:bg-teal-700 transition-colors">
+                    <div className="flex justify-between pt-6">
+                         {isAdmin && view === 'edit' && (
+                             <button 
+                                type="button" 
+                                onClick={handleDelete}
+                                className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-bold shadow-md transition-colors flex items-center gap-2"
+                             >
+                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                 Eliminar Actividad
+                             </button>
+                         )}
+                         <button type="submit" className="bg-teal-600 text-white px-8 py-3 rounded-lg font-bold shadow-md hover:bg-teal-700 transition-colors ml-auto">
                             {view === 'create' ? 'Crear Actividad' : 'Guardar Cambios'}
                          </button>
                     </div>

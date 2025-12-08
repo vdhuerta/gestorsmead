@@ -137,7 +137,7 @@ const MainContent: React.FC = () => {
         return <ParticipantManager />;
       
       case 'advisors':
-        return <AdvisorManager />;
+        return <AdvisorManager currentUser={user} />;
       
       case 'config':
         return <ConfigEditor />;

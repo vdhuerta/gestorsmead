@@ -5,7 +5,11 @@ import { User, UserRole } from '../types';
 import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST } from '../constants';
 import { SmartSelect } from './SmartSelect';
 
-export const AdvisorManager: React.FC = () => {
+interface AdvisorManagerProps {
+    currentUser?: User;
+}
+
+export const AdvisorManager: React.FC<AdvisorManagerProps> = ({ currentUser }) => {
   const { users, upsertUsers, deleteUser, activities, config } = useData();
   const advisors = users.filter(u => u.systemRole === UserRole.ASESOR);
 
@@ -103,10 +107,15 @@ export const AdvisorManager: React.FC = () => {
 
   const handleDelete = async () => {
       if (!form.rut) return;
-      if (confirm(`¿Está seguro de eliminar al asesor ${form.names} ${form.paternalSurname}? Esta acción no se puede deshacer.`)) {
+      
+      const password = prompt(`ADVERTENCIA: Está a punto de eliminar al asesor ${form.names} ${form.paternalSurname}.\n\nEsta acción es irreversible. Para confirmar, ingrese su contraseña de ADMINISTRADOR:`);
+      
+      if (password === currentUser?.password) {
           await deleteUser(form.rut);
           setMessage({ type: 'success', text: 'Asesor eliminado correctamente.' });
           resetForm();
+      } else if (password !== null) {
+          alert("Contraseña incorrecta. Acción cancelada.");
       }
   };
 
@@ -286,7 +295,7 @@ export const AdvisorManager: React.FC = () => {
                             )}
                         </button>
                         
-                        {isEditing && (
+                        {isEditing && currentUser?.systemRole === UserRole.ADMIN && (
                             <button type="button" onClick={handleDelete} className="w-full bg-white border border-red-200 text-red-600 py-2 rounded-lg font-bold text-xs hover:bg-red-50 transition-colors flex justify-center items-center gap-2">
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                 Eliminar Asesor

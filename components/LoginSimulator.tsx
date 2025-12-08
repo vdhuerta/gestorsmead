@@ -53,34 +53,39 @@ export const LoginSimulator: React.FC<LoginSimulatorProps> = ({ onLogin }) => {
         // B. Intento 2: Fallback directo a Supabase (Si no está en memoria)
         // Esto soluciona el problema de latencia o listas incompletas en la carga inicial.
         if (!foundUser) {
-             const { data, error } = await supabase
-                .from('users')
-                .select('*')
-                .ilike('email', email)
-                .limit(1) // CRITICAL FIX: Limit to 1 to handle potential duplicates if constraint is dropped
-                .maybeSingle(); // CRITICAL FIX: Use maybeSingle() instead of single() to avoid error on multiples
-             
-             if (data) {
-                 // Mapear de snake_case a camelCase para uso interno
-                 foundUser = {
-                     rut: data.rut,
-                     names: data.names,
-                     paternalSurname: data.paternal_surname,
-                     maternalSurname: data.maternal_surname,
-                     email: data.email,
-                     phone: data.phone,
-                     photoUrl: data.photo_url,
-                     systemRole: data.system_role,
-                     password: data.password, // Asegurar lectura de password
-                     academicRole: data.academic_role,
-                     faculty: data.faculty,
-                     department: data.department,
-                     career: data.career,
-                     contractType: data.contract_type,
-                     teachingSemester: data.teaching_semester,
-                     campus: data.campus,
-                     title: data.title
-                 };
+             try {
+                 const { data, error } = await supabase
+                    .from('users')
+                    .select('*')
+                    .ilike('email', email)
+                    .limit(1) // CRITICAL FIX: Limit to 1 to handle potential duplicates if constraint is dropped
+                    .maybeSingle(); // CRITICAL FIX: Use maybeSingle() instead of single() to avoid error on multiples
+                 
+                 if (data) {
+                     // Mapear de snake_case a camelCase para uso interno
+                     foundUser = {
+                         rut: data.rut,
+                         names: data.names,
+                         paternal_surname: data.paternal_surname,
+                         maternal_surname: data.maternal_surname,
+                         email: data.email,
+                         phone: data.phone,
+                         photoUrl: data.photo_url,
+                         systemRole: data.system_role,
+                         password: data.password, // Asegurar lectura de password
+                         academicRole: data.academic_role,
+                         faculty: data.faculty,
+                         department: data.department,
+                         career: data.career,
+                         contractType: data.contract_type,
+                         teachingSemester: data.teaching_semester,
+                         campus: data.campus,
+                         title: data.title
+                     } as any;
+                 }
+             } catch (fetchError) {
+                 console.warn("Fallback login fetch failed (Offline?):", fetchError);
+                 // Don't error out, just continue to check if we found a user or not
              }
         }
 

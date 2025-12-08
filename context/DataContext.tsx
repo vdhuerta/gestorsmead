@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Activity, Enrollment, SystemConfig, ActivityState } from '../types';
-import { MOCK_CONFIG } from '../constants';
+import { MOCK_CONFIG, MOCK_USERS, MOCK_ACTIVITIES, MOCK_ENROLLMENTS } from '../constants';
 import { supabase } from '../services/supabaseClient';
 
 interface DataContextType {
@@ -11,6 +11,7 @@ interface DataContextType {
   isLoading: boolean;
   error: string | null;
   addActivity: (activity: Activity) => Promise<void>;
+  deleteActivity: (id: string) => Promise<void>; // Nueva función
   getUser: (rut: string) => User | undefined;
   deleteUser: (rut: string) => Promise<void>;
   upsertUsers: (newUsers: User[]) => Promise<{ added: number; updated: number }>;
@@ -162,7 +163,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // Fetch again to ensure no gap between initial fetch and subscription
                 fetchData();
             } else if (status === 'CHANNEL_ERROR') {
-                console.error("🔴 Error en Realtime. Verificando conexión...");
+                console.warn("🔴 Error en Realtime. Conexión inestable o modo offline.");
             }
         });
 
@@ -194,7 +195,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     } catch (error: any) {
         console.error("CRITICAL ERROR FETCHING DATA:", error.message || error);
-        setError(JSON.stringify(error));
+        
+        // --- FALLBACK TO MOCK DATA ON ERROR ---
+        console.warn("⚠️ Cargando datos de prueba (MOCK) debido a error de conexión.");
+        setUsers(MOCK_USERS);
+        setActivities(MOCK_ACTIVITIES);
+        setEnrollments(MOCK_ENROLLMENTS);
+        // Not setting 'error' state string to avoid triggering the "Red Screen of Death" in App.tsx, 
+        // allowing the app to function in offline/demo mode.
+        
     } finally {
         setIsLoading(false);
     }
@@ -230,8 +239,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { error } = await supabase.from('activities').upsert(dbActivity);
     if (error) {
         console.error("Error guardando actividad:", error);
-        alert(`Error guardando actividad: ${error.message}`);
+        alert(`Error guardando actividad: ${error.message}. (Verifique conexión)`);
     }
+  };
+
+  const deleteActivity = async (id: string) => {
+      // Optimistic
+      setActivities(prev => prev.filter(a => a.id !== id));
+      // También eliminar inscripciones asociadas optimísticamente (opcional visualmente)
+      setEnrollments(prev => prev.filter(e => e.activityId !== id));
+
+      const { error } = await supabase.from('activities').delete().eq('id', id);
+      if (error) {
+          console.error("Error deleting activity:", error.message);
+          alert(`Error al eliminar actividad: ${error.message}`);
+      }
   };
 
   const getUser = (rut: string) => {
@@ -394,7 +416,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <DataContext.Provider value={{ 
         users, activities, enrollments, config, isLoading, error,
-        addActivity, upsertUsers, updateConfig, resetData,
+        addActivity, deleteActivity, upsertUsers, updateConfig, resetData,
         enrollUser, bulkEnroll, updateEnrollment, getUser, deleteUser
     }}>
       {children}

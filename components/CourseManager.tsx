@@ -46,7 +46,7 @@ interface CourseManagerProps {
 }
 
 export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => {
-  const { activities, addActivity, users, enrollments, upsertUsers, enrollUser, bulkEnroll, updateEnrollment, getUser, config } = useData();
+  const { activities, addActivity, deleteActivity, users, enrollments, upsertUsers, enrollUser, bulkEnroll, updateEnrollment, getUser, config } = useData();
   
   // DYNAMIC LISTS FROM CONFIG (Fallback to constants if empty)
   const listFaculties = config.faculties?.length ? config.faculties : FACULTY_LIST;
@@ -379,7 +379,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       return 'PENDIENTE'; // Fallback
   };
 
-  // --- HANDLERS: CREATE / EDIT ---
+  // --- HANDLERS: CREATE / EDIT / DELETE ---
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -477,6 +477,21 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           linkEvaluacion: act.evaluationLink || ''
       });
       setView('create');
+  };
+
+  const handleDeleteActivity = async () => {
+      if (!selectedCourseId || !selectedCourse) return;
+      
+      const password = prompt(`ADVERTENCIA: Está a punto de ELIMINAR el curso:\n\n"${selectedCourse.name}"\n\nEsta acción es irreversible y eliminará el historial. Para confirmar, ingrese su contraseña de ADMINISTRADOR:`);
+      
+      if (password === currentUser?.password) {
+          await deleteActivity(selectedCourseId);
+          alert("Curso eliminado correctamente.");
+          setView('list');
+          setSelectedCourseId(null);
+      } else if (password !== null) { // If user pressed Cancel, password is null
+          alert("Contraseña incorrecta. Acción cancelada.");
+      }
   };
 
   // --- LOGIC: CHECK USER ON RUT INPUT ---
@@ -981,8 +996,18 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                           </div>
                       </div>
 
-                      <div className="flex justify-end pt-6">
-                          <button type="submit" className="bg-[#647FBC] text-white px-8 py-3 rounded-lg font-bold shadow-md hover:bg-blue-800 transition-colors">
+                      <div className="flex justify-between pt-6">
+                          {isEditMode && currentUser?.systemRole === UserRole.ADMIN && (
+                              <button 
+                                type="button" 
+                                onClick={handleDeleteActivity}
+                                className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-bold shadow-md transition-colors flex items-center gap-2"
+                              >
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                  Eliminar Curso
+                              </button>
+                          )}
+                          <button type="submit" className="bg-[#647FBC] text-white px-8 py-3 rounded-lg font-bold shadow-md hover:bg-blue-800 transition-colors ml-auto">
                               {isEditMode ? 'Guardar Cambios' : 'Guardar Curso'}
                           </button>
                       </div>
@@ -1396,7 +1421,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                                     disabled={isGeneratingPdf}
                                                                     className="text-white bg-[#647FBC] hover:bg-blue-700 px-2 py-1 rounded text-[10px] font-bold shadow-sm transition-colors flex items-center justify-center gap-1 mx-auto w-full disabled:opacity-50"
                                                                   >
-                                                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 01-2-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                                                                       <span className="hidden xl:inline">{isGeneratingPdf ? '...' : 'PDF'}</span>
                                                                   </button>
                                                               )}
