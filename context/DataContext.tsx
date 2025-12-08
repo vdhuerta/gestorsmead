@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Activity, Enrollment, SystemConfig, ActivityState } from '../types';
 import { MOCK_CONFIG } from '../constants';
@@ -23,6 +22,18 @@ interface DataContextType {
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
+
+// --- HELPER: Parse Postgres Arrays from Realtime Payload ---
+// Realtime sometimes sends arrays as strings "{1,2}" if not cast properly.
+const parsePostgresArray = (val: any): number[] => {
+    if (Array.isArray(val)) return val;
+    if (typeof val === 'string') {
+        const cleaned = val.replace(/[{}]/g, '');
+        if (!cleaned) return [];
+        return cleaned.split(',').map(n => parseFloat(n)).filter(n => !isNaN(n));
+    }
+    return [];
+};
 
 // --- HELPER MAPPERS (DB snake_case -> App camelCase) ---
 const mapUserFromDB = (u: any): User => ({
@@ -71,7 +82,7 @@ const mapEnrollmentFromDB = (e: any): Enrollment => ({
     rut: e.user_rut,
     activityId: e.activity_id,
     state: e.state,
-    grades: e.grades || [],
+    grades: parsePostgresArray(e.grades),
     finalGrade: e.final_grade,
     attendanceSession1: e.attendance_session_1,
     attendanceSession2: e.attendance_session_2,
@@ -98,16 +109,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // --- CARGA INICIAL Y REALTIME ---
   useEffect(() => {
+    // 1. Initial Load
     fetchData();
 
-    // Configurar Supabase Realtime con manejo de errores
+    // 2. Setup Realtime Subscription
     const channel = supabase.channel('global-changes')
-        // Escuchar cambios en USUARIOS
+        // USUARIOS
         .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
             if (payload.eventType === 'INSERT') {
                 const newUser = mapUserFromDB(payload.new);
                 setUsers(prev => {
-                    if (prev.some(u => u.rut === newUser.rut)) return prev; // Evitar duplicados si ya está (Optimistic)
+                    if (prev.some(u => u.rut === newUser.rut)) return prev; 
                     return [...prev, newUser];
                 });
             } else if (payload.eventType === 'UPDATE') {
@@ -117,7 +129,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setUsers(prev => prev.filter(u => u.rut !== payload.old.rut));
             }
         })
-        // Escuchar cambios en ACTIVIDADES
+        // ACTIVIDADES
         .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, (payload) => {
             if (payload.eventType === 'INSERT') {
                 setActivities(prev => [...prev, mapActivityFromDB(payload.new)]);
@@ -128,16 +140,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setActivities(prev => prev.filter(a => a.id !== payload.old.id));
             }
         })
-        // Escuchar cambios en INSCRIPCIONES
+        // INSCRIPCIONES (Critical)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'enrollments' }, (payload) => {
             if (payload.eventType === 'INSERT') {
+                const newEnr = mapEnrollmentFromDB(payload.new);
                 setEnrollments(prev => {
-                    const newEnr = mapEnrollmentFromDB(payload.new);
                     if (prev.some(e => e.id === newEnr.id)) return prev; 
                     return [...prev, newEnr];
                 });
             } else if (payload.eventType === 'UPDATE') {
                 const updated = mapEnrollmentFromDB(payload.new);
+                // Safe merge needed? No, DB record is authority.
                 setEnrollments(prev => prev.map(e => e.id === updated.id ? updated : e));
             } else if (payload.eventType === 'DELETE') {
                 setEnrollments(prev => prev.filter(e => e.id !== payload.old.id));
@@ -146,6 +159,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .subscribe((status) => {
             if (status === 'SUBSCRIBED') {
                 console.log("🟢 Conectado a Realtime: Sincronización activa.");
+                // Fetch again to ensure no gap between initial fetch and subscription
+                fetchData();
             } else if (status === 'CHANNEL_ERROR') {
                 console.error("🔴 Error en Realtime. Verificando conexión...");
             }
@@ -157,20 +172,25 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const fetchData = async () => {
-    setIsLoading(true);
+    // Only set loading on FIRST load, to avoid flicker on re-fetches
+    if (users.length === 0) setIsLoading(true);
+    
     setError(null);
     try {
-        const usersResponse = await supabase.from('users').select('*').range(0, 9999);
-        if (usersResponse.error) throw usersResponse.error;
-        setUsers((usersResponse.data || []).map(mapUserFromDB));
+        // Parallel fetching for speed
+        const [usersRes, actsRes, enrRes] = await Promise.all([
+            supabase.from('users').select('*').range(0, 9999),
+            supabase.from('activities').select('*').range(0, 9999),
+            supabase.from('enrollments').select('*').range(0, 9999)
+        ]);
 
-        const actsResponse = await supabase.from('activities').select('*').range(0, 9999);
-        if (actsResponse.error) throw actsResponse.error;
-        setActivities((actsResponse.data || []).map(mapActivityFromDB));
+        if (usersRes.error) throw usersRes.error;
+        if (actsRes.error) throw actsRes.error;
+        if (enrRes.error) throw enrRes.error;
 
-        const enrResponse = await supabase.from('enrollments').select('*').range(0, 9999);
-        if (enrResponse.error) throw enrResponse.error;
-        setEnrollments((enrResponse.data || []).map(mapEnrollmentFromDB));
+        setUsers((usersRes.data || []).map(mapUserFromDB));
+        setActivities((actsRes.data || []).map(mapActivityFromDB));
+        setEnrollments((enrRes.data || []).map(mapEnrollmentFromDB));
 
     } catch (error: any) {
         console.error("CRITICAL ERROR FETCHING DATA:", error.message || error);
@@ -211,7 +231,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (error) {
         console.error("Error guardando actividad:", error);
         alert(`Error guardando actividad: ${error.message}`);
-        // Rollback optimistic update if needed (omitted for brevity, usually Realtime handles correction)
     }
   };
 
@@ -238,14 +257,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const index = newUsersState.findIndex(u => u.rut === incUser.rut);
             if (index >= 0) {
                 updated++;
-                // Merge existing with new (preserve keys not in incoming if any, though here we replace mostly)
                 newUsersState[index] = { ...newUsersState[index], ...incUser };
             } else {
                 added++;
                 newUsersState.push(incUser);
             }
             
-            // Prepare DB Payload
             dbPayloads.push({
                 rut: incUser.rut,
                 names: incUser.names,
@@ -280,7 +297,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } else {
                  alert(`Error al sincronizar con Base de Datos: ${error.message}`);
             }
-            // Note: We don't rollback optimistic updates here to prevent UI flicker, expecting user to fix or retry.
             return { added: 0, updated: 0 };
         }
     }
@@ -288,11 +304,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const enrollUser = async (rut: string, activityId: string) => {
-      // Local check
       if (enrollments.some(e => e.rut === rut && e.activityId === activityId)) return;
-
-      // Optimistic Update? Difficult because ID is UUID generated by DB.
-      // We wait for DB insert, but we can optimistically disable button in UI.
       
       const { error } = await supabase.from('enrollments').insert({
           user_rut: rut,
@@ -355,6 +367,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { error } = await supabase.from('enrollments').update(dbUpdates).eq('id', id);
       if (error) {
           console.error("Error updating enrollment:", error.message);
+          // Optional: Revert optimistic update here if critical
       }
   };
 
