@@ -10,7 +10,7 @@ interface DataContextType {
   enrollments: Enrollment[];
   config: SystemConfig;
   isLoading: boolean;
-  error: string | null; // Added Error state
+  error: string | null;
   addActivity: (activity: Activity) => Promise<void>;
   getUser: (rut: string) => User | undefined;
   deleteUser: (rut: string) => Promise<void>;
@@ -24,6 +24,66 @@ interface DataContextType {
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
+// --- HELPER MAPPERS (DB snake_case -> App camelCase) ---
+const mapUserFromDB = (u: any): User => ({
+    rut: u.rut,
+    names: u.names,
+    paternalSurname: u.paternal_surname,
+    maternalSurname: u.maternal_surname,
+    email: u.email,
+    phone: u.phone,
+    photoUrl: u.photo_url,
+    systemRole: u.system_role,
+    password: u.password,
+    academicRole: u.academic_role,
+    faculty: u.faculty,
+    department: u.department,
+    career: u.career,
+    contractType: u.contract_type,
+    teachingSemester: u.teaching_semester,
+    campus: u.campus,
+    title: u.title
+});
+
+const mapActivityFromDB = (a: any): Activity => ({
+    id: a.id,
+    category: a.category,
+    activityType: a.activity_type,
+    internalCode: a.internal_code,
+    year: a.year,
+    academicPeriod: a.academic_period,
+    name: a.name,
+    version: a.version,
+    modality: a.modality,
+    hours: a.hours,
+    moduleCount: a.module_count,
+    evaluationCount: a.evaluation_count,
+    startDate: a.start_date,
+    endDate: a.end_date,
+    relator: a.relator,
+    linkResources: a.link_resources,
+    classLink: a.class_link,
+    evaluationLink: a.evaluation_link
+});
+
+const mapEnrollmentFromDB = (e: any): Enrollment => ({
+    id: e.id,
+    rut: e.user_rut,
+    activityId: e.activity_id,
+    state: e.state,
+    grades: e.grades || [],
+    finalGrade: e.final_grade,
+    attendanceSession1: e.attendance_session_1,
+    attendanceSession2: e.attendance_session_2,
+    attendanceSession3: e.attendance_session_3,
+    attendanceSession4: e.attendance_session_4,
+    attendanceSession5: e.attendance_session_5,
+    attendanceSession6: e.attendance_session_6,
+    attendancePercentage: e.attendance_percentage,
+    observation: e.observation,
+    situation: e.situation
+});
+
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -31,102 +91,73 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Config se mantiene local por ahora
   const [config, setConfig] = useState<SystemConfig>(() => {
     const saved = localStorage.getItem('app_config');
     return saved ? JSON.parse(saved) : MOCK_CONFIG;
   });
 
-  // --- CARGA INICIAL DESDE SUPABASE ---
+  // --- CARGA INICIAL Y REALTIME ---
   useEffect(() => {
     fetchData();
+
+    // 4. Configurar Supabase Realtime
+    const channel = supabase.channel('global-changes')
+        // Escuchar cambios en USUARIOS
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
+            if (payload.eventType === 'INSERT') {
+                setUsers(prev => [...prev, mapUserFromDB(payload.new)]);
+            } else if (payload.eventType === 'UPDATE') {
+                const updated = mapUserFromDB(payload.new);
+                setUsers(prev => prev.map(u => u.rut === updated.rut ? updated : u));
+            } else if (payload.eventType === 'DELETE') {
+                setUsers(prev => prev.filter(u => u.rut !== payload.old.rut));
+            }
+        })
+        // Escuchar cambios en ACTIVIDADES
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, (payload) => {
+            if (payload.eventType === 'INSERT') {
+                setActivities(prev => [...prev, mapActivityFromDB(payload.new)]);
+            } else if (payload.eventType === 'UPDATE') {
+                const updated = mapActivityFromDB(payload.new);
+                setActivities(prev => prev.map(a => a.id === updated.id ? updated : a));
+            } else if (payload.eventType === 'DELETE') {
+                setActivities(prev => prev.filter(a => a.id !== payload.old.id));
+            }
+        })
+        // Escuchar cambios en INSCRIPCIONES (Notas/Asistencia)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'enrollments' }, (payload) => {
+            if (payload.eventType === 'INSERT') {
+                setEnrollments(prev => [...prev, mapEnrollmentFromDB(payload.new)]);
+            } else if (payload.eventType === 'UPDATE') {
+                const updated = mapEnrollmentFromDB(payload.new);
+                setEnrollments(prev => prev.map(e => e.id === updated.id ? updated : e));
+            } else if (payload.eventType === 'DELETE') {
+                setEnrollments(prev => prev.filter(e => e.id !== payload.old.id));
+            }
+        })
+        .subscribe();
+
+    // Cleanup al desmontar
+    return () => {
+        supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchData = async () => {
     setIsLoading(true);
-    setError(null); // Reset error state on retry
+    setError(null);
     try {
-        // 1. Fetch Users - FIX: Added range to bypass default 1000 limit
         const usersResponse = await supabase.from('users').select('*').range(0, 9999);
-        if (usersResponse.error) {
-            console.error("Supabase Error (Users):", usersResponse.error.message);
-            throw usersResponse.error; // Throw to catch block to set global error
-        }
-        
-        // Map DB snake_case to TS camelCase
-        const mappedUsers: User[] = (usersResponse.data || []).map((u: any) => ({
-            rut: u.rut,
-            names: u.names,
-            paternalSurname: u.paternal_surname,
-            maternalSurname: u.maternal_surname,
-            email: u.email,
-            phone: u.phone,
-            photoUrl: u.photo_url,
-            systemRole: u.system_role,
-            password: u.password, // CRITICAL FIX: Include password for auth
-            academicRole: u.academic_role,
-            faculty: u.faculty,
-            department: u.department,
-            career: u.career,
-            contractType: u.contract_type,
-            teachingSemester: u.teaching_semester,
-            campus: u.campus,
-            title: u.title
-        }));
-        setUsers(mappedUsers);
+        if (usersResponse.error) throw usersResponse.error;
+        setUsers((usersResponse.data || []).map(mapUserFromDB));
 
-        // 2. Fetch Activities - FIX: Added range
         const actsResponse = await supabase.from('activities').select('*').range(0, 9999);
-        if (actsResponse.error) {
-             throw actsResponse.error;
-        }
+        if (actsResponse.error) throw actsResponse.error;
+        setActivities((actsResponse.data || []).map(mapActivityFromDB));
 
-        const mappedActs: Activity[] = (actsResponse.data || []).map((a: any) => ({
-            id: a.id,
-            category: a.category,
-            activityType: a.activity_type,
-            internalCode: a.internal_code,
-            year: a.year,
-            academicPeriod: a.academic_period,
-            name: a.name,
-            version: a.version,
-            modality: a.modality,
-            hours: a.hours,
-            moduleCount: a.module_count,
-            evaluationCount: a.evaluation_count,
-            startDate: a.start_date,
-            endDate: a.end_date,
-            relator: a.relator,
-            linkResources: a.link_resources,
-            classLink: a.class_link,
-            evaluationLink: a.evaluation_link
-        }));
-        setActivities(mappedActs);
-
-        // 3. Fetch Enrollments - FIX: Added range
         const enrResponse = await supabase.from('enrollments').select('*').range(0, 9999);
-        if (enrResponse.error) {
-             throw enrResponse.error;
-        }
-
-        const mappedEnr: Enrollment[] = (enrResponse.data || []).map((e: any) => ({
-            id: e.id,
-            rut: e.user_rut,
-            activityId: e.activity_id,
-            state: e.state,
-            grades: e.grades || [],
-            finalGrade: e.final_grade,
-            attendanceSession1: e.attendance_session_1,
-            attendanceSession2: e.attendance_session_2,
-            attendanceSession3: e.attendance_session_3,
-            attendanceSession4: e.attendance_session_4,
-            attendanceSession5: e.attendance_session_5,
-            attendanceSession6: e.attendance_session_6,
-            attendancePercentage: e.attendance_percentage,
-            observation: e.observation,
-            situation: e.situation
-        }));
-        setEnrollments(mappedEnr);
+        if (enrResponse.error) throw enrResponse.error;
+        setEnrollments((enrResponse.data || []).map(mapEnrollmentFromDB));
 
     } catch (error: any) {
         console.error("CRITICAL ERROR FETCHING DATA:", error.message || error);
@@ -136,21 +167,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // --- ACTIONS ---
+  // --- ACTIONS (DB Calls only, state updates via Realtime or optimistically safe) ---
 
   const addActivity = async (activity: Activity) => {
-    // 1. Optimistic Update (UI reacts instantly)
-    setActivities(prev => {
-        const idx = prev.findIndex(a => a.id === activity.id);
-        if (idx >= 0) {
-            const copy = [...prev];
-            copy[idx] = activity;
-            return copy;
-        }
-        return [...prev, activity];
-    });
-
-    // 2. DB Insert/Upsert
+    // DB Insert/Upsert
     const dbActivity = {
         id: activity.id,
         category: activity.category,
@@ -174,9 +194,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const { error } = await supabase.from('activities').upsert(dbActivity);
     if (error) {
-        console.error("Error saving activity:", error.message, JSON.stringify(error));
         alert(`Error guardando actividad: ${error.message}`);
-        fetchData(); // Rollback/Refresh on error
     }
   };
 
@@ -185,25 +203,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteUser = async (rut: string) => {
-      // Optimistic delete
-      setUsers(prev => prev.filter(u => u.rut !== rut));
       const { error } = await supabase.from('users').delete().eq('rut', rut);
-      if (error) {
-          console.error("Error deleting user:", error.message);
-          fetchData(); // Rollback if failed
-      }
+      if (error) console.error("Error deleting user:", error.message);
   };
 
-  // FIX: Removed Optimistic Update for Bulk operations to prevent "Ghost Data"
   const upsertUsers = async (incomingUsers: User[]) => {
     let added = 0;
     let updated = 0;
     const dbPayloads: any[] = [];
 
-    // CRITICAL FIX: Deduplicate incoming users based on RUT to prevent "ON CONFLICT DO UPDATE command cannot affect row a second time"
+    // Deduplicate
     const uniqueIncomingUsers = Array.from(new Map(incomingUsers.map(u => [u.rut, u])).values());
 
-    // Calculate stats just for reporting
     uniqueIncomingUsers.forEach(incUser => {
         const exists = users.some(u => u.rut === incUser.rut);
         if (exists) updated++; else added++;
@@ -230,64 +241,43 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (dbPayloads.length > 0) {
-        // DB Operation FIRST
         const { error } = await supabase.from('users').upsert(dbPayloads, { onConflict: 'rut' });
         
         if (error) {
-            console.error("Error upserting users:", error.message, JSON.stringify(error));
+            console.error("Error upserting users:", error.message);
             if (error.code === '23505') {
-                 alert("⚠️ ERROR CRÍTICO DE BASE DE DATOS:\n\nSe detectaron correos electrónicos duplicados.\nLa operación fue rechazada por seguridad.");
+                 alert("⚠️ ERROR CRÍTICO: Correos electrónicos duplicados detectados.");
             } else {
                  alert(`Error al guardar en base de datos: ${error.message}`);
             }
-            return { added: 0, updated: 0 }; // Report failure
+            return { added: 0, updated: 0 };
         }
-        
-        // Refresh local state only on success
-        await fetchData();
     }
-
     return { added, updated };
   };
 
   const enrollUser = async (rut: string, activityId: string) => {
-      // Check local logic first
+      // Local check first
       if (enrollments.some(e => e.rut === rut && e.activityId === activityId)) return;
 
-      const { data, error } = await supabase.from('enrollments').insert({
+      const { error } = await supabase.from('enrollments').insert({
           user_rut: rut,
           activity_id: activityId,
           state: 'Inscrito'
-      }).select();
+      });
 
       if (error) {
-          console.error("Error enrolling user:", error.message);
           alert("Error al matricular: " + error.message);
-      } else {
-          // Add to local state only if DB confirms
-          const newEnrollment: Enrollment = {
-              id: data[0].id,
-              rut,
-              activityId,
-              state: ActivityState.INSCRITO,
-              grades: [],
-              attendancePercentage: 0
-          };
-          setEnrollments(prev => [...prev, newEnrollment]);
       }
   };
 
-  // FIX: Removed Optimistic Update to prevent inconsistency
   const bulkEnroll = async (ruts: string[], activityId: string) => {
       let success = 0;
       let skipped = 0;
-      
-      // CRITICAL FIX: Deduplicate RUTs to avoid batch insert errors
       const uniqueRuts = [...new Set(ruts)];
       const dbPayloads: any[] = [];
 
       uniqueRuts.forEach(rut => {
-          // Check against local cache to count skipped, but DB will also enforce unique constraint
           if (enrollments.some(e => e.rut === rut && e.activityId === activityId)) {
               skipped++;
           } else {
@@ -303,21 +293,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (dbPayloads.length > 0) {
           const { error } = await supabase.from('enrollments').insert(dbPayloads);
           if (error) {
-              console.error("Bulk enroll error:", error.message, JSON.stringify(error));
               alert("Error en carga masiva a la BD: " + error.message);
-              // Do not update local state if failed
               return { success: 0, skipped: uniqueRuts.length };
-          } else {
-              // On success, refresh data to get IDs and ensure consistency
-              await fetchData(); 
           }
       }
-
       return { success, skipped };
   };
 
   const updateEnrollment = async (id: string, updates: Partial<Enrollment>) => {
-      // Optimistic update allowed for single cell edits (grades/attendance) for UI responsiveness
+      // Optimistic update for UI responsiveness
       setEnrollments(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
 
       const dbUpdates: any = {};
@@ -337,8 +321,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { error } = await supabase.from('enrollments').update(dbUpdates).eq('id', id);
       if (error) {
           console.error("Error updating enrollment:", error.message);
-          // Ideally revert here, but for grades keeping it optimistic is usually UX preferred unless critical error
-          alert("Error guardando nota/asistencia: " + error.message);
+          // Rollback handled by next fetch or realtime sync logic if strictly needed, but optimistic is usually fine for UX
       }
   };
 
@@ -350,11 +333,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const resetData = async () => {
     if(confirm("¿Estás seguro de reiniciar la Base de Datos? (Esto borrará los datos en SUPABASE)")) {
         setIsLoading(true);
-        // Delete in order to avoid FK constraints
         await supabase.from('enrollments').delete().neq('id', '00000000-0000-0000-0000-000000000000');
         await supabase.from('activities').delete().neq('id', 'x');
         await supabase.from('users').delete().neq('rut', 'x');
         
+        // State will update via Realtime DELETE events or we can force clear
         setUsers([]);
         setActivities([]);
         setEnrollments([]);
