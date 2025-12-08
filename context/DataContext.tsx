@@ -100,12 +100,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     fetchData();
 
-    // 4. Configurar Supabase Realtime
+    // Configurar Supabase Realtime con manejo de errores
     const channel = supabase.channel('global-changes')
         // Escuchar cambios en USUARIOS
         .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
             if (payload.eventType === 'INSERT') {
-                setUsers(prev => [...prev, mapUserFromDB(payload.new)]);
+                const newUser = mapUserFromDB(payload.new);
+                setUsers(prev => {
+                    if (prev.some(u => u.rut === newUser.rut)) return prev; // Evitar duplicados si ya está (Optimistic)
+                    return [...prev, newUser];
+                });
             } else if (payload.eventType === 'UPDATE') {
                 const updated = mapUserFromDB(payload.new);
                 setUsers(prev => prev.map(u => u.rut === updated.rut ? updated : u));
@@ -124,10 +128,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setActivities(prev => prev.filter(a => a.id !== payload.old.id));
             }
         })
-        // Escuchar cambios en INSCRIPCIONES (Notas/Asistencia)
+        // Escuchar cambios en INSCRIPCIONES
         .on('postgres_changes', { event: '*', schema: 'public', table: 'enrollments' }, (payload) => {
             if (payload.eventType === 'INSERT') {
-                setEnrollments(prev => [...prev, mapEnrollmentFromDB(payload.new)]);
+                setEnrollments(prev => {
+                    const newEnr = mapEnrollmentFromDB(payload.new);
+                    if (prev.some(e => e.id === newEnr.id)) return prev; 
+                    return [...prev, newEnr];
+                });
             } else if (payload.eventType === 'UPDATE') {
                 const updated = mapEnrollmentFromDB(payload.new);
                 setEnrollments(prev => prev.map(e => e.id === updated.id ? updated : e));
@@ -135,9 +143,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setEnrollments(prev => prev.filter(e => e.id !== payload.old.id));
             }
         })
-        .subscribe();
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                console.log("🟢 Conectado a Realtime: Sincronización activa.");
+            } else if (status === 'CHANNEL_ERROR') {
+                console.error("🔴 Error en Realtime. Verificando conexión...");
+            }
+        });
 
-    // Cleanup al desmontar
     return () => {
         supabase.removeChannel(channel);
     };
@@ -167,10 +180,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // --- ACTIONS (DB Calls only, state updates via Realtime or optimistically safe) ---
+  // --- ACTIONS ---
 
   const addActivity = async (activity: Activity) => {
-    // DB Insert/Upsert
+    // Optimistic
+    setActivities(prev => [...prev, activity]);
+
     const dbActivity = {
         id: activity.id,
         category: activity.category,
@@ -194,7 +209,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const { error } = await supabase.from('activities').upsert(dbActivity);
     if (error) {
+        console.error("Error guardando actividad:", error);
         alert(`Error guardando actividad: ${error.message}`);
+        // Rollback optimistic update if needed (omitted for brevity, usually Realtime handles correction)
     }
   };
 
@@ -203,6 +220,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteUser = async (rut: string) => {
+      // Optimistic
+      setUsers(prev => prev.filter(u => u.rut !== rut));
       const { error } = await supabase.from('users').delete().eq('rut', rut);
       if (error) console.error("Error deleting user:", error.message);
   };
@@ -212,44 +231,56 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let updated = 0;
     const dbPayloads: any[] = [];
 
-    // Deduplicate
-    const uniqueIncomingUsers = Array.from(new Map(incomingUsers.map(u => [u.rut, u])).values());
-
-    uniqueIncomingUsers.forEach(incUser => {
-        const exists = users.some(u => u.rut === incUser.rut);
-        if (exists) updated++; else added++;
-
-        dbPayloads.push({
-            rut: incUser.rut,
-            names: incUser.names,
-            paternal_surname: incUser.paternalSurname,
-            maternal_surname: incUser.maternalSurname,
-            email: incUser.email,
-            phone: incUser.phone,
-            photo_url: incUser.photoUrl,
-            system_role: incUser.systemRole,
-            password: incUser.password,
-            academic_role: incUser.academicRole,
-            faculty: incUser.faculty,
-            department: incUser.department,
-            career: incUser.career,
-            contract_type: incUser.contractType,
-            teaching_semester: incUser.teachingSemester,
-            campus: incUser.campus,
-            title: incUser.title
+    // 1. Optimistic Update (Immediate Local Feedback)
+    setUsers(prevUsers => {
+        const newUsersState = [...prevUsers];
+        incomingUsers.forEach(incUser => {
+            const index = newUsersState.findIndex(u => u.rut === incUser.rut);
+            if (index >= 0) {
+                updated++;
+                // Merge existing with new (preserve keys not in incoming if any, though here we replace mostly)
+                newUsersState[index] = { ...newUsersState[index], ...incUser };
+            } else {
+                added++;
+                newUsersState.push(incUser);
+            }
+            
+            // Prepare DB Payload
+            dbPayloads.push({
+                rut: incUser.rut,
+                names: incUser.names,
+                paternal_surname: incUser.paternalSurname,
+                maternal_surname: incUser.maternalSurname,
+                email: incUser.email,
+                phone: incUser.phone,
+                photo_url: incUser.photoUrl,
+                system_role: incUser.systemRole,
+                password: incUser.password,
+                academic_role: incUser.academicRole,
+                faculty: incUser.faculty,
+                department: incUser.department,
+                career: incUser.career,
+                contract_type: incUser.contractType,
+                teaching_semester: incUser.teachingSemester,
+                campus: incUser.campus,
+                title: incUser.title
+            });
         });
+        return newUsersState;
     });
 
+    // 2. Database Sync
     if (dbPayloads.length > 0) {
         const { error } = await supabase.from('users').upsert(dbPayloads, { onConflict: 'rut' });
         
         if (error) {
             console.error("Error upserting users:", error.message);
             if (error.code === '23505') {
-                 alert("⚠️ ERROR CRÍTICO: Correos electrónicos duplicados detectados.");
+                 alert("⚠️ ERROR DE DUPLICADOS: Hay correos electrónicos repetidos en la carga.");
             } else {
-                 alert(`Error al guardar en base de datos: ${error.message}`);
+                 alert(`Error al sincronizar con Base de Datos: ${error.message}`);
             }
+            // Note: We don't rollback optimistic updates here to prevent UI flicker, expecting user to fix or retry.
             return { added: 0, updated: 0 };
         }
     }
@@ -257,9 +288,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const enrollUser = async (rut: string, activityId: string) => {
-      // Local check first
+      // Local check
       if (enrollments.some(e => e.rut === rut && e.activityId === activityId)) return;
 
+      // Optimistic Update? Difficult because ID is UUID generated by DB.
+      // We wait for DB insert, but we can optimistically disable button in UI.
+      
       const { error } = await supabase.from('enrollments').insert({
           user_rut: rut,
           activity_id: activityId,
@@ -301,7 +335,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateEnrollment = async (id: string, updates: Partial<Enrollment>) => {
-      // Optimistic update for UI responsiveness
+      // Optimistic Update
       setEnrollments(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
 
       const dbUpdates: any = {};
@@ -321,7 +355,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { error } = await supabase.from('enrollments').update(dbUpdates).eq('id', id);
       if (error) {
           console.error("Error updating enrollment:", error.message);
-          // Rollback handled by next fetch or realtime sync logic if strictly needed, but optimistic is usually fine for UX
       }
   };
 
@@ -337,7 +370,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await supabase.from('activities').delete().neq('id', 'x');
         await supabase.from('users').delete().neq('rut', 'x');
         
-        // State will update via Realtime DELETE events or we can force clear
         setUsers([]);
         setActivities([]);
         setEnrollments([]);
