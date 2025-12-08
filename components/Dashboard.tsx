@@ -68,12 +68,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
   const listRoles = config.academicRoles?.length ? config.academicRoles : ACADEMIC_ROLES;
   const listSemesters = config.semesters?.length ? config.semesters : ["1er Semestre", "2do Semestre", "Anual"];
 
-  // --- KIOSK MODE STATES ---
+  // --- KIOSK MODE STATES (REACTIVE) ---
   const [kioskRut, setKioskRut] = useState('');
-  const [kioskResults, setKioskResults] = useState<Enrollment[] | null>(null);
-  const [searchedUser, setSearchedUser] = useState<User | null>(null);
+  const [activeSearchRut, setActiveSearchRut] = useState<string | null>(null);
+  
+  // Reactive Search Results (Updates immediately when enrollments context changes)
+  const kioskResults = useMemo(() => {
+      if (!activeSearchRut) return null;
+      return enrollments.filter(e => e.rut.toLowerCase() === activeSearchRut.toLowerCase());
+  }, [enrollments, activeSearchRut]);
+
+  // Reactive User Search
+  const searchedUser = useMemo(() => {
+      if (!activeSearchRut) return null;
+      return users.find(u => u.rut.toLowerCase() === activeSearchRut.toLowerCase()) || null;
+  }, [users, activeSearchRut]);
+
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [selectedEnrollmentDetail, setSelectedEnrollmentDetail] = useState<Enrollment | null>(null);
+  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string | null>(null);
+  
+  // Reactive Detail Modal (Updates immediately when specific enrollment updates)
+  const selectedEnrollmentDetail = useMemo(() => {
+      if (!selectedEnrollmentId) return null;
+      return enrollments.find(e => e.id === selectedEnrollmentId) || null;
+  }, [enrollments, selectedEnrollmentId]);
+
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   // Calendario
@@ -192,15 +211,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
       e.preventDefault();
       if(!kioskRut) return;
       const clean = cleanRutFormat(kioskRut);
-      const userFound = users.find(u => u.rut.toLowerCase() === clean.toLowerCase());
-      setSearchedUser(userFound || null);
-      
-      const foundEnrollments = enrollments.filter(e => e.rut.toLowerCase() === clean.toLowerCase());
-      setKioskResults(foundEnrollments);
+      setActiveSearchRut(clean);
   };
 
-  const handleShowDetail = (enr: Enrollment) => {
-      setSelectedEnrollmentDetail(enr);
+  const handleShowDetail = (enrollmentId: string) => {
+      setSelectedEnrollmentId(enrollmentId);
       setShowDetailModal(true);
   };
   
@@ -327,25 +342,52 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
             <head>
               <title>Certificado - ${user.rut}</title>
               <style>
-                body, html { margin: 0; padding: 0; width: 100%; height: 100%; }
+                body, html { margin: 0; padding: 0; width: 100%; height: 100%; font-family: 'Helvetica', 'Arial', sans-serif; }
                 .certificate-container {
                   position: relative;
-                  width: 1123px;
-                  height: 794px;
+                  width: 1123px; /* A4 Landscape width approx px */
+                  height: 794px; /* A4 Landscape height approx px */
                   margin: 0 auto;
                   overflow: hidden;
                 }
                 .bg-img {
                   width: 100%;
                   height: 100%;
-                  object-fit: cover;
+                  object-fit: contain;
                   position: absolute;
                   top: 0; left: 0; z-index: -1;
                 }
-                .text-overlay { position: absolute; width: 100%; text-align: center; font-family: 'Helvetica', 'Arial', sans-serif; }
-                .name { top: 48%; font-size: 32px; font-weight: bold; color: #000; }
-                .course { top: 65%; font-size: 28px; font-weight: bold; color: #1a1a64; padding: 0 100px; line-height: 1.2; }
-                .date { top: 76%; left: 58%; font-size: 18px; color: #444; width: auto; text-align: left; }
+                .text-overlay { 
+                    position: absolute; 
+                    width: 100%; 
+                    text-align: center; 
+                    left: 0;
+                }
+                /* Ajustes específicos para la plantilla https://github.com/vdhuerta/assets-aplications/blob/main/Formato_Constancia.png */
+                .name { 
+                    top: 45%; 
+                    font-size: 36px; 
+                    font-weight: bold; 
+                    color: #000; 
+                    text-transform: uppercase;
+                }
+                .course { 
+                    top: 60%; 
+                    font-size: 24px; 
+                    font-weight: bold; 
+                    color: #1a1a64; 
+                    padding: 0 100px; 
+                    line-height: 1.3;
+                    text-transform: uppercase;
+                }
+                .date { 
+                    top: 72%; 
+                    left: 58%; 
+                    width: 300px;
+                    text-align: left;
+                    font-size: 16px; 
+                    color: #444; 
+                }
                 @media print {
                   @page { size: landscape; margin: 0; }
                   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -360,7 +402,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                 <div class="text-overlay date">${dateStr}</div>
               </div>
               <script>
-                window.onload = function() { setTimeout(function(){ window.print(); }, 500); }
+                window.onload = function() { setTimeout(function(){ window.print(); }, 800); }
               </script>
             </body>
           </html>
@@ -393,13 +435,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                       ctx.drawImage(img, 0, 0);
                       const base64Data = canvas.toDataURL("image/png");
                       doc.addImage(base64Data, 'PNG', 0, 0, 297, 210);
+                      
+                      // Configuración de texto para jsPDF coincidiendo con la plantilla
                       doc.setFontSize(22); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
                       const fullName = `${user.names} ${user.paternalSurname} ${user.maternalSurname || ''}`.toUpperCase();
-                      doc.text(fullName, 148.5, 108, { align: "center" });
-                      doc.setFontSize(20); doc.setFont("helvetica", "bold"); doc.setTextColor(20, 20, 100); 
-                      doc.text(course.name.toUpperCase(), 148.5, 145, { align: "center", maxWidth: 250 });
+                      // Coordenadas aproximadas en mm para A4 Landscape
+                      doc.text(fullName, 148.5, 100, { align: "center" });
+                      
+                      doc.setFontSize(18); doc.setFont("helvetica", "bold"); doc.setTextColor(20, 20, 100); 
+                      // Split text for multiline
+                      const splitTitle = doc.splitTextToSize(course.name.toUpperCase(), 200);
+                      doc.text(splitTitle, 148.5, 135, { align: "center" });
+                      
                       doc.setFontSize(12); doc.setFont("helvetica", "normal"); doc.setTextColor(50, 50, 50); 
-                      doc.text(dateStr, 175, 163); 
+                      doc.text(dateStr, 170, 155); 
+                      
                       doc.save(`Certificado_${user.paternalSurname}_${course.internalCode}.pdf`);
                       setIsGeneratingPdf(false);
                   }
@@ -426,6 +476,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     const today = new Date();
     today.setHours(0,0,0,0);
     
+    // Filtro de cursos disponibles
     const availableCourses = activities.filter(act => {
         if (!act.startDate) return false;
         const [y, m, d] = act.startDate.split('-').map(Number);
@@ -435,11 +486,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
         return today <= limit;
     });
     
-    const calendarCells = getCalendarCells();
+    // Obtener la actividad y usuario del modal de detalle
+    const modalActivity = selectedEnrollmentDetail ? activities.find(a => a.id === selectedEnrollmentDetail.activityId) : null;
+    // IMPORTANTE: En modo kiosco, el usuario a certificar es el buscado (searchedUser), no el genérico (user)
+    const userToCertify = searchedUser || user;
 
     return (
         <div className="animate-fadeIn space-y-12">
-            {/* ... (Previous content) ... */}
             <div className="bg-gradient-to-r from-[#AED6CF] to-teal-100 rounded-2xl p-8 shadow-sm text-center">
                 <h2 className="text-3xl font-bold text-teal-800 mb-2">Portal del Estudiante</h2>
                 <p className="text-teal-700 max-w-2xl mx-auto">
@@ -511,7 +564,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                             <p className="text-xs text-slate-500 mb-4">{act?.year} • {act?.modality}</p>
                                             <div className="flex justify-between items-center pt-2 border-t border-slate-100">
                                                 <div className="text-xs"><span className="text-slate-400">Nota Final:</span> <span className="font-bold ml-1 text-slate-700 text-lg">{enr.finalGrade || '-'}</span></div>
-                                                <button onClick={() => handleShowDetail(enr)} className="text-xs text-[#647FBC] font-bold bg-blue-50 px-3 py-1.5 rounded-full hover:bg-[#647FBC] hover:text-white transition-colors">Ver Detalle Académico</button>
+                                                <button onClick={() => handleShowDetail(enr.id)} className="text-xs text-[#647FBC] font-bold bg-blue-50 px-3 py-1.5 rounded-full hover:bg-[#647FBC] hover:text-white transition-colors">Ver Detalle Académico</button>
                                             </div>
                                         </div>
                                     );
@@ -523,6 +576,110 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                     </div>
                 )}
             </div>
+
+            {/* MODAL DETALLE ACADÉMICO */}
+            {showDetailModal && selectedEnrollmentDetail && modalActivity && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                        {/* Header Modal */}
+                        <div className="bg-[#647FBC] px-6 py-4 flex justify-between items-start">
+                            <div>
+                                <h3 className="text-white font-bold text-lg">{modalActivity.name}</h3>
+                                <p className="text-blue-100 text-xs mt-1 font-mono">{modalActivity.internalCode} | {modalActivity.year}</p>
+                            </div>
+                            <button onClick={() => setShowDetailModal(false)} className="text-blue-200 hover:text-white transition-colors">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        
+                        {/* Body Modal */}
+                        <div className="p-6 overflow-y-auto">
+                            
+                            {/* Course Metadata */}
+                            <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+                                <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                    <span className="block text-xs text-slate-400 uppercase font-bold">Relator</span>
+                                    <span className="font-semibold text-slate-700">{modalActivity.relator}</span>
+                                </div>
+                                <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                    <span className="block text-xs text-slate-400 uppercase font-bold">Modalidad</span>
+                                    <span className="font-semibold text-slate-700">{modalActivity.modality}</span>
+                                </div>
+                            </div>
+
+                            {/* Status Section */}
+                            <div className="flex items-center gap-4 mb-6 border-b border-slate-100 pb-6">
+                                <div className={`flex-1 p-4 rounded-xl border flex flex-col items-center justify-center gap-1
+                                    ${selectedEnrollmentDetail.state === ActivityState.APROBADO ? 'bg-emerald-50 border-emerald-200' : 
+                                      selectedEnrollmentDetail.state === ActivityState.REPROBADO ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
+                                      <span className="text-xs uppercase font-bold opacity-70">Estado Final</span>
+                                      <span className={`text-xl font-bold ${
+                                          selectedEnrollmentDetail.state === ActivityState.APROBADO ? 'text-emerald-700' :
+                                          selectedEnrollmentDetail.state === ActivityState.REPROBADO ? 'text-red-700' : 'text-blue-700'
+                                      }`}>
+                                          {selectedEnrollmentDetail.state}
+                                      </span>
+                                </div>
+                                <div className="flex-1 p-4 rounded-xl border border-slate-200 bg-white flex flex-col items-center justify-center gap-1">
+                                     <span className="text-xs text-slate-400 uppercase font-bold">Asistencia</span>
+                                     <span className="text-xl font-bold text-slate-700">{selectedEnrollmentDetail.attendancePercentage || 0}%</span>
+                                </div>
+                            </div>
+
+                            {/* Grades Table */}
+                            <h4 className="text-sm font-bold text-slate-700 mb-3">Detalle de Calificaciones</h4>
+                            <div className="overflow-x-auto border border-slate-200 rounded-lg mb-6">
+                                <table className="w-full text-sm text-center">
+                                    <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                                        <tr>
+                                            {(selectedEnrollmentDetail.grades || []).map((_, i) => (
+                                                <th key={i} className="py-2 border-r border-slate-100">N{i + 1}</th>
+                                            ))}
+                                            <th className="py-2 bg-slate-100 text-slate-700">Final</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white">
+                                        <tr>
+                                            {(selectedEnrollmentDetail.grades || []).map((grade, i) => (
+                                                <td key={i} className="py-3 border-r border-slate-100 text-slate-600">{grade}</td>
+                                            ))}
+                                            <td className="py-3 font-bold text-slate-800 bg-slate-50/50">{selectedEnrollmentDetail.finalGrade || '-'}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                {(selectedEnrollmentDetail.grades?.length === 0) && (
+                                    <p className="text-center text-xs text-slate-400 py-2 italic">Sin calificaciones registradas</p>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Footer Action */}
+                        <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end">
+                            {selectedEnrollmentDetail.state === ActivityState.APROBADO || selectedEnrollmentDetail.state === 'Aprobado' ? (
+                                <button 
+                                    onClick={() => handleGenerateCertificate(userToCertify, modalActivity)}
+                                    disabled={isGeneratingPdf}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-lg font-bold shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
+                                >
+                                    {isGeneratingPdf ? (
+                                        <>
+                                            <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                            Generando...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                            Descargar Certificado
+                                        </>
+                                    )}
+                                </button>
+                            ) : (
+                                <span className="text-xs text-slate-400 italic py-2">Certificado disponible solo para cursos aprobados.</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
   }
@@ -731,7 +888,110 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
             </div>
             <DataExporter />
         </div>
-        {/* ... Graphs ... */}
+        
+        {/* Gráficos Admin */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h3 className="text-sm font-bold text-slate-500 mb-4">Salud de Base Maestra</h3>
+                <div className="h-48 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                            <Pie
+                                data={healthData}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={40}
+                                outerRadius={70}
+                                paddingAngle={5}
+                                dataKey="value"
+                            >
+                                {healthData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                ))}
+                            </Pie>
+                            <Tooltip />
+                            <Legend verticalAlign="bottom" height={36}/>
+                        </PieChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 lg:col-span-2">
+                <h3 className="text-sm font-bold text-slate-500 mb-4">Distribución por Facultad</h3>
+                <div className="h-48 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={facultyData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                            <XAxis type="number" hide />
+                            <YAxis dataKey="name" type="category" width={120} tick={{fontSize: 10}} />
+                            <Tooltip />
+                            <Bar dataKey="count" fill="#647FBC" radius={[0, 4, 4, 0]} barSize={20} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h3 className="text-sm font-bold text-slate-500 mb-4">Tasas de Aprobación</h3>
+                <div className="h-48 w-full">
+                     <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                            <Pie
+                                data={approvalData}
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={70}
+                                dataKey="value"
+                                labelLine={false}
+                            >
+                                {approvalData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={STATUS_COLORS[entry.name] || COLORS[index % COLORS.length]} />
+                                ))}
+                            </Pie>
+                            <Tooltip />
+                             <Legend verticalAlign="bottom" height={36}/>
+                        </PieChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h3 className="text-sm font-bold text-slate-500 mb-4">Modalidad de Cursos</h3>
+                 <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={modalityData}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="name" tick={{fontSize: 11}} />
+                            <YAxis />
+                            <Tooltip cursor={{fill: 'transparent'}} />
+                            <Bar dataKey="value" fill="#91ADC8" radius={[4, 4, 0, 0]} barSize={40} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+            
+             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h3 className="text-sm font-bold text-slate-500 mb-4">Tendencia de Asistencia Promedio (Anual)</h3>
+                 <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={attendanceTrendData}>
+                            <defs>
+                                <linearGradient id="colorAsist" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#AED6CF" stopOpacity={0.8}/>
+                                    <stop offset="95%" stopColor="#AED6CF" stopOpacity={0}/>
+                                </linearGradient>
+                            </defs>
+                            <XAxis dataKey="month" />
+                            <YAxis domain={[0, 100]} />
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <Tooltip />
+                            <Area type="monotone" dataKey="promedio" stroke="#AED6CF" fillOpacity={1} fill="url(#colorAsist)" />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+        </div>
     </div>
   );
 };
