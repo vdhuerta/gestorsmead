@@ -1,7 +1,7 @@
 
 // ... imports
 // (Keep existing imports)
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole } from '../types';
 import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST } from '../constants';
@@ -126,6 +126,26 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const selectedCourse = academicActivities.find(a => a.id === selectedCourseId);
   const courseEnrollments = enrollments.filter(e => e.activityId === selectedCourseId);
 
+  // --- SORTING LOGIC: ALPHABETICAL BY PATERNAL SURNAME ---
+  const sortedEnrollments = useMemo(() => {
+      return [...courseEnrollments].sort((a, b) => {
+          const userA = users.find(u => u.rut === a.rut);
+          const userB = users.find(u => u.rut === b.rut);
+          
+          const surnameA = userA?.paternalSurname || '';
+          const surnameB = userB?.paternalSurname || '';
+          
+          // Primary: Paternal Surname
+          const compareSurname = surnameA.localeCompare(surnameB, 'es', { sensitivity: 'base' });
+          if (compareSurname !== 0) return compareSurname;
+
+          // Secondary: First Name
+          const nameA = userA?.names || '';
+          const nameB = userB?.names || '';
+          return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
+      });
+  }, [courseEnrollments, users]);
+
   useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
           if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
@@ -156,52 +176,152 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     }
   }, [formData.fechaInicio, formData.moduleCount]);
 
-  // ... (HTML Certificate func)
+  // --- HTML CERTIFICATE GENERATION LOGIC ---
   const generateHTMLCertificate = (user: User, course: Activity, dateStr: string) => {
       const win = window.open('', '_blank');
-      if (!win) { alert("Permita los pop-ups."); return; }
+      if (!win) { alert("Por favor habilite las ventanas emergentes (pop-ups) para generar el certificado."); return; }
+      
       const fullName = `${user.names} ${user.paternalSurname} ${user.maternalSurname || ''}`.toUpperCase();
       const courseName = course.name.toUpperCase();
-      win.document.write(`<html><head><title>Certificado</title><style>body{margin:0;padding:0;width:100%;height:100%;}.certificate-container{position:relative;width:1123px;height:794px;margin:0 auto;overflow:hidden;}.bg-img{width:100%;height:100%;object-fit:cover;position:absolute;top:0;left:0;z-index:-1;}.text-overlay{position:absolute;width:100%;text-align:center;font-family:'Helvetica',sans-serif;}.name{top:48%;font-size:32px;font-weight:bold;color:#000;}.course{top:65%;font-size:28px;font-weight:bold;color:#1a1a64;padding:0 100px;line-height:1.2;}.date{top:76%;left:58%;font-size:18px;color:#444;width:auto;text-align:left;}@media print{@page{size:landscape;margin:0;}body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}</style></head><body><div class="certificate-container"><img src="https://github.com/vdhuerta/assets-aplications/blob/main/Formato_Constancia.png?raw=true" class="bg-img" alt="Fondo" crossorigin="anonymous" /><div class="text-overlay name">${fullName}</div><div class="text-overlay course">${courseName}</div><div class="text-overlay date">${dateStr}</div></div><script>window.onload=function(){setTimeout(function(){window.print();},500);}</script></body></html>`);
+      const imageUrl = 'https://github.com/vdhuerta/assets-aplications/blob/main/Formato_Constancia.png?raw=true';
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <title>Certificado - ${fullName}</title>
+            <style>
+                @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');
+                
+                @page { 
+                    size: portrait;
+                    margin: 0; 
+                }
+                
+                body { 
+                    margin: 0; 
+                    padding: 0; 
+                    width: 100%;
+                    height: 100vh;
+                    font-family: 'Montserrat', sans-serif;
+                    background-color: #555;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                }
+
+                .certificate-container {
+                    position: relative;
+                    width: 794px;
+                    height: 1123px;
+                    background-image: url('${imageUrl}');
+                    background-size: contain;
+                    background-position: center;
+                    background-repeat: no-repeat;
+                    background-color: white;
+                    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+                    overflow: hidden;
+                }
+
+                .text-overlay {
+                    position: absolute;
+                    width: 100%;
+                    text-align: center;
+                    z-index: 10;
+                }
+
+                .student-name {
+                    top: 36%;
+                    left: 26%;
+                    font-size: 22px; /* Reducido 20% */
+                    font-weight: 700;
+                    color: #000;
+                    text-transform: uppercase;
+                    letter-spacing: 1px;
+                    text-align: left;
+                    width: auto;
+                }
+
+                .course-name {
+                    top: 50%;
+                    left: 10%;
+                    width: 80%;
+                    font-size: 20px; /* Reducido 10% */
+                    font-weight: 700;
+                    color: #1a1a64;
+                    line-height: 1.3;
+                }
+
+                .date-text {
+                    top: 40%;
+                    left: 28%;
+                    width: auto;
+                    text-align: left;
+                    font-size: 16px;
+                    font-weight: 400;
+                    color: #444;
+                }
+
+                @media print {
+                    body { 
+                        background: none; 
+                        display: block;
+                        height: auto;
+                    }
+                    .certificate-container {
+                        box-shadow: none;
+                        width: 100%;
+                        height: 100%;
+                        page-break-after: always;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="certificate-container">
+                <div class="text-overlay student-name">${fullName}</div>
+                <div class="text-overlay course-name">${courseName}</div>
+                <div class="text-overlay date-text">${dateStr}</div>
+            </div>
+            <script>
+                window.onload = function() {
+                    const img = new Image();
+                    img.onload = function() {
+                        // La imagen está cargada y lista para ser impresa.
+                        // Se agrega un pequeño delay para asegurar el renderizado final del navegador.
+                        setTimeout(function() {
+                            window.print();
+                        }, 100);
+                    };
+                    img.onerror = function() {
+                        alert('Error: No se pudo cargar la plantilla del certificado. Revise su conexión a Internet.');
+                    };
+                    img.src = '${imageUrl}';
+                };
+            </script>
+        </body>
+        </html>
+      `;
+      
+      win.document.write(htmlContent);
       win.document.close();
   };
 
   const handleGenerateCertificate = async (user: User | undefined, course: Activity | undefined) => {
       if (!user || !course) return;
-      setIsGeneratingPdf(true);
+      setIsGeneratingPdf(true); // Mantiene el estado de carga para feedback visual
+      
       const date = new Date();
       const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' };
       const dateStr = date.toLocaleDateString('es-CL', options);
-      const imageUrl = "https://github.com/vdhuerta/assets-aplications/blob/main/Formato_Constancia.png?raw=true";
 
-      try {
-          const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-          const img = new Image();
-          img.crossOrigin = "Anonymous";
-          img.src = imageUrl;
-          img.onload = () => {
-              try {
-                  const canvas = document.createElement("canvas");
-                  canvas.width = img.width; canvas.height = img.height;
-                  const ctx = canvas.getContext("2d");
-                  if (ctx) {
-                      ctx.drawImage(img, 0, 0);
-                      const base64Data = canvas.toDataURL("image/png");
-                      doc.addImage(base64Data, 'PNG', 0, 0, 297, 210);
-                      doc.setFontSize(22); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
-                      const fullName = `${user.names} ${user.paternalSurname} ${user.maternalSurname || ''}`.toUpperCase();
-                      doc.text(fullName, 148.5, 108, { align: "center" });
-                      doc.setFontSize(20); doc.setFont("helvetica", "bold"); doc.setTextColor(20, 20, 100);
-                      doc.text(course.name.toUpperCase(), 148.5, 145, { align: "center", maxWidth: 250 });
-                      doc.setFontSize(12); doc.setFont("helvetica", "normal"); doc.setTextColor(50, 50, 50);
-                      doc.text(dateStr, 175, 163);
-                      doc.save(`Certificado_${user.paternalSurname}_${course.internalCode}.pdf`);
-                      setIsGeneratingPdf(false);
-                  } else { throw new Error("Canvas Context Error"); }
-              } catch (pdfError) { generateHTMLCertificate(user, course, dateStr); setIsGeneratingPdf(false); }
-          };
-          img.onerror = () => { generateHTMLCertificate(user, course, dateStr); setIsGeneratingPdf(false); };
-      } catch (error) { generateHTMLCertificate(user, course, dateStr); setIsGeneratingPdf(false); }
+      // Llama a la nueva función que genera el HTML
+      generateHTMLCertificate(user, course, dateStr);
+      
+      setIsGeneratingPdf(false);
   };
 
   const getEnrollmentStats = () => {
@@ -258,7 +378,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     if (!selectedCourse) return;
     const sem = selectedCourse.academicPeriod ? selectedCourse.academicPeriod.split('-')[1] || '1' : '1';
     setFormData({
-        internalCode: selectedCourse.internalCode || '', year: selectedCourse.year || new Date().getFullYear(), semester: sem, nombre: selectedCourse.name, version: selectedCourse.version ? selectedCourse.version.split(' - ')[0] : 'V1', modality: selectedCourse.modality, horas: selectedCourse.hours, relator: selectedCourse.relator || '', fechaInicio: selectedCourse.startDate || '', fechaTermino: selectedCourse.endDate || '', moduleCount: selectedCourse.moduleCount || 0, evaluationCount: selectedCourse.evaluationCount || 3, linkRecursos: selectedCourse.linkResources || '', linkClase: selectedCourse.classLink || '', linkEvaluacion: selectedCourse.evaluationLink || ''
+        internalCode: selectedCourse.internalCode || '', year: selectedCourse.year || new Date().getFullYear(), semester: sem, nombre: selectedCourse.name, version: selectedCourse.version ? selectedCourse.version.split(' - ')[0] : 'V1', modality: selectedCourse.modality, horas: selectedCourse.hours, relator: selectedCourse.relator || '', fechaInicio: selectedCourse.startDate || '', fechaTermino: selectedCourse.endDate || '', moduleCount: selectedCourse.moduleCount || 0, evaluationCount: selectedCourse.evaluationCount || 3, linkRecursos: selectedCourse.linkResources || '', linkClase: selectedCourse.classLink || '', 
+        linkEvaluacion: selectedCourse.evaluationLink || ''
     });
     setView('edit');
   };
@@ -554,15 +675,31 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                               </div>
                               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                                   <div className="p-4 bg-slate-50 border-b border-slate-200"><h3 className="font-bold text-slate-700">Listado de Matriculados</h3></div>
-                                  <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-sm text-left whitespace-nowrap"><thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200"><tr><th className="px-6 py-4 bg-slate-100 sticky left-0 z-10 border-r border-slate-200">Alumno (RUT)</th><th className="px-4 py-4">Correo</th><th className="px-4 py-4">Rol</th><th className="px-4 py-4">Contrato</th><th className="px-4 py-4">Facultad</th><th className="px-4 py-4">Estado</th></tr></thead><tbody className="divide-y divide-slate-100">{courseEnrollments.map((enr) => { const student = users.find(u => u.rut === enr.rut); return (<tr key={enr.id} className="hover:bg-blue-50/50 transition-colors"><td className="px-6 py-4 font-medium text-slate-900 bg-white sticky left-0 border-r border-slate-100"><div className="flex flex-col">{(student?.names) ? (<span>{student.paternalSurname} {student.maternalSurname || ''}, {student.names}</span>) : (<span className="text-slate-400 italic font-normal">Sin info</span>)}<span className="text-xs text-slate-400 font-mono">{enr.rut}</span></div></td><td className="px-4 py-4 text-xs">{student?.email || '-'}</td><td className="px-4 py-4 text-xs">{student?.academicRole || '-'}</td><td className="px-4 py-4 text-xs">{student?.contractType || '-'}</td><td className="px-4 py-4 text-xs">{student?.faculty || '-'}</td><td className="px-4 py-4 text-center"><span className={`px-2 py-1 rounded-full text-xs font-bold ${enr.state === ActivityState.APROBADO ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{enr.state}</span></td></tr>);})}</tbody></table></div>
+                                  <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-sm text-left whitespace-nowrap"><thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200"><tr><th className="px-6 py-4 bg-slate-100 sticky left-0 z-10 border-r border-slate-200">Alumno (RUT)</th><th className="px-4 py-4">Correo</th><th className="px-4 py-4">Rol</th><th className="px-4 py-4">Contrato</th><th className="px-4 py-4">Facultad</th><th className="px-4 py-4">Estado</th></tr></thead><tbody className="divide-y divide-slate-100">{sortedEnrollments.map((enr) => { const student = users.find(u => u.rut === enr.rut); return (<tr key={enr.id} className="hover:bg-blue-50/50 transition-colors"><td className="px-6 py-4 font-medium text-slate-900 bg-white sticky left-0 border-r border-slate-100"><div className="flex flex-col">{(student?.names) ? (<span>{student.paternalSurname} {student.maternalSurname || ''}, {student.names}</span>) : (<span className="text-slate-400 italic font-normal">Sin info</span>)}<span className="text-xs text-slate-400 font-mono">{enr.rut}</span></div></td><td className="px-4 py-4 text-xs">{student?.email || '-'}</td><td className="px-4 py-4 text-xs">{student?.academicRole || '-'}</td><td className="px-4 py-4 text-xs">{student?.contractType || '-'}</td><td className="px-4 py-4 text-xs">{student?.faculty || '-'}</td><td className="px-4 py-4 text-center"><span className={`px-2 py-1 rounded-full text-xs font-bold ${enr.state === ActivityState.APROBADO ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{enr.state}</span></td></tr>);})}</tbody></table></div>
                               </div>
                           </div>
                       )}
                       {activeDetailTab === 'tracking' && (
                           <div className="animate-fadeIn">
                               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                                  <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center"><h3 className="font-bold text-slate-700">Sábana de Notas y Asistencia</h3><span className="text-xs bg-white border border-slate-200 px-3 py-1 rounded-full text-slate-500">{courseEnrollments.length} Estudiantes</span></div>
-                                  <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-sm text-left whitespace-nowrap"><thead className="bg-slate-100 text-slate-600 font-bold"><tr><th className="px-2 py-3 w-40 max-w-[160px] sticky left-0 bg-slate-100 border-r border-slate-200 truncate">Estudiante</th><th className="px-1 py-3 text-center w-8 text-[10px]">S1</th><th className="px-1 py-3 text-center w-8 text-[10px]">S2</th><th className="px-1 py-3 text-center w-8 text-[10px]">S3</th><th className="px-1 py-3 text-center w-8 text-[10px]">S4</th><th className="px-1 py-3 text-center w-8 text-[10px]">S5</th><th className="px-1 py-3 text-center w-8 text-[10px]">S6</th><th className="px-2 py-3 text-center w-16 text-xs">% Asist</th>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, i) => (<th key={i} className="px-1 py-3 text-center w-12 text-xs">N{i + 1}</th>))}<th className="px-2 py-3 text-center w-20">Final</th><th className="px-1 py-3 text-center w-24 text-xs">Estado</th><th className="px-1 py-3 text-center w-32 text-xs">Certificado</th></tr></thead><tbody className="divide-y divide-slate-100">{courseEnrollments.map(enr => { const user = users.find(u => u.rut === enr.rut); const status = getComputedStatus(enr, selectedCourse); const minPassingGrade = config.minPassingGrade || 4.0; const minAttendance = config.minAttendancePercentage || 75; const displayName = (user && user.names) ? `${user.paternalSurname} ${user.maternalSurname || ''}, ${user.names}` : enr.rut; return (<tr key={enr.id} className="hover:bg-blue-50/30"><td className="px-2 py-2 max-w-[160px] sticky left-0 bg-white border-r border-slate-100 font-medium text-slate-700 truncate" title={displayName}>{displayName}</td>{['attendanceSession1', 'attendanceSession2', 'attendanceSession3', 'attendanceSession4', 'attendanceSession5', 'attendanceSession6'].map((key) => (<td key={key} className="px-1 py-2 text-center"><input type="checkbox" checked={!!enr[key as keyof Enrollment]} onChange={() => handleToggleAttendance(enr.id, key)} className="rounded text-[#647FBC] focus:ring-[#647FBC] cursor-pointer w-3 h-3"/></td>))}<td className="px-2 py-2 text-center"><span className={(enr.attendancePercentage || 0) < minAttendance ? 'bg-red-50 text-red-600 font-bold px-2 py-1 rounded' : 'text-slate-600 font-bold'}>{enr.attendancePercentage || 0}%</span></td>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, idx) => { const gradeVal = enr.grades?.[idx]; return (<td key={idx} className="px-1 py-2"><input type="number" step="0.1" min="1" max="7" className={`w-full text-center border border-slate-200 rounded py-1 text-sm font-bold px-1 focus:border-[#647FBC] focus:ring-1 focus:ring-[#647FBC] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal !== undefined && gradeVal < minPassingGrade && gradeVal > 0 ? 'text-red-600' : 'text-slate-700'}`} value={enr.grades?.[idx] || ''} onChange={(e) => handleUpdateGrade(enr.id, idx, e.target.value)} /></td>); })}<td className={`px-2 py-2 text-center text-sm ${(enr.finalGrade || 0) < minPassingGrade && (enr.finalGrade || 0) > 0 ? 'text-red-600 font-bold' : 'text-slate-800 font-bold'}`}>{enr.finalGrade || '-'}</td><td className="px-1 py-2 text-center"><span className="px-2 py-1 rounded-full text-[10px] font-bold uppercase block w-full truncate bg-slate-100 text-slate-600">{status}</span></td><td className="px-1 py-2 text-center">{status === 'APROBADO' && (<button onClick={() => handleGenerateCertificate(user, selectedCourse)} disabled={isGeneratingPdf} className="text-white bg-[#647FBC] hover:bg-blue-700 px-2 py-1 rounded text-[10px] font-bold shadow-sm transition-colors flex items-center justify-center gap-1 mx-auto w-full disabled:opacity-50"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 01-2-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><span className="hidden xl:inline">{isGeneratingPdf ? '...' : 'PDF'}</span></button>)}</td></tr>); })}</tbody></table></div>
+                                  {/* Metrics Calculation */}
+                                  {(() => {
+                                      const advancingCount = sortedEnrollments.filter(e => (e.grades?.some(g => g > 0) || [e.attendanceSession1, e.attendanceSession2, e.attendanceSession3, e.attendanceSession4, e.attendanceSession5, e.attendanceSession6].some(Boolean))).length;
+                                      const allGrades = sortedEnrollments.flatMap(e => e.grades || []).filter(g => g > 0);
+                                      const globalAvg = allGrades.length ? (allGrades.reduce((a,b)=>a+b,0)/allGrades.length).toFixed(1) : "0.0";
+                                      
+                                      return (
+                                          <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row justify-between items-center gap-2">
+                                              <h3 className="font-bold text-slate-700">Sábana de Notas y Asistencia</h3>
+                                              <div className="flex flex-wrap gap-2">
+                                                  <span className="text-xs bg-white border border-slate-200 px-3 py-1 rounded-full text-slate-500 font-medium">{sortedEnrollments.length} Estudiantes</span>
+                                                  <span className="text-xs bg-white border border-slate-200 px-3 py-1 rounded-full text-indigo-600 font-medium">Avanzando: {advancingCount}</span>
+                                                  <span className="text-xs bg-white border border-slate-200 px-3 py-1 rounded-full text-amber-600 font-medium">Promedio General: {globalAvg}</span>
+                                              </div>
+                                          </div>
+                                      );
+                                  })()}
+                                  <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-sm text-left whitespace-nowrap"><thead className="bg-slate-100 text-slate-600 font-bold"><tr><th className="px-2 py-3 w-40 max-w-[160px] sticky left-0 bg-slate-100 border-r border-slate-200 truncate">Estudiante</th><th className="px-1 py-3 text-center w-8 text-[10px]">S1</th><th className="px-1 py-3 text-center w-8 text-[10px]">S2</th><th className="px-1 py-3 text-center w-8 text-[10px]">S3</th><th className="px-1 py-3 text-center w-8 text-[10px]">S4</th><th className="px-1 py-3 text-center w-8 text-[10px]">S5</th><th className="px-1 py-3 text-center w-8 text-[10px]">S6</th><th className="px-2 py-3 text-center w-16 text-xs">% Asist</th>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, i) => (<th key={i} className="px-1 py-3 text-center w-12 text-xs">N{i + 1}</th>))}<th className="px-2 py-3 text-center w-20">Final</th><th className="px-1 py-3 text-center w-24 text-xs">Estado</th><th className="px-1 py-3 text-center w-32 text-xs">Certificado</th></tr></thead><tbody className="divide-y divide-slate-100">{sortedEnrollments.map(enr => { const user = users.find(u => u.rut === enr.rut); const status = getComputedStatus(enr, selectedCourse); const minPassingGrade = config.minPassingGrade || 4.0; const minAttendance = config.minAttendancePercentage || 75; const displayName = (user && user.names) ? `${user.paternalSurname} ${user.maternalSurname || ''}, ${user.names}` : enr.rut; return (<tr key={enr.id} className="hover:bg-blue-50/30"><td className="px-2 py-2 max-w-[160px] sticky left-0 bg-white border-r border-slate-100 font-medium text-slate-700 truncate" title={displayName}>{displayName}</td>{['attendanceSession1', 'attendanceSession2', 'attendanceSession3', 'attendanceSession4', 'attendanceSession5', 'attendanceSession6'].map((key) => (<td key={key} className="px-1 py-2 text-center"><input type="checkbox" checked={!!enr[key as keyof Enrollment]} onChange={() => handleToggleAttendance(enr.id, key)} className="rounded text-[#647FBC] focus:ring-[#647FBC] cursor-pointer w-3 h-3"/></td>))}<td className="px-2 py-2 text-center"><span className={(enr.attendancePercentage || 0) < minAttendance ? 'bg-red-50 text-red-600 font-bold px-2 py-1 rounded' : 'text-slate-600 font-bold'}>{enr.attendancePercentage || 0}%</span></td>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, idx) => { const gradeVal = enr.grades?.[idx]; return (<td key={idx} className="px-1 py-2"><input type="number" step="0.1" min="1" max="7" className={`w-full text-center border border-slate-200 rounded py-1 text-sm font-bold px-1 focus:border-[#647FBC] focus:ring-1 focus:ring-[#647FBC] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal !== undefined && gradeVal < minPassingGrade && gradeVal > 0 ? 'text-red-600' : 'text-slate-700'}`} value={enr.grades?.[idx] || ''} onChange={(e) => handleUpdateGrade(enr.id, idx, e.target.value)} /></td>); })}<td className={`px-2 py-2 text-center text-sm ${(enr.finalGrade || 0) < minPassingGrade && (enr.finalGrade || 0) > 0 ? 'text-red-600 font-bold' : 'text-slate-800 font-bold'}`}>{enr.finalGrade || '-'}</td><td className="px-1 py-2 text-center"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase block w-full truncate ${status === 'APROBADO' ? 'bg-green-50 text-green-700' : status === 'REPROBADO' ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600'}`}>{status}</span></td><td className="px-1 py-2 text-center">{status === 'APROBADO' && (<button onClick={() => handleGenerateCertificate(user, selectedCourse)} disabled={isGeneratingPdf} className="text-white bg-[#647FBC] hover:bg-blue-700 px-2 py-1 rounded text-[10px] font-bold shadow-sm transition-colors flex items-center justify-center gap-1 mx-auto w-full disabled:opacity-50"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg><span className="hidden xl:inline">{isGeneratingPdf ? '...' : 'Descargar'}</span></button>)}</td></tr>); })}</tbody></table></div>
                               </div>
                           </div>
                       )}
