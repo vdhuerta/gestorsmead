@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Activity, Enrollment, SystemConfig, ActivityState } from '../types';
 import { MOCK_CONFIG, MOCK_USERS, MOCK_ACTIVITIES, MOCK_ENROLLMENTS } from '../constants';
@@ -133,7 +134,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // ACTIVIDADES
         .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, (payload) => {
             if (payload.eventType === 'INSERT') {
-                setActivities(prev => [...prev, mapActivityFromDB(payload.new)]);
+                const newActivity = mapActivityFromDB(payload.new);
+                setActivities(prev => {
+                    // Prevent duplicates from race conditions with optimistic updates
+                    if (prev.some(a => a.id === newActivity.id)) {
+                        return prev.map(act => act.id === newActivity.id ? newActivity : act);
+                    }
+                    return [...prev, newActivity];
+                });
             } else if (payload.eventType === 'UPDATE') {
                 const updated = mapActivityFromDB(payload.new);
                 setActivities(prev => prev.map(a => a.id === updated.id ? updated : a));
@@ -212,8 +220,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // --- ACTIONS ---
 
   const addActivity = async (activity: Activity) => {
-    // Optimistic
-    setActivities(prev => [...prev, activity]);
+    // Optimistic update: handles both creation and updates intelligently to prevent duplicates.
+    setActivities(prev => {
+        const existing = prev.find(a => a.id === activity.id);
+        if (existing) {
+            // This is an update.
+            return prev.map(a => a.id === activity.id ? activity : a);
+        } else {
+            // This is a new activity.
+            return [...prev, activity];
+        }
+    });
 
     const dbActivity = {
         id: activity.id,
@@ -240,6 +257,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (error) {
         console.error("Error guardando actividad:", error);
         alert(`Error guardando actividad: ${error.message}. (Verifique conexión)`);
+        // On error, revert optimistic update by fetching fresh data.
+        fetchData();
     }
   };
 
@@ -253,6 +272,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) {
           console.error("Error deleting activity:", error.message);
           alert(`Error al eliminar actividad: ${error.message}`);
+          // Revert if DB delete fails
+          fetchData();
       }
   };
 
@@ -264,56 +285,64 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Optimistic
       setUsers(prev => prev.filter(u => u.rut !== rut));
       const { error } = await supabase.from('users').delete().eq('rut', rut);
-      if (error) console.error("Error deleting user:", error.message);
+      if (error) {
+        console.error("Error deleting user:", error.message);
+        // Revert on fail
+        fetchData();
+      }
   };
 
   const upsertUsers = async (incomingUsers: User[]) => {
     let added = 0;
     let updated = 0;
-    const dbPayloads: any[] = [];
 
-    // 1. Optimistic Update (Immediate Local Feedback)
+    // 1. Prepare DB payloads FIRST (map to snake_case), removing side-effects from state setter.
+    const dbPayloads = incomingUsers.map(incUser => ({
+        rut: incUser.rut,
+        names: incUser.names,
+        paternal_surname: incUser.paternalSurname,
+        maternal_surname: incUser.maternalSurname,
+        email: incUser.email,
+        phone: incUser.phone,
+        photo_url: incUser.photoUrl,
+        system_role: incUser.systemRole,
+        password: incUser.password,
+        academic_role: incUser.academicRole,
+        faculty: incUser.faculty,
+        department: incUser.department,
+        career: incUser.career,
+        contract_type: incUser.contractType,
+        teaching_semester: incUser.teachingSemester,
+        campus: incUser.campus,
+        title: incUser.title
+    }));
+
+    // 2. Perform optimistic update on local state for immediate UI feedback.
     setUsers(prevUsers => {
-        const newUsersState = [...prevUsers];
+        const usersMap = new Map(prevUsers.map(u => [u.rut, u]));
         incomingUsers.forEach(incUser => {
-            const index = newUsersState.findIndex(u => u.rut === incUser.rut);
-            if (index >= 0) {
+            const existingUser = usersMap.get(incUser.rut);
+            if (existingUser) {
                 updated++;
-                newUsersState[index] = { ...newUsersState[index], ...incUser };
             } else {
                 added++;
-                newUsersState.push(incUser);
             }
-            
-            dbPayloads.push({
-                rut: incUser.rut,
-                names: incUser.names,
-                paternal_surname: incUser.paternalSurname,
-                maternal_surname: incUser.maternalSurname,
-                email: incUser.email,
-                phone: incUser.phone,
-                photo_url: incUser.photoUrl,
-                system_role: incUser.systemRole,
-                password: incUser.password,
-                academic_role: incUser.academicRole,
-                faculty: incUser.faculty,
-                department: incUser.department,
-                career: incUser.career,
-                contract_type: incUser.contractType,
-                teaching_semester: incUser.teachingSemester,
-                campus: incUser.campus,
-                title: incUser.title
-            });
+            // FIX: Safely spread existingUser, providing an empty object fallback if it's undefined.
+            // Spreading `existingUser` directly causes an error if it's `undefined` (i.e., for new users).
+            // Using `?? {}` provides a safe empty object to spread in that case.
+            usersMap.set(incUser.rut, { ...(existingUser ?? {}), ...incUser });
         });
-        return newUsersState;
+        return Array.from(usersMap.values());
     });
 
-    // 2. Database Sync
+    // 3. Sync with the database.
     if (dbPayloads.length > 0) {
         const { error } = await supabase.from('users').upsert(dbPayloads, { onConflict: 'rut' });
         
         if (error) {
             console.error("Error upserting users:", error.message);
+            // Re-fetch data to revert optimistic update on error
+            fetchData(); 
             if (error.code === '23505') {
                  alert("⚠️ ERROR DE DUPLICADOS: Hay correos electrónicos repetidos en la carga.");
             } else {
@@ -390,6 +419,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) {
           console.error("Error updating enrollment:", error.message);
           // Optional: Revert optimistic update here if critical
+          fetchData();
       }
   };
 

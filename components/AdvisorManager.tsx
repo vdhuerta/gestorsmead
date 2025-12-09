@@ -119,7 +119,7 @@ export const AdvisorManager: React.FC<AdvisorManagerProps> = ({ currentUser }) =
       }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       // Validación estricta de campos críticos
       if (!form.rut || !form.names || !form.paternalSurname || !form.email || !form.password || !form.campus) {
@@ -151,10 +151,9 @@ export const AdvisorManager: React.FC<AdvisorManagerProps> = ({ currentUser }) =
           systemRole: UserRole.ASESOR // Force Role
       };
 
-      upsertUsers([advisorPayload]);
+      await upsertUsers([advisorPayload]);
       setMessage({ type: 'success', text: isEditing ? 'Perfil de Asesor actualizado.' : 'Nuevo Asesor registrado exitosamente.' });
       
-      // FIX: Always reset form after successful submit to exit edit mode
       resetForm();
       setTimeout(() => setMessage(null), 3000);
   };

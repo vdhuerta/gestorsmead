@@ -132,6 +132,14 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
     );
 };
 
+// --- KPI CARD COMPONENT for ASESOR ---
+const KpiCardCompact: React.FC<{title: string, value: string | number, suffix?: string, colorClass?: string}> = ({ title, value, suffix = '', colorClass = 'text-slate-700' }) => (
+    <div className="text-center px-4 py-3 bg-white rounded-xl border border-slate-200 shadow-sm">
+        <span className={`block text-2xl font-bold ${colorClass}`}>{value}<span className="text-lg">{suffix}</span></span>
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-tight h-6 flex items-center justify-center">{title}</span>
+    </div>
+);
+
 interface DashboardProps {
   user: User;
   onNavigate: (tab: TabType) => void;
@@ -158,6 +166,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
   const [showStudentEnrollModal, setShowStudentEnrollModal] = useState(false);
   const [targetEnrollActivity, setTargetEnrollActivity] = useState<Activity | null>(null);
   const [enrollSuccessMsg, setEnrollSuccessMsg] = useState<string | null>(null);
+
+  // --- STATE FOR ADMIN CATALOG ---
+  const [catalogYear, setCatalogYear] = useState<number>(new Date().getFullYear() - 1);
   
   // --- FORM STATE (13 Fields Base Maestra) ---
   const [enrollForm, setEnrollForm] = useState({
@@ -190,51 +201,152 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
       }
   }, [showStudentEnrollModal, user]);
 
-  // --- KPIs Calculation ---
-  const totalStudents = users.filter(u => u.systemRole === UserRole.ESTUDIANTE).length;
+  // --- General KPIs Calculation ---
   const activeCourses = activities.filter(a => a.category === 'ACADEMIC').length;
   const activeGeneral = activities.filter(a => a.category === 'GENERAL').length;
   const totalEnrollments = enrollments.length;
 
-  // --- LOGIC: SPLIT OFFER vs CATALOG (14 DAYS RULE) ---
+  // --- ASESOR KPIs Calculation ---
+  const advisorKpis = useMemo(() => {
+    if (user.systemRole !== UserRole.ASESOR) return null;
+
+    // 1. Tasa de Aprobación
+    const academicEnrollments = enrollments.filter(e => activities.some(a => a.id === e.activityId && a.category === 'ACADEMIC'));
+    const aprobados = academicEnrollments.filter(e => e.state === ActivityState.APROBADO).length;
+    const tasaAprobacion = academicEnrollments.length > 0 ? Math.round((aprobados / academicEnrollments.length) * 100) : 0;
+
+    // 2. Estudiantes en Riesgo (LÓGICA CORREGIDA)
+    const minGrade = config.minPassingGrade || 4.0;
+    const minAttendance = config.minAttendancePercentage || 75;
+    const hoy = new Date();
+    const estudiantesRiesgo = new Set();
+    academicEnrollments.forEach(e => {
+        const activity = activities.find(a => a.id === e.activityId);
+        const endDate = activity?.endDate ? new Date(activity.endDate) : null;
+
+        // Solo verificar cursos activos o recién terminados
+        if (!endDate || endDate >= hoy) {
+            let isLowGrade = false;
+            // Primero, verificar si la nota final ya está calculada y es reprobatoria.
+            if (e.finalGrade !== undefined && e.finalGrade > 0 && e.finalGrade < minGrade) {
+                isLowGrade = true;
+            } 
+            // Si la nota final no es reprobatoria (o no existe), verificar el promedio de las notas parciales.
+            else if ((e.finalGrade === undefined || e.finalGrade === 0) && e.grades && e.grades.length > 0) {
+                const partialGrades = e.grades.filter(g => g !== null && g > 0);
+                if (partialGrades.length > 0) {
+                    const avg = partialGrades.reduce((a, b) => a + b, 0) / partialGrades.length;
+                    if (avg < minGrade) {
+                        isLowGrade = true;
+                    }
+                }
+            }
+            
+            const isLowAttendance = e.attendancePercentage !== undefined && e.attendancePercentage < minAttendance;
+            
+            if (isLowGrade || isLowAttendance) {
+                estudiantesRiesgo.add(e.rut);
+            }
+        }
+    });
+
+    // 3. Avance de Calificaciones
+    let totalSlots = 0;
+    let filledSlots = 0;
+    academicEnrollments.forEach(e => {
+        const act = activities.find(a => a.id === e.activityId);
+        totalSlots += act?.evaluationCount || 0;
+        filledSlots += e.grades?.filter(g => g > 0).length || 0;
+    });
+    const avanceCalificaciones = totalSlots > 0 ? Math.round((filledSlots / totalSlots) * 100) : 0;
+
+    // 4. Asistencia Promedio
+    const enrollmentsWithAttendance = academicEnrollments.filter(e => typeof e.attendancePercentage === 'number');
+    const sumaAsistencia = enrollmentsWithAttendance.reduce((acc, e) => acc + (e.attendancePercentage || 0), 0);
+    const asistenciaPromedio = enrollmentsWithAttendance.length > 0 ? Math.round(sumaAsistencia / enrollmentsWithAttendance.length) : 0;
+    
+    // 5. Cursos Críticos
+    const enrollmentsByActivity = academicEnrollments.reduce((acc, e) => {
+        acc[e.activityId] = (acc[e.activityId] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>);
+    const cursosCriticos = activities.filter(a => a.category === 'ACADEMIC' && (enrollmentsByActivity[a.id] || 0) < 5 && (enrollmentsByActivity[a.id] || 0) > 0).length;
+
+    // 6. Cursos sin Matrícula
+    const cursosSinMatricula = activities.filter(a => a.category === 'ACADEMIC' && !enrollments.some(e => e.activityId === a.id)).length;
+    
+    // 7. Cursos Finalizados
+    const hoyStr = new Date().toISOString().split('T')[0];
+    const cursosFinalizados = activities.filter(a => a.category === 'ACADEMIC' && a.endDate && a.endDate < hoyStr).length;
+
+    return {
+        tasaAprobacion,
+        totalEstudiantesRiesgo: estudiantesRiesgo.size,
+        avanceCalificaciones,
+        asistenciaPromedio,
+        cursosCriticos,
+        cursosSinMatricula,
+        cursosFinalizados
+    };
+  }, [user.systemRole, activities, enrollments, config]);
+
+
+  // --- LOGIC: SPLIT OFFER vs CATALOG (Updated for Students) ---
   const { offerActivities, catalogActivities } = useMemo(() => {
-      // Si NO es estudiante, ve todo en "Oferta" (modo gestión) para simplificar la vista admin
-      if (user.systemRole !== UserRole.ESTUDIANTE) {
-          return { offerActivities: activities, catalogActivities: [] };
-      }
+    // Admin and Asesor see everything as "offer"
+    if (user.systemRole !== UserRole.ESTUDIANTE) {
+        return { offerActivities: activities, catalogActivities: [] };
+    }
+    
+    // Logic for ESTUDIANTE view
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+    const offer: Activity[] = [];
+    const catalog: Activity[] = [];
 
-      const offer: Activity[] = [];
-      const catalog: Activity[] = [];
+    activities.forEach(act => {
+        if (!act.startDate) {
+            offer.push(act);
+            return;
+        }
 
-      activities.forEach(act => {
-          // Si no tiene fecha, asumimos que está vigente por defecto
-          if (!act.startDate) {
-              offer.push(act);
-              return;
-          }
+        const [y, m, d] = act.startDate.split('-').map(Number);
+        const startDate = new Date(y, m - 1, d);
+        
+        let deadline: Date;
 
-          const [y, m, d] = act.startDate.split('-').map(Number);
-          const startDate = new Date(y, m - 1, d); // Mes 0-indexado
-          
-          // Lógica: La matrícula está habilitada desde el inicio hasta 14 días después.
-          const deadline = new Date(startDate);
-          deadline.setDate(deadline.getDate() + 14);
+        // Apply different rules based on activity category FOR STUDENTS
+        if (act.category === 'GENERAL') { // Extensión
+            deadline = new Date(startDate);
+            deadline.setDate(deadline.getDate() + 2); // 2-day rule
+        } else { // Cursos Académicos
+            deadline = new Date(startDate);
+            deadline.setDate(deadline.getDate() + 14); // 14-day rule
+        }
 
-          // Si hoy es <= fecha limite (Inicio + 14), está en oferta.
-          if (today <= deadline) {
-              offer.push(act);
-          } else {
-              // Si ya pasó el tiempo de matrícula, va al catálogo histórico
-              catalog.push(act);
-          }
-      });
-
-      return { offerActivities: offer, catalogActivities: catalog };
-
+        if (today <= deadline) {
+            offer.push(act);
+        } else {
+            catalog.push(act);
+        }
+    });
+    
+    return { offerActivities: offer, catalogActivities: catalog };
   }, [activities, user.systemRole]);
+
+  // --- LOGIC: FOR ADMIN's HISTORICAL CATALOG ---
+  const availableYears = useMemo(() => {
+      const currentYear = new Date().getFullYear();
+      // FIX: The type of `a.year` is `number | undefined`. The original filter did not narrow the type for TypeScript.
+      // By using a type guard `(y): y is number`, we ensure the array passed to `sort` only contains numbers, fixing the arithmetic operation error.
+      const years = new Set(activities.map(a => a.year).filter((y): y is number => typeof y === 'number' && y !== currentYear));
+      return Array.from(years).sort((a, b) => b - a);
+  }, [activities]);
+
+  const catalogActivitiesForAdmin = useMemo(() => {
+      return activities.filter(a => a.year === catalogYear);
+  }, [activities, catalogYear]);
 
 
   // --- HANDLERS ---
@@ -525,53 +637,104 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
           </div>
       )}
 
-      {/* Admin Quick Actions & Data Export */}
+      {/* ========================================================= */}
+      {/* VISTA ADMINISTRADOR: PANEL COMPLETO CON CATÁLOGO          */}
+      {/* ========================================================= */}
       {user.systemRole === UserRole.ADMIN && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <button onClick={() => onNavigate('participants')} className="p-4 bg-white border border-slate-200 rounded-xl hover:border-[#647FBC] hover:shadow-md transition-all flex items-center gap-4 group">
-                      <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                      </div>
-                      <div className="text-left">
-                          <h3 className="font-bold text-slate-700 group-hover:text-[#647FBC]">Base Maestra</h3>
-                          <p className="text-xs text-slate-400">Gestionar Estudiantes y Docentes</p>
-                      </div>
-                  </button>
+          <div className="space-y-12">
+              <div>
+                  <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-slate-200 pb-4">
+                      <svg className="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
+                      Oferta Académica Vigente
+                  </h3>
+                  {offerActivities.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {offerActivities.map(act => {
+                              const isAcademic = act.category === 'ACADEMIC';
+                              const btnColorClass = isAcademic 
+                                  ? 'bg-indigo-600 hover:bg-indigo-700' 
+                                  : 'bg-teal-600 hover:bg-teal-700';
 
-                  <button onClick={() => onNavigate('advisors')} className="p-4 bg-white border border-slate-200 rounded-xl hover:border-[#647FBC] hover:shadow-md transition-all flex items-center gap-4 group">
-                      <div className="p-3 bg-amber-50 text-amber-600 rounded-lg group-hover:bg-amber-600 group-hover:text-white transition-colors">
-                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                              return (
+                                  <div key={act.id} className="relative bg-white border border-slate-200 rounded-xl p-6 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all">
+                                      <div className="absolute top-4 left-4">
+                                          {isAcademic ? (
+                                              <span className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-1 rounded font-bold uppercase border border-indigo-100 shadow-sm">CURSO UAD</span>
+                                          ) : (
+                                              <span className="bg-teal-50 text-teal-700 text-[10px] px-2 py-1 rounded font-bold uppercase border border-teal-100 shadow-sm">EXTENSIÓN</span>
+                                          )}
+                                      </div>
+                                      <div className="mt-8">
+                                          <h4 className="font-bold text-slate-900 text-base mb-2 line-clamp-2 h-12 leading-tight">{act.name}</h4>
+                                          <div className="text-xs text-slate-600 space-y-1 mb-4">
+                                              <p className="flex items-center gap-2"><span className="text-slate-400">📅</span> Inicio: {formatDateCL(act.startDate)}</p>
+                                              <p className="flex items-center gap-2"><span className="text-slate-400">🎓</span> {act.modality}</p>
+                                              <p className="flex items-center gap-2"><span className="text-slate-400">👨‍🏫</span> {act.relator || 'Docente UPLA'}</p>
+                                          </div>
+                                          <button 
+                                              onClick={() => handleOpenEnrollModal(act)}
+                                              className={`w-full text-white py-2 rounded-lg font-bold shadow-sm text-sm transition-colors flex items-center justify-center gap-2 ${btnColorClass}`}
+                                          >
+                                              Gestionar
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                                          </button>
+                                      </div>
+                                  </div>
+                              );
+                          })}
                       </div>
-                      <div className="text-left">
-                          <h3 className="font-bold text-slate-700 group-hover:text-[#647FBC]">Asesores</h3>
-                          <p className="text-xs text-slate-400">Gestionar Permisos</p>
-                      </div>
-                  </button>
-
-                  <button onClick={() => onNavigate('courses')} className="p-4 bg-white border border-slate-200 rounded-xl hover:border-[#647FBC] hover:shadow-md transition-all flex items-center gap-4 group">
-                      <div className="p-3 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
-                      </div>
-                      <div className="text-left">
-                          <h3 className="font-bold text-slate-700 group-hover:text-[#647FBC]">Cursos UAD</h3>
-                          <p className="text-xs text-slate-400">Gestión Académica</p>
-                      </div>
-                  </button>
-                  
-                  <button onClick={() => onNavigate('config')} className="p-4 bg-white border border-slate-200 rounded-xl hover:border-[#647FBC] hover:shadow-md transition-all flex items-center gap-4 group">
-                      <div className="p-3 bg-slate-100 text-slate-600 rounded-lg group-hover:bg-slate-600 group-hover:text-white transition-colors">
-                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                      </div>
-                      <div className="text-left">
-                          <h3 className="font-bold text-slate-700 group-hover:text-[#647FBC]">Configuración</h3>
-                          <p className="text-xs text-slate-400">Listas y Parámetros</p>
-                      </div>
-                  </button>
+                  ) : (
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center"><p className="text-slate-600 font-medium">No hay actividades con matrícula abierta en este momento.</p></div>
+                  )}
               </div>
 
-              <div className="lg:col-span-1">
-                  <DataExporter />
+              <div className="animate-fadeIn">
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6 border-b border-slate-200 pb-4">
+                      <h3 className="text-2xl font-bold text-slate-600 flex items-center gap-2">
+                          <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                          Catálogo de Cursos (Historial)
+                      </h3>
+                      <div className="flex items-center gap-2">
+                          <label htmlFor="year-selector" className="text-sm font-bold text-slate-500">Consultar Año:</label>
+                          <select 
+                              id="year-selector"
+                              value={catalogYear} 
+                              onChange={e => setCatalogYear(Number(e.target.value))}
+                              className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#647FBC] text-sm font-bold"
+                          >
+                              {availableYears.map(year => <option key={year} value={year!}>{year}</option>)}
+                          </select>
+                      </div>
+                  </div>
+                  
+                  {catalogActivitiesForAdmin.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {catalogActivitiesForAdmin.map(act => (
+                              <div key={act.id} className="relative bg-slate-50 border border-slate-200 rounded-xl p-6 shadow-sm opacity-90 hover:opacity-100 transition-opacity">
+                                  <div className="flex justify-between items-start mb-4">
+                                     <span className="bg-slate-200 text-slate-600 text-[10px] px-2 py-1 rounded font-bold uppercase border border-slate-300">
+                                          {act.category === 'ACADEMIC' ? 'Curso UAD' : 'Extensión'}
+                                     </span>
+                                     <span className="text-slate-400 text-[10px] font-bold uppercase border border-slate-200 px-2 py-1 rounded">
+                                          Finalizado
+                                     </span>
+                                  </div>
+                                  <h4 className="font-bold text-slate-700 text-base mb-2 line-clamp-2 h-12 leading-tight">{act.name}</h4>
+                                  <div className="text-xs text-slate-500 space-y-1 mb-4">
+                                      <p className="flex items-center gap-2">📅 Inicio: {formatDateCL(act.startDate)}</p>
+                                      <p className="flex items-center gap-2">🎓 Modalidad: {act.modality}</p>
+                                  </div>
+                                  <button onClick={() => handleOpenEnrollModal(act)} className="w-full text-slate-500 border border-slate-300 py-2 rounded-lg font-medium bg-white hover:bg-slate-100 transition-colors text-sm">
+                                      Ver Detalles
+                                  </button>
+                              </div>
+                          ))}
+                      </div>
+                  ) : (
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center border-dashed">
+                          <p className="text-slate-500 font-medium">No se encontraron actividades para el año {catalogYear}.</p>
+                      </div>
+                  )}
               </div>
           </div>
       )}
@@ -579,9 +742,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
       {/* ========================================================= */}
       {/* VISTA ASESOR: PANEL DE SEGUIMIENTO (REEMPLAZA OFERTA)     */}
       {/* ========================================================= */}
-      {user.systemRole === UserRole.ASESOR ? (
+      {user.systemRole === UserRole.ASESOR && advisorKpis ? (
           <div className="space-y-12">
               
+              {/* KPI Section */}
+              <div>
+                  <h3 className="text-lg font-bold text-slate-600 flex items-center gap-2 mb-4">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
+                      Indicadores Clave de Gestión
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+                      <KpiCardCompact title="Tasa Aprobación" value={advisorKpis.tasaAprobacion} suffix="%" colorClass="text-emerald-600" />
+                      <KpiCardCompact title="Alumnos en Riesgo" value={advisorKpis.totalEstudiantesRiesgo} colorClass="text-amber-600" />
+                      <KpiCardCompact title="Avance Notas" value={advisorKpis.avanceCalificaciones} suffix="%" colorClass="text-indigo-600" />
+                      <KpiCardCompact title="Asistencia Media" value={advisorKpis.asistenciaPromedio} suffix="%" colorClass="text-blue-600" />
+                      <KpiCardCompact title="Cursos Críticos" value={advisorKpis.cursosCriticos} colorClass="text-red-600" />
+                      <KpiCardCompact title="Cursos sin Matrícula" value={advisorKpis.cursosSinMatricula} colorClass="text-slate-500" />
+                      <KpiCardCompact title="Cursos Finalizados" value={advisorKpis.cursosFinalizados} colorClass="text-purple-600" />
+                  </div>
+              </div>
+
               {/* SECCIÓN 1: CURSOS CURRICULARES (ACADÉMICOS) */}
               <div>
                   <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-indigo-200 pb-4">
@@ -737,12 +917,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
               </div>
 
           </div>
-      ) : (
-          /* ========================================================= */
-          /* VISTA STANDARD (ADMIN/STUDENT): OFERTA ACADÉMICA VIGENTE  */
-          /* ========================================================= */
+      ) : null }
+      
+      {/* --- CATCH-ALL FOR STUDENT & ADMIN (If not Asesor) --- */}
+      {user.systemRole !== UserRole.ASESOR && user.systemRole !== UserRole.ADMIN && (
           <div className="space-y-12">
-              
               {/* BLOQUE 1: OFERTA VIGENTE */}
               <div>
                   <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-slate-200 pb-4">
@@ -751,7 +930,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                   </h3>
                   
                   {offerActivities.length > 0 ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                           {offerActivities.map(act => {
                               const isAcademic = act.category === 'ACADEMIC';
                               const isStudent = user.systemRole === UserRole.ESTUDIANTE;
@@ -811,7 +990,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
               </div>
 
               {/* BLOQUE 2: CATALOGO / REFERENCIA (VISTA ESTUDIANTE) */}
-              {/* Esta sección muestra cursos que ya pasaron su fecha de inscripción pero siguen en la BD */}
               {user.systemRole === UserRole.ESTUDIANTE && (
                   <div className="animate-fadeIn">
                       <h3 className="text-2xl font-bold text-slate-600 flex items-center gap-2 mb-6 border-b border-slate-200 pb-4">
@@ -829,7 +1007,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                               {act.category === 'ACADEMIC' ? 'Curso UAD' : 'Extensión'}
                                          </span>
                                          <span className="text-slate-400 text-[10px] font-bold uppercase border border-slate-200 px-2 py-1 rounded">
-                                              Matrícula Cerrada
+                                             {act.category === 'GENERAL' ? 'CERRADO' : 'Matrícula Cerrada'}
                                          </span>
                                       </div>
 
