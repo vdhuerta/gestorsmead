@@ -149,7 +149,7 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
-  const { activities, users, enrollments, enrollUser, upsertUsers, config, getUser } = useData();
+  const { activities, users, enrollments, enrollUser, upsertUsers, addActivity, config, getUser } = useData();
   
   // Dynamic Lists from Config
   const listFaculties = config.faculties?.length ? config.faculties : FACULTY_LIST;
@@ -203,6 +203,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
           setRutFound(true); 
       }
   }, [showStudentEnrollModal, user]);
+
+  // --- AUTO-INIT: ASESORÍAS (Self-Repair for Netlify) ---
+  // Esta lógica asegura que la actividad contenedora exista incluso si no se ha visitado el gestor
+  useEffect(() => {
+      if (user.systemRole === UserRole.ASESOR && activities.length > 0) {
+          const advisoryId = `ADVISORY-GENERAL-${new Date().getFullYear()}`;
+          const hasAdvisory = activities.some(a => a.category === 'ADVISORY' || a.id === advisoryId);
+          
+          if (!hasAdvisory) {
+              const initAdvisory = async () => {
+                  console.log("Auto-inicializando módulo de Asesorías en Dashboard...");
+                  await addActivity({
+                      id: advisoryId,
+                      category: 'ADVISORY',
+                      name: `Asesorías y Acompañamiento ${new Date().getFullYear()}`,
+                      modality: 'Presencial/Virtual',
+                      hours: 0,
+                      year: new Date().getFullYear(),
+                      isPublic: false,
+                      internalCode: 'ASE-GEN',
+                      startDate: new Date().toISOString().split('T')[0]
+                  });
+              };
+              initAdvisory();
+          }
+      }
+  }, [user.systemRole, activities, addActivity]);
 
   // --- General KPIs Calculation ---
   const activeCourses = activities.filter(a => a.category === 'ACADEMIC').length;
@@ -1073,7 +1100,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                   {offerActivities.filter(a => a.category === 'ADVISORY').length === 0 && (
                                       <tr>
                                           <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
-                                              No hay programas de asesoría activos. Ingrese al módulo de Asesorías para inicializar.
+                                              No hay programas de asesoría activos. Inicializando datos...
                                           </td>
                                       </tr>
                                   )}
