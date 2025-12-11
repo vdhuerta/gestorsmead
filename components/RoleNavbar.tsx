@@ -34,7 +34,7 @@ const NAV_ITEMS: NavItem[] = [
   { 
     id: 'erd', 
     label: 'Modelo ER', 
-    allowedRoles: [UserRole.ADMIN, UserRole.ASESOR],
+    allowedRoles: [UserRole.ASESOR], // Removido ADMIN para limpiar menú
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <title>Modelo Entidad-Relación</title>
@@ -45,7 +45,7 @@ const NAV_ITEMS: NavItem[] = [
   { 
     id: 'arch', 
     label: 'Arquitectura', 
-    allowedRoles: [UserRole.ADMIN],
+    allowedRoles: [], // Oculto del menú principal (Mencionado dentro de Configuración)
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <title>Arquitectura Técnica</title>
