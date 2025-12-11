@@ -93,6 +93,7 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                     const dayActs = activitiesByDay[day] || [];
                     const hasAcademic = dayActs.some(a => a.category === 'ACADEMIC');
                     const hasGeneral = dayActs.some(a => a.category === 'GENERAL');
+                    const hasPostgraduate = dayActs.some(a => a.category === 'POSTGRADUATE');
                     const isToday = day === today.getDate();
 
                     return (
@@ -106,6 +107,7 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                             <div className="flex gap-0.5 mt-0.5">
                                 {hasAcademic && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-white' : 'bg-indigo-500'}`}></div>}
                                 {hasGeneral && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-teal-200' : 'bg-teal-500'}`}></div>}
+                                {hasPostgraduate && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-purple-200' : 'bg-purple-500'}`}></div>}
                             </div>
 
                             {/* Tooltip */}
@@ -113,8 +115,8 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 bg-slate-800 text-white text-[10px] p-2 rounded z-20 shadow-xl pointer-events-none text-left">
                                     {dayActs.map(a => (
                                         <div key={a.id} className="mb-1 last:mb-0 border-b border-slate-600 last:border-0 pb-1 last:pb-0">
-                                            <span className={`font-bold ${a.category === 'ACADEMIC' ? 'text-indigo-300' : 'text-teal-300'}`}>
-                                                • {a.category === 'ACADEMIC' ? 'Curso' : 'Ext.'}: 
+                                            <span className={`font-bold ${a.category === 'ACADEMIC' ? 'text-indigo-300' : a.category === 'POSTGRADUATE' ? 'text-purple-300' : 'text-teal-300'}`}>
+                                                • {a.category === 'ACADEMIC' ? 'Curso' : a.category === 'POSTGRADUATE' ? 'Post.' : 'Ext.'}: 
                                             </span> {a.name}
                                         </div>
                                     ))}
@@ -126,6 +128,7 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
             </div>
             <div className="flex gap-4 mt-4 text-[10px] justify-center text-slate-500">
                 <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-indigo-500"></div> Académico</div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-purple-500"></div> Postítulos</div>
                 <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-teal-500"></div> Extensión</div>
             </div>
         </div>
@@ -204,6 +207,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
   // --- General KPIs Calculation ---
   const activeCourses = activities.filter(a => a.category === 'ACADEMIC').length;
   const activeGeneral = activities.filter(a => a.category === 'GENERAL').length;
+  const activePostgraduate = activities.filter(a => a.category === 'POSTGRADUATE').length;
   const totalEnrollments = enrollments.length;
 
   // --- ASESOR KPIs Calculation ---
@@ -215,38 +219,38 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     const aprobados = academicEnrollments.filter(e => e.state === ActivityState.APROBADO).length;
     const tasaAprobacion = academicEnrollments.length > 0 ? Math.round((aprobados / academicEnrollments.length) * 100) : 0;
 
-    // 2. Estudiantes en Riesgo (LÓGICA CORREGIDA)
+    // 2. Estudiantes en Riesgo (LÓGICA ACTUALIZADA Y ESTRICTA)
     const minGrade = config.minPassingGrade || 4.0;
-    const minAttendance = config.minAttendancePercentage || 75;
-    const hoy = new Date();
+    const minAtt = config.minAttendancePercentage || 75;
     const estudiantesRiesgo = new Set();
-    academicEnrollments.forEach(e => {
-        const activity = activities.find(a => a.id === e.activityId);
-        const endDate = activity?.endDate ? new Date(activity.endDate) : null;
 
-        // Solo verificar cursos activos o recién terminados
-        if (!endDate || endDate >= hoy) {
-            let isLowGrade = false;
-            // Primero, verificar si la nota final ya está calculada y es reprobatoria.
-            if (e.finalGrade !== undefined && e.finalGrade > 0 && e.finalGrade < minGrade) {
-                isLowGrade = true;
-            } 
-            // Si la nota final no es reprobatoria (o no existe), verificar el promedio de las notas parciales.
-            else if ((e.finalGrade === undefined || e.finalGrade === 0) && e.grades && e.grades.length > 0) {
-                const partialGrades = e.grades.filter(g => g !== null && g > 0);
-                if (partialGrades.length > 0) {
-                    const avg = partialGrades.reduce((a, b) => a + b, 0) / partialGrades.length;
-                    if (avg < minGrade) {
-                        isLowGrade = true;
-                    }
-                }
-            }
-            
-            const isLowAttendance = e.attendancePercentage !== undefined && e.attendancePercentage < minAttendance;
-            
-            if (isLowGrade || isLowAttendance) {
-                estudiantesRiesgo.add(e.rut);
-            }
+    academicEnrollments.forEach(e => {
+        // Regla 0: Un estudiante APROBADO, por definición, no está en riesgo.
+        if (e.state === ActivityState.APROBADO) {
+            return;
+        }
+
+        const activity = activities.find(a => a.id === e.activityId);
+        if (!activity) return; // Actividad no encontrada, no se puede evaluar.
+
+        const expectedGrades = activity.evaluationCount || 3;
+        const recordedGrades = (e.grades || []).filter(g => g !== undefined && g !== null && g > 0).length;
+        const hasAllGrades = recordedGrades >= expectedGrades;
+
+        const isFailingGrade = e.finalGrade !== undefined && e.finalGrade < minGrade;
+        const isFailingAttendance = e.attendancePercentage !== undefined && e.attendancePercentage < minAtt;
+
+        // REGLA 1 y 2: Todas las calificaciones ingresadas, pero el promedio O la asistencia son insuficientes.
+        if (hasAllGrades && (isFailingGrade || isFailingAttendance)) {
+            estudiantesRiesgo.add(e.rut);
+            return; // Se cuenta como en riesgo, no es necesario seguir evaluando.
+        }
+
+        // REGLA 3: No todas las notas están ingresadas, pero el promedio actual ya es reprobatorio.
+        // Se considera en riesgo si ya tiene al menos una nota registrada.
+        if (!hasAllGrades && recordedGrades > 0 && isFailingGrade) {
+            estudiantesRiesgo.add(e.rut);
+            return; // Se cuenta como en riesgo.
         }
     });
 
@@ -265,17 +269,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     const sumaAsistencia = enrollmentsWithAttendance.reduce((acc, e) => acc + (e.attendancePercentage || 0), 0);
     const asistenciaPromedio = enrollmentsWithAttendance.length > 0 ? Math.round(sumaAsistencia / enrollmentsWithAttendance.length) : 0;
     
-    // 5. Cursos Críticos
+    // 5. Cursos Críticos (CORREGIDO: Ahora incluye cursos con 0 matriculados)
     const enrollmentsByActivity = academicEnrollments.reduce((acc, e) => {
         acc[e.activityId] = (acc[e.activityId] || 0) + 1;
         return acc;
     }, {} as Record<string, number>);
-    const cursosCriticos = activities.filter(a => a.category === 'ACADEMIC' && (enrollmentsByActivity[a.id] || 0) < 5 && (enrollmentsByActivity[a.id] || 0) > 0).length;
-
-    // 6. Cursos sin Matrícula
-    const cursosSinMatricula = activities.filter(a => a.category === 'ACADEMIC' && !enrollments.some(e => e.activityId === a.id)).length;
+    const cursosCriticos = activities.filter(a => a.category === 'ACADEMIC' && (enrollmentsByActivity[a.id] || 0) < 5).length;
     
-    // 7. Cursos Finalizados
+    // 6. Cursos Finalizados
     const hoyStr = new Date().toISOString().split('T')[0];
     const cursosFinalizados = activities.filter(a => a.category === 'ACADEMIC' && a.endDate && a.endDate < hoyStr).length;
 
@@ -285,7 +286,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
         avanceCalificaciones,
         asistenciaPromedio,
         cursosCriticos,
-        cursosSinMatricula,
         cursosFinalizados
     };
   }, [user.systemRole, activities, enrollments, config]);
@@ -306,6 +306,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     const catalog: Activity[] = [];
 
     activities.forEach(act => {
+        // FILTRO DE PRIVACIDAD PARA ESTUDIANTES:
+        // Si la actividad no es pública, se omite de la oferta y del catálogo.
+        if (act.isPublic === false) return;
+
         if (!act.startDate) {
             offer.push(act);
             return;
@@ -338,15 +342,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
   // --- LOGIC: FOR ADMIN's HISTORICAL CATALOG ---
   const availableYears = useMemo(() => {
       const currentYear = new Date().getFullYear();
-      // FIX: The type of `a.year` is `number | undefined`. The original filter did not narrow the type for TypeScript.
-      // By using a type guard `(y): y is number`, we ensure the array passed to `sort` only contains numbers, fixing the arithmetic operation error.
-      const years = new Set(activities.map(a => a.year).filter((y): y is number => typeof y === 'number' && y !== currentYear));
-      return Array.from(years).sort((a, b) => b - a);
+      // FIX: Filter out undefined years to ensure the sort operation is performed on numbers only.
+      // This prevents a runtime error when comparing elements.
+      const yearSet = new Set<number>();
+      activities.forEach(a => {
+        if (typeof a.year === 'number' && a.year !== currentYear) {
+            yearSet.add(a.year);
+        }
+      });
+      const uniqueYears = Array.from(yearSet);
+      return uniqueYears.sort((a, b) => b - a);
   }, [activities]);
 
   const catalogActivitiesForAdmin = useMemo(() => {
       return activities.filter(a => a.year === catalogYear);
   }, [activities, catalogYear]);
+
+
+  // --- LOGIC FOR CALENDAR VIEW ---
+  const calendarActivities = useMemo(() => {
+    // Para el estudiante, offerActivities ya está filtrado por isPublic === false en el paso anterior.
+    return offerActivities;
+  }, [offerActivities]);
 
 
   // --- HANDLERS ---
@@ -356,10 +373,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
          setShowStudentEnrollModal(true);
          setEnrollSuccessMsg(null);
     } else {
-         if (confirm(`¿Ir a la gestión del curso "${act.name}"?`)) {
-             localStorage.setItem(act.category === 'GENERAL' ? 'jumpto_activity_id' : 'jumpto_course_id', act.id);
-             onNavigate(act.category === 'GENERAL' ? 'generalActivities' : 'courses');
-         }
+        localStorage.setItem(act.category === 'GENERAL' ? 'jumpto_activity_id' : 'jumpto_course_id', act.id);
+        onNavigate(act.category === 'GENERAL' ? 'generalActivities' : 'courses');
     }
   };
 
@@ -469,6 +484,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
       if (act.category === 'GENERAL') {
           localStorage.setItem('jumpto_activity_id', act.id);
           onNavigate('generalActivities');
+      } else if (act.category === 'POSTGRADUATE') {
+          // Navegación específica para postítulos
+          onNavigate('postgraduate');
       } else {
           localStorage.setItem('jumpto_course_id', act.id);
           localStorage.setItem('jumpto_tab_course', targetTab); 
@@ -537,6 +555,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
              <div className="text-center px-6 py-4 bg-white rounded-xl border border-slate-100 shadow-sm">
                   <span className="block text-3xl font-bold text-[#647FBC]">{activeCourses}</span>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cursos UAD</span>
+             </div>
+             {/* NEW KPI FOR POSTGRADUATE */}
+             <div className="text-center px-6 py-4 bg-white rounded-xl border border-slate-100 shadow-sm">
+                  <span className="block text-3xl font-bold text-purple-600">{activePostgraduate}</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Postítulos</span>
              </div>
              <div className="text-center px-6 py-4 bg-white rounded-xl border border-slate-100 shadow-sm">
                   <span className="block text-3xl font-bold text-teal-600">{activeGeneral}</span>
@@ -632,7 +655,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
 
               {/* COLUMNA DERECHA: CALENDARIO */}
               <div className="lg:col-span-1">
-                 <MiniCalendar activities={offerActivities} />
+                 <MiniCalendar activities={calendarActivities} />
               </div>
           </div>
       )}
@@ -651,15 +674,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                           {offerActivities.map(act => {
                               const isAcademic = act.category === 'ACADEMIC';
-                              const btnColorClass = isAcademic 
-                                  ? 'bg-indigo-600 hover:bg-indigo-700' 
-                                  : 'bg-teal-600 hover:bg-teal-700';
+                              const isPostgraduate = act.category === 'POSTGRADUATE';
+                              
+                              let btnClass = 'bg-[#EEF2FF] text-[#3730A3] hover:bg-indigo-200';
+                              if (isPostgraduate) btnClass = 'bg-purple-50 text-purple-700 hover:bg-purple-100';
+                              else if (!isAcademic) btnClass = 'bg-[#F0FDFA] text-[#115E59] hover:bg-teal-100';
 
                               return (
                                   <div key={act.id} className="relative bg-white border border-slate-200 rounded-xl p-6 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all">
                                       <div className="absolute top-4 left-4">
                                           {isAcademic ? (
                                               <span className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-1 rounded font-bold uppercase border border-indigo-100 shadow-sm">CURSO UAD</span>
+                                          ) : isPostgraduate ? (
+                                              <span className="bg-purple-50 text-purple-700 text-[10px] px-2 py-1 rounded font-bold uppercase border border-purple-100 shadow-sm">POSTÍTULO</span>
                                           ) : (
                                               <span className="bg-teal-50 text-teal-700 text-[10px] px-2 py-1 rounded font-bold uppercase border border-teal-100 shadow-sm">EXTENSIÓN</span>
                                           )}
@@ -667,13 +694,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                       <div className="mt-8">
                                           <h4 className="font-bold text-slate-900 text-base mb-2 line-clamp-2 h-12 leading-tight">{act.name}</h4>
                                           <div className="text-xs text-slate-600 space-y-1 mb-4">
-                                              <p className="flex items-center gap-2"><span className="text-slate-400">📅</span> Inicio: {formatDateCL(act.startDate)}</p>
-                                              <p className="flex items-center gap-2"><span className="text-slate-400">🎓</span> {act.modality}</p>
-                                              <p className="flex items-center gap-2"><span className="text-slate-400">👨‍🏫</span> {act.relator || 'Docente UPLA'}</p>
+                                              <p className="flex items-center gap-2"><span className="font-bold text-xs text-purple-600">DIR:</span> {act.relator || 'Sin Director'}</p>
+                                              <p className="flex items-center gap-2">Modules: {act.programConfig?.modules?.length || 0}</p>
+                                              <p className="flex items-center gap-2">Inicio: {formatDateCL(act.startDate)}</p>
                                           </div>
                                           <button 
                                               onClick={() => handleOpenEnrollModal(act)}
-                                              className={`w-full text-white py-2 rounded-lg font-bold shadow-sm text-sm transition-colors flex items-center justify-center gap-2 ${btnColorClass}`}
+                                              className={`w-full py-2 rounded-lg font-bold shadow-sm text-sm transition-colors flex items-center justify-center gap-2 ${btnClass}`}
                                           >
                                               Gestionar
                                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
@@ -702,7 +729,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                               onChange={e => setCatalogYear(Number(e.target.value))}
                               className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#647FBC] text-sm font-bold"
                           >
-                              {availableYears.map(year => <option key={year} value={year!}>{year}</option>)}
+                              {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
                           </select>
                       </div>
                   </div>
@@ -713,7 +740,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                               <div key={act.id} className="relative bg-slate-50 border border-slate-200 rounded-xl p-6 shadow-sm opacity-90 hover:opacity-100 transition-opacity">
                                   <div className="flex justify-between items-start mb-4">
                                      <span className="bg-slate-200 text-slate-600 text-[10px] px-2 py-1 rounded font-bold uppercase border border-slate-300">
-                                          {act.category === 'ACADEMIC' ? 'Curso UAD' : 'Extensión'}
+                                          {act.category === 'ACADEMIC' ? 'Curso UAD' : act.category === 'POSTGRADUATE' ? 'Postítulo' : 'Extensión'}
                                      </span>
                                      <span className="text-slate-400 text-[10px] font-bold uppercase border border-slate-200 px-2 py-1 rounded">
                                           Finalizado
@@ -751,13 +778,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
                       Indicadores Clave de Gestión
                   </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                       <KpiCardCompact title="Tasa Aprobación" value={advisorKpis.tasaAprobacion} suffix="%" colorClass="text-emerald-600" />
                       <KpiCardCompact title="Alumnos en Riesgo" value={advisorKpis.totalEstudiantesRiesgo} colorClass="text-amber-600" />
                       <KpiCardCompact title="Avance Notas" value={advisorKpis.avanceCalificaciones} suffix="%" colorClass="text-indigo-600" />
                       <KpiCardCompact title="Asistencia Media" value={advisorKpis.asistenciaPromedio} suffix="%" colorClass="text-blue-600" />
-                      <KpiCardCompact title="Cursos Críticos" value={advisorKpis.cursosCriticos} colorClass="text-red-600" />
-                      <KpiCardCompact title="Cursos sin Matrícula" value={advisorKpis.cursosSinMatricula} colorClass="text-slate-500" />
+                      <KpiCardCompact title="Cursos Críticos (&lt;5)" value={advisorKpis.cursosCriticos} colorClass="text-red-600" />
                       <KpiCardCompact title="Cursos Finalizados" value={advisorKpis.cursosFinalizados} colorClass="text-purple-600" />
                   </div>
               </div>
@@ -916,6 +942,75 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                   </div>
               </div>
 
+              {/* SECCIÓN 3: POSTÍTULOS (NEW) */}
+              <div>
+                  <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-purple-200 pb-4">
+                      <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                      Programas de Postítulo y Diplomados
+                  </h3>
+                  
+                  <div className="bg-white border border-purple-100 rounded-xl shadow-sm overflow-hidden">
+                      <div className="overflow-x-auto">
+                          <table className="w-full text-sm text-left">
+                              <thead className="bg-purple-50 text-purple-800 font-bold border-b border-purple-100">
+                                  <tr>
+                                      <th className="px-6 py-4">Programa</th>
+                                      <th className="px-6 py-4">Tipo / Versión</th>
+                                      <th className="px-6 py-4">Módulos</th>
+                                      <th className="px-6 py-4">Matrícula</th>
+                                      <th className="px-6 py-4 text-center">Acción</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                  {offerActivities.filter(a => a.category === 'POSTGRADUATE').map(act => {
+                                      const count = enrollments.filter(e => e.activityId === act.id).length;
+                                      return (
+                                          <tr key={act.id} className="hover:bg-purple-50/30 transition-colors group">
+                                              <td className="px-6 py-4">
+                                                  <div className="font-bold text-slate-800">{act.name}</div>
+                                                  <div className="text-xs text-slate-500 font-mono">{act.id}</div>
+                                              </td>
+                                              <td className="px-6 py-4">
+                                                  <div className="flex flex-col">
+                                                      <span className="text-xs font-bold text-purple-700">{act.programConfig?.programType || 'Postítulo'}</span>
+                                                      <span className="text-xs text-slate-500">{act.version}</span>
+                                                  </div>
+                                              </td>
+                                              <td className="px-6 py-4">
+                                                  <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-bold border border-purple-200">
+                                                      {act.programConfig?.modules?.length || 0} Módulos
+                                                  </span>
+                                              </td>
+                                              <td className="px-6 py-4">
+                                                  <div className="flex items-center gap-2">
+                                                      <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                                                      <span className="font-bold text-slate-700">{count}</span>
+                                                  </div>
+                                              </td>
+                                              <td className="px-6 py-4 text-center">
+                                                  <button 
+                                                      onClick={() => handleAdvisorNavigate(act)}
+                                                      className="text-purple-600 hover:text-white hover:bg-purple-600 font-bold text-xs bg-purple-50 border border-purple-200 px-4 py-2 rounded-lg transition-colors shadow-sm"
+                                                  >
+                                                      Gestionar
+                                                  </button>
+                                              </td>
+                                          </tr>
+                                      );
+                                  })}
+                                  {offerActivities.filter(a => a.category === 'POSTGRADUATE').length === 0 && (
+                                      <tr>
+                                          <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
+                                              No hay programas de postítulo activos.
+                                          </td>
+                                      </tr>
+                                  )}
+                              </tbody>
+                          </table>
+                      </div>
+                  </div>
+              </div>
+
           </div>
       ) : null }
       
@@ -935,11 +1030,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                               const isAcademic = act.category === 'ACADEMIC';
                               const isStudent = user.systemRole === UserRole.ESTUDIANTE;
                               
-                              let btnColorClass = 'bg-emerald-600 hover:bg-emerald-700';
+                              let btnClass: string;
                               if (isStudent) {
-                                  btnColorClass = isAcademic 
-                                    ? 'bg-indigo-600 hover:bg-indigo-700' 
-                                    : 'bg-teal-600 hover:bg-teal-700';
+                                  if (isAcademic) {
+                                      btnClass = 'bg-[#EEF2FF] text-[#3730A3] hover:bg-indigo-200';
+                                  } else {
+                                      btnClass = 'bg-[#F0FDFA] text-[#115E59] hover:bg-teal-100';
+                                  }
+                              } else {
+                                  btnClass = 'bg-emerald-600 hover:bg-emerald-700 text-white';
                               }
 
                               return (
@@ -949,6 +1048,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                       {act.category === 'ACADEMIC' ? (
                                           <span className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-1 rounded font-bold uppercase border border-indigo-100 shadow-sm">
                                               CURSO UAD
+                                          </span>
+                                      ) : act.category === 'POSTGRADUATE' ? (
+                                          <span className="bg-purple-50 text-purple-700 text-[10px] px-2 py-1 rounded font-bold uppercase border border-purple-100 shadow-sm">
+                                              POSTÍTULO
                                           </span>
                                       ) : (
                                           <span className="bg-teal-50 text-teal-700 text-[10px] px-2 py-1 rounded font-bold uppercase border border-teal-100 shadow-sm">
@@ -972,9 +1075,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                       </div>
                                       <button 
                                           onClick={() => handleOpenEnrollModal(act)}
-                                          className={`w-full text-white py-3 rounded-xl font-bold shadow-md transition-colors flex items-center justify-center gap-2 ${btnColorClass}`}
+                                          className={`w-full py-3 rounded-xl font-bold shadow-md transition-colors flex items-center justify-center gap-2 ${btnClass}`}
                                       >
-                                          {user.systemRole === UserRole.ESTUDIANTE ? 'Matricúlate Ahora' : 'Gestionar'}
+                                          {user.systemRole === UserRole.ESTUDIANTE ? 'Matricúlate Agora' : 'Gestionar'}
                                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
                                       </button>
                                   </div>
@@ -1004,7 +1107,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                       
                                       <div className="flex justify-between items-start mb-4">
                                          <span className="bg-slate-200 text-slate-600 text-[10px] px-2 py-1 rounded font-bold uppercase border border-slate-300">
-                                              {act.category === 'ACADEMIC' ? 'Curso UAD' : 'Extensión'}
+                                              {act.category === 'ACADEMIC' ? 'Curso UAD' : act.category === 'POSTGRADUATE' ? 'Postítulo' : 'Extensión'}
                                          </span>
                                          <span className="text-slate-400 text-[10px] font-bold uppercase border border-slate-200 px-2 py-1 rounded">
                                              {act.category === 'GENERAL' ? 'CERRADO' : 'Matrícula Cerrada'}
@@ -1114,7 +1217,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                       {/* 3. Panel de Calificaciones */}
                                       <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100">
                                           <h4 className="text-sm font-bold text-amber-800 mb-3 flex items-center gap-2">
-                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 01-2-2z" /></svg>
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
                                               Evaluaciones Parciales
                                           </h4>
                                           

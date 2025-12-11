@@ -11,13 +11,15 @@ import { JsonViewer } from './components/JsonViewer';
 import { AiAssistant } from './components/AiAssistant';
 import { ArchitectureView } from './components/ArchitectureView';
 import { ConfigEditor } from './components/ConfigEditor';
-// Update import
 import { CourseManager } from './components/CourseManager';
-import { GeneralActivityManager } from './components/GeneralActivityManager'; // Nuevo Componente
+import { GeneralActivityManager } from './components/GeneralActivityManager'; 
 import { ParticipantManager } from './components/ParticipantManager';
-import { AdvisorManager } from './components/AdvisorManager'; // Nuevo Componente
+import { AdvisorManager } from './components/AdvisorManager'; 
+import { PostgraduateManager } from './components/PostgraduateManager'; 
+import { AdvisoryManager } from './components/AdvisoryManager';
+import { StudentSignature } from './components/StudentSignature'; // Nuevo Import
 import { DataProvider, useData } from './context/DataContext';
-import { checkConnection } from './services/supabaseClient'; // Importar checker
+import { checkConnection } from './services/supabaseClient'; 
 
 // Color Mapping for Visuals - Updated to New Institutional Palette
 const TABLE_COLORS = [
@@ -36,7 +38,10 @@ const MainContent: React.FC = () => {
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'error'>('checking');
   const [connectionMsg, setConnectionMsg] = useState('');
 
-  // Verificar conexión al montar
+  // --- ROUTING LOGIC FOR SIGNATURE ---
+  const [signatureParams, setSignatureParams] = useState<{eid: string, sid: string} | null>(null);
+
+  // Verificar conexión y Rutas al montar
   useEffect(() => {
       const verify = async () => {
           const result = await checkConnection();
@@ -48,7 +53,23 @@ const MainContent: React.FC = () => {
           }
       };
       verify();
+
+      // Check URL for Signature Mode
+      const params = new URLSearchParams(window.location.search);
+      const mode = params.get('mode');
+      const eid = params.get('eid'); // Enrollment ID
+      const sid = params.get('sid'); // Session ID
+
+      if (mode === 'sign' && eid && sid) {
+          setSignatureParams({ eid, sid });
+      }
+
   }, []);
+
+  // --- SPECIAL RENDER FOR STUDENT SIGNATURE (NO LOGIN REQUIRED) ---
+  if (signatureParams) {
+      return <StudentSignature enrollmentId={signatureParams.eid} sessionId={signatureParams.sid} />;
+  }
 
   const handleLogout = () => {
     setUser(null);
@@ -57,6 +78,7 @@ const MainContent: React.FC = () => {
 
   // --- CRITICAL DATABASE ERROR SCREEN (Recursion) ---
   if (error && (error.includes("infinite recursion") || error.includes("42P17"))) {
+      // ... (Keep existing error screen logic)
       return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-50 p-6 animate-fadeIn">
               <div className="bg-white rounded-xl shadow-2xl border-l-8 border-red-600 max-w-4xl w-full overflow-hidden flex flex-col max-h-[90vh]">
@@ -126,12 +148,16 @@ const MainContent: React.FC = () => {
         return <Dashboard user={user} onNavigate={setActiveTab} />;
       
       case 'courses':
-        // Gestion Cursos Académicos
         return <CourseManager currentUser={user} />; 
       
       case 'generalActivities':
-        // Nueva Gestión de Charlas/Talleres
         return <GeneralActivityManager currentUser={user} />;
+
+      case 'postgraduate':
+        return <PostgraduateManager currentUser={user} />;
+
+      case 'advisory':
+        return <AdvisoryManager currentUser={user} />;
 
       case 'participants':
         return <ParticipantManager />;
@@ -159,18 +185,12 @@ const MainContent: React.FC = () => {
                         </div>
                         
                         <div className="relative p-8 bg-white/50 rounded-2xl border border-slate-200 overflow-hidden">
-                            <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
-                            
                             <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12">
                             {SCHEMA_TABLES.map((table, idx) => (
                                 <div key={table.tableName} className="flex justify-center">
                                     <SchemaNode table={table} colorClass={TABLE_COLORS[idx % TABLE_COLORS.length]} />
                                 </div>
                             ))}
-                             <svg className="absolute inset-0 pointer-events-none hidden md:block w-full h-full overflow-visible opacity-20">
-                                <path d="M 300 150 C 450 150, 450 400, 300 450" fill="none" stroke="#334155" strokeWidth="2" strokeDasharray="5,5" />
-                                <path d="M 600 150 C 500 150, 500 400, 600 450" fill="none" stroke="#334155" strokeWidth="2" strokeDasharray="5,5" />
-                            </svg>
                             </div>
                         </div>
                     </div>
@@ -187,13 +207,6 @@ const MainContent: React.FC = () => {
                 {/* Sidebar */}
                 <div className="xl:col-span-1 space-y-6">
                     <AiAssistant />
-                    <div className="bg-[#647FBC] text-white p-6 rounded-xl shadow-lg">
-                        <h3 className="text-lg font-bold text-white mb-3">Restricciones del Modelo</h3>
-                        <ul className="space-y-3 text-sm">
-                            <li className="flex items-start gap-2"><span className="text-[#AED6CF] font-bold mt-0.5">✓</span><span><strong>RUT</strong> identificador único.</span></li>
-                            <li className="flex items-start gap-2"><span className="text-[#AED6CF] font-bold mt-0.5">✓</span><span>Relación N:M Usuarios-Actividades.</span></li>
-                        </ul>
-                    </div>
                 </div>
             </div>
         );
@@ -224,14 +237,11 @@ const MainContent: React.FC = () => {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
         {renderContent()}
 
-        {/* FLOATING USER AVATAR (BOTTOM LEFT) */}
+        {/* FLOATING USER AVATAR */}
         <div className="fixed bottom-6 left-6 z-50 group flex items-center gap-3 animate-fadeIn">
             <div className="relative">
-                {/* Pulse Animation Ring (Thicker, On/Off effect) */}
                 <div className={`absolute -inset-1 rounded-full border-4 ${connectionStatus === 'error' ? 'border-red-500/60' : 'border-green-500/60'} animate-pulse`}></div>
-                {/* Static Ring (Thicker) */}
                 <div className={`absolute inset-0 rounded-full border-4 ${connectionStatus === 'error' ? 'border-red-500' : 'border-green-500'}`}></div>
-                
                 <div className="relative w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-xl bg-slate-200">
                     {user.photoUrl ? (
                         <img src={user.photoUrl} alt={user.names} className="w-full h-full object-cover" />
@@ -242,16 +252,7 @@ const MainContent: React.FC = () => {
                     )}
                 </div>
             </div>
-            
-            {/* Tooltip / Name Label */}
-            <div className="hidden group-hover:block bg-slate-800 text-white text-xs py-1 px-3 rounded shadow-lg transition-opacity whitespace-nowrap">
-                <p className="font-bold">{user.names}</p>
-                <p className={`text-[10px] ${connectionStatus === 'error' ? 'text-red-400' : 'text-green-400'}`}>
-                    ● {connectionStatus === 'error' ? 'Sin Conexión' : 'En Línea'}
-                </p>
-            </div>
         </div>
-
 
         {/* Debug / Reset Button */}
         <div className="fixed bottom-4 right-4">

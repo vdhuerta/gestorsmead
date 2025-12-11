@@ -2,7 +2,7 @@
 import React from 'react';
 import { UserRole, User } from '../types';
 
-export type TabType = 'dashboard' | 'erd' | 'json' | 'arch' | 'config' | 'courses' | 'generalActivities' | 'participants' | 'advisors';
+export type TabType = 'dashboard' | 'erd' | 'json' | 'arch' | 'config' | 'courses' | 'generalActivities' | 'postgraduate' | 'advisory' | 'participants' | 'advisors';
 
 interface NavItem {
   id: TabType;
@@ -17,6 +17,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'advisors', label: 'Gestión Asesores', allowedRoles: [UserRole.ADMIN] }, 
   { id: 'courses', label: 'Gestión Cursos', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] },
   { id: 'generalActivities', label: 'Gestión Actividades', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] }, 
+  { id: 'postgraduate', label: 'Postítulos', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] }, 
+  { id: 'advisory', label: 'Asesorías', allowedRoles: [UserRole.ASESOR] }, // Nueva Sección Asesorías
   { 
     id: 'config', 
     label: 'Configuración', 

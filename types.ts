@@ -10,7 +10,9 @@ export enum ActivityState {
   APROBADO = 'Aprobado',
   REPROBADO = 'Reprobado',
   NO_CURSADO = 'No Cursado',
-  PENDIENTE = 'Pendiente'
+  PENDIENTE = 'Pendiente',
+  AVANZANDO = 'Avanzando',
+  EN_PROCESO = 'En Proceso'
 }
 
 export interface SystemConfig {
@@ -57,9 +59,28 @@ export interface User {
   systemRole: UserRole;
 }
 
+// Estructura para la configuración avanzada de Postítulos
+export interface ProgramModule {
+  id: string;
+  name: string;
+  relatorRut?: string; // Docente específico del módulo
+  evaluationCount: number; // Notas parciales de este módulo
+  weight: number; // Ponderación %
+  startDate?: string;
+  endDate?: string;
+  classDates?: string[]; // Array de fechas específicas de clases
+  evaluationWeights?: number[]; // Ponderación individual de cada evaluación (suma debería ser 100)
+}
+
+export interface ProgramConfig {
+  programType: 'Diplomado' | 'Postítulo' | 'Magíster' | 'Curso Especialización';
+  modules: ProgramModule[];
+  globalAttendanceRequired: number;
+}
+
 export interface Activity {
   id: string; // PK Compuesta (CODE-YEAR-SEM-VER)
-  category?: 'ACADEMIC' | 'GENERAL'; // Nuevo: Separador de Módulos
+  category?: 'ACADEMIC' | 'GENERAL' | 'POSTGRADUATE' | 'ADVISORY'; // Nuevo: ADVISORY
   activityType?: string; // Nuevo: Charla, Taller, etc.
   internalCode?: string; 
   year?: number; 
@@ -75,10 +96,31 @@ export interface Activity {
   classLink?: string;     
   evaluationLink?: string; 
   linkCertificate?: string;
+  isPublic?: boolean; // NUEVO: Controla visibilidad en calendario público
   
   // Gestión del Curso
   moduleCount?: number; // Cantidad de módulos
   evaluationCount?: number; // Cantidad de notas pactadas
+  
+  // Configuración Específica para Postítulos
+  programConfig?: ProgramConfig; 
+}
+
+export interface SessionLog {
+  id: string;
+  date: string;
+  duration: number; // 30, 60, 90, 120
+  observation: string;
+  advisorName?: string;
+  
+  // Campos Nuevos Solicitados
+  location?: string;
+  modality?: string; // "Presencial", "Virtual", "Correo Electrónico"
+
+  // Campos de Firma Digital
+  verified?: boolean;
+  verificationCode?: string; // Código Único "UPLA-XXXX"
+  signedAt?: string; // ISO Timestamp de la firma
 }
 
 export interface Enrollment {
@@ -99,6 +141,7 @@ export interface Enrollment {
   observation?: string;
   responsible?: string; // Who enrolled them or manages this record
   diagnosticResult?: string;
+  sessionLogs?: SessionLog[]; // Nuevo: Historial de Asesorías (JSONB)
 }
 
 // For Visualization

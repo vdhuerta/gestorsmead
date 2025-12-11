@@ -182,12 +182,12 @@ export const SCHEMA_TABLES: SchemaTable[] = [
   },
   {
     tableName: 'Actividades_Formativas',
-    description: 'Catálogo unificado de Cursos y Charlas.',
+    description: 'Catálogo unificado de Cursos, Charlas y Postítulos.',
     fields: [
       { name: 'id_actividad', type: 'VARCHAR(50)', isPk: true, description: 'ID Compuesto: COD-AÑO-SEM-VER' },
-      { name: 'categoria', type: 'ENUM', description: "'ACADEMIC' o 'GENERAL'" },
+      { name: 'categoria', type: 'ENUM', description: "'ACADEMIC', 'GENERAL' o 'POSTGRADUATE'" },
       { name: 'nombre', type: 'VARCHAR(200)', description: 'Título oficial' },
-      { name: 'modalidad', type: 'VARCHAR(50)', description: 'Presencial, Híbrido, E-Learning' },
+      { name: 'program_config', type: 'JSONB', description: 'Configuración JSON para módulos de Postítulos' },
       { name: 'fecha_inicio', type: 'DATE', description: 'Inicio real' },
       { name: 'relator', type: 'VARCHAR(100)', description: 'Instructor a cargo' },
     ]
@@ -202,6 +202,7 @@ export const SCHEMA_TABLES: SchemaTable[] = [
       { name: 'estado_academico', type: 'ENUM', description: 'Aprobado, Reprobado...' },
       { name: 'notas_array', type: 'DECIMAL[]', description: 'Calificaciones' },
       { name: 'asistencia_json', type: 'JSONB', description: 'Registro de Asistencia' },
+      { name: 'session_logs', type: 'JSONB', description: 'Historial de Sesiones de Asesoría' },
     ]
   }
 ];
@@ -359,104 +360,48 @@ export const FULL_JSON_MODEL = {
 
 export const SUPABASE_SQL_SCRIPT = `
 -- ====================================================================
--- SCRIPT DE REINICIO TOTAL - MODELO DE DATOS V3 (REPARADO)
--- Ejecuta este script para actualizar la estructura de la base de datos.
+-- SCRIPT DE REPARACIÓN TOTAL Y PERMISOS - SMEAD V4
+-- Ejecuta este script en el SQL Editor de Supabase para corregir problemas de guardado.
 -- ====================================================================
 
--- 1. TABLA USUARIOS (Unificada: Estudiantes, Asesores y Admin)
-CREATE TABLE IF NOT EXISTS public.users (
-    rut text PRIMARY KEY,
-    names text,
-    paternal_surname text,
-    maternal_surname text,
-    email text,
-    phone text,
-    photo_url text, 
-    system_role text DEFAULT 'Estudiante', -- 'Admin', 'Asesor', 'Estudiante'
-    password text, -- NUEVO: Credenciales para Admin y Asesores
-    academic_role text,
-    faculty text,
-    department text,
-    career text,
-    contract_type text,
-    teaching_semester text,
-    campus text,
-    title text
-);
+-- 1. ASEGURAR COLUMNAS PARA POSTÍTULOS Y ASESORÍAS
+ALTER TABLE public.activities 
+ADD COLUMN IF NOT EXISTS program_config jsonb;
 
--- CORRECCIÓN CRÍTICA DE LOGIN Y ROLES
-ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password text;
-ALTER TABLE public.users ADD COLUMN IF NOT EXISTS system_role text DEFAULT 'Estudiante';
-ALTER TABLE public.users ADD COLUMN IF NOT EXISTS photo_url text;
+ALTER TABLE public.enrollments 
+ADD COLUMN IF NOT EXISTS state text DEFAULT 'Inscrito';
 
--- CORRECCIÓN CRÍTICA DE DUPLICADOS (ERROR 23505)
--- Eliminar la restricción de unicidad en email si existe, para permitir carga masiva con correos repetidos
-ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_email_key;
-DROP INDEX IF EXISTS users_email_key;
+ALTER TABLE public.enrollments 
+ADD COLUMN IF NOT EXISTS session_logs jsonb DEFAULT '[]'::jsonb;
 
--- 2. TABLA ACTIVIDADES (Cursos y Charlas)
-CREATE TABLE IF NOT EXISTS public.activities (
-    id text PRIMARY KEY,
-    category text,
-    activity_type text,
-    internal_code text,
-    year integer,
-    academic_period text,
-    name text,
-    version text,
-    modality text,
-    hours integer,
-    module_count integer,
-    evaluation_count integer,
-    start_date text,
-    end_date text,
-    relator text,
-    link_resources text,
-    class_link text,
-    evaluation_link text
-);
+-- 2. REINICIAR POLÍTICAS DE SEGURIDAD (RLS)
+-- Esto corrige el error "infinite recursion" y problemas de permisos de escritura.
 
--- 3. TABLA INSCRIPCIONES (Matrícula)
-CREATE TABLE IF NOT EXISTS public.enrollments (
-    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_rut text REFERENCES public.users(rut) ON DELETE RESTRICT,
-    activity_id text REFERENCES public.activities(id) ON DELETE RESTRICT,
-    state text DEFAULT 'Inscrito', -- CRITICO: Columna 'state' requerida por el código
-    grades decimal[] DEFAULT '{}',
-    final_grade decimal,
-    attendance_percentage integer DEFAULT 0,
-    attendance_session_1 boolean DEFAULT false,
-    attendance_session_2 boolean DEFAULT false,
-    attendance_session_3 boolean DEFAULT false,
-    attendance_session_4 boolean DEFAULT false,
-    attendance_session_5 boolean DEFAULT false,
-    attendance_session_6 boolean DEFAULT false,
-    observation text,
-    situation text,
-    UNIQUE(user_rut, activity_id)
-);
-
--- CORRECCIÓN CRÍTICA DE COLUMNA FALTANTE
-ALTER TABLE public.enrollments ADD COLUMN IF NOT EXISTS state text DEFAULT 'Inscrito';
-
--- 4. SEGURIDAD (RLS) - PERMISIVA
+-- Deshabilitar RLS temporalmente para limpiar
 ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activities DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.enrollments DISABLE ROW LEVEL SECURITY;
 
+-- Borrar políticas antiguas conflictivas
 DROP POLICY IF EXISTS "Permitir Todo Users" ON public.users;
 DROP POLICY IF EXISTS "Permitir Todo Activities" ON public.activities;
 DROP POLICY IF EXISTS "Permitir Todo Enrollments" ON public.enrollments;
+DROP POLICY IF EXISTS "Enable read access for all users" ON public.users;
+DROP POLICY IF EXISTS "Enable insert for authenticated users only" ON public.users;
 
+-- Habilitar RLS nuevamente
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
 
+-- Crear políticas PERMISIVAS (Públicas/Anon para evitar bloqueos en esta etapa)
+-- NOTA: En producción real, esto debería restringirse por auth.uid()
 CREATE POLICY "Permitir Todo Users" ON public.users FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Permitir Todo Activities" ON public.activities FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Permitir Todo Enrollments" ON public.enrollments FOR ALL USING (true) WITH CHECK (true);
 
--- 5. RECARGAR CACHÉ DE ESQUEMA (Para error 'Could not find column')
+-- 3. REFRESCAR CACHÉ DE API
+-- Obliga a PostgREST a reconocer las nuevas columnas (program_config, session_logs)
 NOTIFY pgrst, 'reload config';
 `;
 

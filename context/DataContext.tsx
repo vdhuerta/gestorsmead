@@ -12,13 +12,14 @@ interface DataContextType {
   isLoading: boolean;
   error: string | null;
   addActivity: (activity: Activity) => Promise<void>;
-  deleteActivity: (id: string) => Promise<void>; // Nueva función
+  deleteActivity: (id: string) => Promise<void>; 
   getUser: (rut: string) => User | undefined;
   deleteUser: (rut: string) => Promise<void>;
   upsertUsers: (newUsers: User[]) => Promise<{ added: number; updated: number }>;
   enrollUser: (rut: string, activityId: string) => Promise<void>;
   bulkEnroll: (ruts: string[], activityId: string) => Promise<{ success: number; skipped: number }>;
   updateEnrollment: (id: string, updates: Partial<Enrollment>) => Promise<void>;
+  deleteEnrollment: (id: string) => Promise<void>; // Nueva función
   updateConfig: (newConfig: SystemConfig) => void;
   resetData: () => void;
 }
@@ -76,7 +77,9 @@ const mapActivityFromDB = (a: any): Activity => ({
     relator: a.relator,
     linkResources: a.link_resources,
     classLink: a.class_link,
-    evaluationLink: a.evaluation_link
+    evaluationLink: a.evaluation_link, 
+    isPublic: a.is_public,
+    programConfig: a.program_config 
 });
 
 const mapEnrollmentFromDB = (e: any): Enrollment => ({
@@ -94,7 +97,8 @@ const mapEnrollmentFromDB = (e: any): Enrollment => ({
     attendanceSession6: e.attendance_session_6,
     attendancePercentage: e.attendance_percentage,
     observation: e.observation,
-    situation: e.situation
+    situation: e.situation,
+    sessionLogs: e.session_logs 
 });
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -168,7 +172,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .subscribe((status) => {
             if (status === 'SUBSCRIBED') {
                 console.log("🟢 Conectado a Realtime: Sincronización activa.");
-                // Fetch again to ensure no gap between initial fetch and subscription
                 fetchData();
             } else if (status === 'CHANNEL_ERROR') {
                 console.warn("🔴 Error en Realtime. Conexión inestable o modo offline.");
@@ -209,8 +212,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUsers(MOCK_USERS);
         setActivities(MOCK_ACTIVITIES);
         setEnrollments(MOCK_ENROLLMENTS);
-        // Not setting 'error' state string to avoid triggering the "Red Screen of Death" in App.tsx, 
-        // allowing the app to function in offline/demo mode.
         
     } finally {
         setIsLoading(false);
@@ -220,14 +221,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // --- ACTIONS ---
 
   const addActivity = async (activity: Activity) => {
-    // Optimistic update: handles both creation and updates intelligently to prevent duplicates.
     setActivities(prev => {
         const existing = prev.find(a => a.id === activity.id);
         if (existing) {
-            // This is an update.
             return prev.map(a => a.id === activity.id ? activity : a);
         } else {
-            // This is a new activity.
             return [...prev, activity];
         }
     });
@@ -250,29 +248,28 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         relator: activity.relator,
         link_resources: activity.linkResources,
         class_link: activity.classLink,
-        evaluation_link: activity.evaluationLink
+        evaluation_link: activity.evaluationLink, 
+        is_public: activity.isPublic,
+        program_config: activity.programConfig 
     };
 
     const { error } = await supabase.from('activities').upsert(dbActivity);
     if (error) {
         console.error("Error guardando actividad:", error);
-        alert(`Error guardando actividad: ${error.message}. (Verifique conexión)`);
-        // On error, revert optimistic update by fetching fresh data.
+        const msg = error.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+        alert(`Error guardando actividad: ${msg}. (Verifique conexión)`);
         fetchData();
     }
   };
 
   const deleteActivity = async (id: string) => {
-      // Optimistic
       setActivities(prev => prev.filter(a => a.id !== id));
-      // También eliminar inscripciones asociadas optimísticamente (opcional visualmente)
       setEnrollments(prev => prev.filter(e => e.activityId !== id));
 
       const { error } = await supabase.from('activities').delete().eq('id', id);
       if (error) {
           console.error("Error deleting activity:", error.message);
           alert(`Error al eliminar actividad: ${error.message}`);
-          // Revert if DB delete fails
           fetchData();
       }
   };
@@ -282,12 +279,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteUser = async (rut: string) => {
-      // Optimistic
       setUsers(prev => prev.filter(u => u.rut !== rut));
       const { error } = await supabase.from('users').delete().eq('rut', rut);
       if (error) {
         console.error("Error deleting user:", error.message);
-        // Revert on fail
         fetchData();
       }
   };
@@ -296,7 +291,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let added = 0;
     let updated = 0;
 
-    // 1. Prepare DB payloads FIRST (map to snake_case), removing side-effects from state setter.
     const dbPayloads = incomingUsers.map(incUser => ({
         rut: incUser.rut,
         names: incUser.names,
@@ -317,31 +311,26 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         title: incUser.title
     }));
 
-    // 2. Perform optimistic update on local state for immediate UI feedback.
     setUsers(prevUsers => {
         const usersMap = new Map(prevUsers.map(u => [u.rut, u]));
         incomingUsers.forEach(incUser => {
             const existingUser = usersMap.get(incUser.rut);
             if (existingUser) {
                 updated++;
+                usersMap.set(incUser.rut, Object.assign({}, existingUser, incUser));
             } else {
                 added++;
+                usersMap.set(incUser.rut, incUser);
             }
-            // FIX: Safely spread existingUser, providing an empty object fallback if it's undefined.
-            // Spreading `existingUser` directly causes an error if it's `undefined` (i.e., for new users).
-            // Using `?? {}` provides a safe empty object to spread in that case.
-            usersMap.set(incUser.rut, { ...(existingUser ?? {}), ...incUser });
         });
         return Array.from(usersMap.values());
     });
 
-    // 3. Sync with the database.
     if (dbPayloads.length > 0) {
         const { error } = await supabase.from('users').upsert(dbPayloads, { onConflict: 'rut' });
         
         if (error) {
             console.error("Error upserting users:", error.message);
-            // Re-fetch data to revert optimistic update on error
             fetchData(); 
             if (error.code === '23505') {
                  alert("⚠️ ERROR DE DUPLICADOS: Hay correos electrónicos repetidos en la carga.");
@@ -360,7 +349,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { error } = await supabase.from('enrollments').insert({
           user_rut: rut,
           activity_id: activityId,
-          state: 'Inscrito'
+          state: 'Inscrito',
+          session_logs: [] 
       });
 
       if (error) {
@@ -382,7 +372,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               dbPayloads.push({
                   user_rut: rut,
                   activity_id: activityId,
-                  state: 'Inscrito'
+                  state: 'Inscrito',
+                  session_logs: []
               });
           }
       });
@@ -398,7 +389,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateEnrollment = async (id: string, updates: Partial<Enrollment>) => {
-      // Optimistic Update
       setEnrollments(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
 
       const dbUpdates: any = {};
@@ -407,6 +397,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (updates.finalGrade !== undefined) dbUpdates.final_grade = updates.finalGrade;
       if (updates.attendancePercentage !== undefined) dbUpdates.attendance_percentage = updates.attendancePercentage;
       if (updates.observation) dbUpdates.observation = updates.observation;
+      if (updates.sessionLogs) dbUpdates.session_logs = updates.sessionLogs; 
       
       if (updates.attendanceSession1 !== undefined) dbUpdates.attendance_session_1 = updates.attendanceSession1;
       if (updates.attendanceSession2 !== undefined) dbUpdates.attendance_session_2 = updates.attendanceSession2;
@@ -418,8 +409,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { error } = await supabase.from('enrollments').update(dbUpdates).eq('id', id);
       if (error) {
           console.error("Error updating enrollment:", error.message);
-          // Optional: Revert optimistic update here if critical
           fetchData();
+      }
+  };
+
+  const deleteEnrollment = async (id: string) => {
+      setEnrollments(prev => prev.filter(e => e.id !== id));
+      
+      const { error } = await supabase.from('enrollments').delete().eq('id', id);
+      
+      if (error) {
+          console.error("Error deleting enrollment:", error.message);
+          alert(`Error al eliminar bitácora: ${error.message}`);
+          fetchData(); // Revert
       }
   };
 
@@ -447,7 +449,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <DataContext.Provider value={{ 
         users, activities, enrollments, config, isLoading, error,
         addActivity, deleteActivity, upsertUsers, updateConfig, resetData,
-        enrollUser, bulkEnroll, updateEnrollment, getUser, deleteUser
+        enrollUser, bulkEnroll, updateEnrollment, deleteEnrollment, getUser, deleteUser
     }}>
       {children}
     </DataContext.Provider>

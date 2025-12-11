@@ -45,6 +45,8 @@ interface CourseManagerProps {
 
 export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => {
   const { activities, addActivity, deleteActivity, users, enrollments, upsertUsers, enrollUser, bulkEnroll, updateEnrollment, getUser, config } = useData();
+  const isAdmin = currentUser?.systemRole === UserRole.ADMIN;
+  const isAdvisor = currentUser?.systemRole === UserRole.ASESOR;
   
   // ... (Keep existing dynamic lists consts)
   const listFaculties = config.faculties?.length ? config.faculties : FACULTY_LIST;
@@ -339,22 +341,22 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   };
   const stats = getEnrollmentStats();
 
-  const getComputedStatus = (enr: Enrollment, act: Activity) => {
+  const getComputedStatus = (enr: Enrollment, act: Activity): string => {
       const hasAttendance = [enr.attendanceSession1, enr.attendanceSession2, enr.attendanceSession3, enr.attendanceSession4, enr.attendanceSession5, enr.attendanceSession6].some(Boolean);
       const expectedGrades = act.evaluationCount || 3;
       const recordedGrades = (enr.grades || []).filter(g => g !== undefined && g !== null && g > 0).length;
-      if (!hasAttendance && recordedGrades === 0) return 'INSCRITO';
-      if (hasAttendance && recordedGrades === 0) return 'EN PROCESO';
-      if (recordedGrades > 0 && recordedGrades < expectedGrades) return 'AVANZANDO';
+      if (!hasAttendance && recordedGrades === 0) return ActivityState.INSCRITO;
+      if (hasAttendance && recordedGrades === 0) return ActivityState.EN_PROCESO;
+      if (recordedGrades > 0 && recordedGrades < expectedGrades) return ActivityState.AVANZANDO;
       if (recordedGrades >= expectedGrades) {
           const minGrade = config.minPassingGrade || 4.0;
           const minAtt = config.minAttendancePercentage || 75;
           const isGradePass = (enr.finalGrade || 0) >= minGrade;
           const isAttPass = (enr.attendancePercentage || 0) >= minAtt;
-          if (isGradePass && isAttPass) return 'APROBADO';
-          return 'REPROBADO';
+          if (isGradePass && isAttPass) return ActivityState.APROBADO;
+          return ActivityState.REPROBADO;
       }
-      return 'PENDIENTE';
+      return ActivityState.PENDIENTE;
   };
 
   const handleCreateSubmit = (e: React.FormEvent) => {
@@ -364,9 +366,12 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     const generatedId = `${cleanCode}-${academicPeriodText}-${formData.version}`;
     const versionDisplay = `${formData.version} - ${formData.semester === '1' ? 'Primer Semestre' : formData.semester === '2' ? 'Segundo Semestre' : formData.semester}`;
     const finalId = (view === 'edit' && selectedCourseId) ? selectedCourseId : generatedId;
+    
+    // FIX: Added isPublic: true as default for Academic Courses
     const newActivity: Activity = {
-        id: finalId, category: 'ACADEMIC', internalCode: formData.internalCode, year: formData.year, academicPeriod: academicPeriodText, name: formData.nombre, version: versionDisplay, modality: formData.modality, hours: formData.horas, moduleCount: formData.moduleCount, evaluationCount: formData.evaluationCount, relator: formData.relator, startDate: formData.fechaInicio, endDate: formData.fechaTermino, linkResources: formData.linkRecursos, classLink: formData.linkClase, evaluationLink: formData.linkEvaluacion
+        id: finalId, category: 'ACADEMIC', internalCode: formData.internalCode, year: formData.year, academicPeriod: academicPeriodText, name: formData.nombre, version: versionDisplay, modality: formData.modality, hours: formData.horas, moduleCount: formData.moduleCount, evaluationCount: formData.evaluationCount, relator: formData.relator, startDate: formData.fechaInicio, endDate: formData.fechaTermino, linkResources: formData.linkRecursos, classLink: formData.linkClase, evaluationLink: formData.linkEvaluacion, isPublic: true
     };
+    
     addActivity(newActivity);
     if (view === 'edit') { setView('details'); } else {
         setFormData({ internalCode: '', year: new Date().getFullYear(), semester: '1', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', moduleCount: 0, evaluationCount: 3, linkRecursos: '', linkClase: '', linkEvaluacion: '' });
@@ -487,24 +492,72 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   };
 
   const handleUpdateGrade = (enrollmentId: string, index: number, value: string) => {
-      const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
-      if (!enrollment) return;
-      const newGrades = [...(enrollment.grades || [])];
-      newGrades[index] = parseFloat(value) || 0;
-      const final = newGrades.length > 0 ? parseFloat((newGrades.reduce((a, b) => a + b, 0) / newGrades.length).toFixed(1)) : 0;
-      updateEnrollment(enrollmentId, { grades: newGrades, finalGrade: final, state: final >= (config.minPassingGrade || 4.0) ? ActivityState.APROBADO : ActivityState.REPROBADO });
+    const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
+    if (!enrollment || !selectedCourse) return;
+
+    const currentGrades = enrollment.grades || [];
+    const newGrades = [...currentGrades];
+    while (newGrades.length < (selectedCourse.evaluationCount || 0)) {
+        newGrades.push(0);
+    }
+
+    let grade = parseFloat(value);
+
+    // FIX: Validate and clamp the input to prevent overflow. Allow empty string to clear a grade.
+    if (value.trim() === '' || isNaN(grade)) {
+        grade = 0;
+    } else if (grade > config.gradingScaleMax) {
+        grade = config.gradingScaleMax;
+    } else if (grade < 0) {
+        grade = 0;
+    }
+
+    newGrades[index] = parseFloat(grade.toFixed(1));
+
+    // FIX: Calculate average only on grades that have been entered (are > 0).
+    const validGrades = newGrades.filter(g => g > 0);
+    const finalGrade = validGrades.length > 0
+        ? parseFloat((validGrades.reduce((a, b) => a + b, 0) / validGrades.length).toFixed(1))
+        : 0;
+
+    // Use getComputedStatus for consistent state logic
+    const tempEnrollmentForState: Enrollment = {
+        ...enrollment,
+        grades: newGrades,
+        finalGrade: finalGrade,
+    };
+    const newState = getComputedStatus(tempEnrollmentForState, selectedCourse);
+
+    updateEnrollment(enrollmentId, { grades: newGrades, finalGrade: finalGrade, state: newState as ActivityState });
   };
 
   const handleToggleAttendance = (enrollmentId: string, sessionKey: string) => {
-      const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
-      if (!enrollment) return;
-      // @ts-ignore
-      const currentVal = enrollment[sessionKey];
-      let presentCount = 0;
-      if (enrollment.attendanceSession1) presentCount++; if (enrollment.attendanceSession2) presentCount++; if (enrollment.attendanceSession3) presentCount++; if (enrollment.attendanceSession4) presentCount++; if (enrollment.attendanceSession5) presentCount++; if (enrollment.attendanceSession6) presentCount++;
-      if (!currentVal) presentCount++; else presentCount--;
-      updateEnrollment(enrollmentId, { [sessionKey]: !currentVal, attendancePercentage: Math.round((presentCount / 6) * 100) });
+    const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
+    if (!enrollment || !selectedCourse) return;
+
+    // @ts-ignore
+    const newValue = !enrollment[sessionKey];
+
+    const tempEnrollmentState = { ...enrollment, [sessionKey]: newValue };
+    
+    let presentCount = 0;
+    if (tempEnrollmentState.attendanceSession1) presentCount++;
+    if (tempEnrollmentState.attendanceSession2) presentCount++;
+    if (tempEnrollmentState.attendanceSession3) presentCount++;
+    if (tempEnrollmentState.attendanceSession4) presentCount++;
+    if (tempEnrollmentState.attendanceSession5) presentCount++;
+    if (tempEnrollmentState.attendanceSession6) presentCount++;
+    
+    const totalSessions = 6;
+    const newPercentage = Math.round((presentCount / totalSessions) * 100);
+
+    // Also recalculate state for consistency
+    const tempEnrollmentForState: Enrollment = { ...tempEnrollmentState, attendancePercentage: newPercentage };
+    const newState = getComputedStatus(tempEnrollmentForState, selectedCourse);
+    
+    updateEnrollment(enrollmentId, { [sessionKey]: newValue, attendancePercentage: newPercentage, state: newState as ActivityState });
   };
+
 
   if (view === 'list') {
       return (
@@ -699,7 +752,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                           </div>
                                       );
                                   })()}
-                                  <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-sm text-left whitespace-nowrap"><thead className="bg-slate-100 text-slate-600 font-bold"><tr><th className="px-2 py-3 w-40 max-w-[160px] sticky left-0 bg-slate-100 border-r border-slate-200 truncate">Estudiante</th><th className="px-1 py-3 text-center w-8 text-[10px]">S1</th><th className="px-1 py-3 text-center w-8 text-[10px]">S2</th><th className="px-1 py-3 text-center w-8 text-[10px]">S3</th><th className="px-1 py-3 text-center w-8 text-[10px]">S4</th><th className="px-1 py-3 text-center w-8 text-[10px]">S5</th><th className="px-1 py-3 text-center w-8 text-[10px]">S6</th><th className="px-2 py-3 text-center w-16 text-xs">% Asist</th>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, i) => (<th key={i} className="px-1 py-3 text-center w-12 text-xs">N{i + 1}</th>))}<th className="px-2 py-3 text-center w-20">Final</th><th className="px-1 py-3 text-center w-24 text-xs">Estado</th><th className="px-1 py-3 text-center w-32 text-xs">Certificado</th></tr></thead><tbody className="divide-y divide-slate-100">{sortedEnrollments.map(enr => { const user = users.find(u => u.rut === enr.rut); const status = getComputedStatus(enr, selectedCourse); const minPassingGrade = config.minPassingGrade || 4.0; const minAttendance = config.minAttendancePercentage || 75; const displayName = (user && user.names) ? `${user.paternalSurname} ${user.maternalSurname || ''}, ${user.names}` : enr.rut; return (<tr key={enr.id} className="hover:bg-blue-50/30"><td className="px-2 py-2 max-w-[160px] sticky left-0 bg-white border-r border-slate-100 font-medium text-slate-700 truncate" title={displayName}>{displayName}</td>{['attendanceSession1', 'attendanceSession2', 'attendanceSession3', 'attendanceSession4', 'attendanceSession5', 'attendanceSession6'].map((key) => (<td key={key} className="px-1 py-2 text-center"><input type="checkbox" checked={!!enr[key as keyof Enrollment]} onChange={() => handleToggleAttendance(enr.id, key)} className="rounded text-[#647FBC] focus:ring-[#647FBC] cursor-pointer w-3 h-3"/></td>))}<td className="px-2 py-2 text-center"><span className={(enr.attendancePercentage || 0) < minAttendance ? 'bg-red-50 text-red-600 font-bold px-2 py-1 rounded' : 'text-slate-600 font-bold'}>{enr.attendancePercentage || 0}%</span></td>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, idx) => { const gradeVal = enr.grades?.[idx]; return (<td key={idx} className="px-1 py-2"><input type="number" step="0.1" min="1" max="7" className={`w-full text-center border border-slate-200 rounded py-1 text-sm font-bold px-1 focus:border-[#647FBC] focus:ring-1 focus:ring-[#647FBC] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal !== undefined && gradeVal < minPassingGrade && gradeVal > 0 ? 'text-red-600' : 'text-slate-700'}`} value={enr.grades?.[idx] || ''} onChange={(e) => handleUpdateGrade(enr.id, idx, e.target.value)} /></td>); })}<td className={`px-2 py-2 text-center text-sm ${(enr.finalGrade || 0) < minPassingGrade && (enr.finalGrade || 0) > 0 ? 'text-red-600 font-bold' : 'text-slate-800 font-bold'}`}>{enr.finalGrade || '-'}</td><td className="px-1 py-2 text-center"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase block w-full truncate ${status === 'APROBADO' ? 'bg-green-50 text-green-700' : status === 'REPROBADO' ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600'}`}>{status}</span></td><td className="px-1 py-2 text-center">{status === 'APROBADO' && (<button onClick={() => handleGenerateCertificate(user, selectedCourse)} disabled={isGeneratingPdf} className="text-white bg-[#647FBC] hover:bg-blue-700 px-2 py-1 rounded text-[10px] font-bold shadow-sm transition-colors flex items-center justify-center gap-1 mx-auto w-full disabled:opacity-50"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg><span className="hidden xl:inline">{isGeneratingPdf ? '...' : 'Descargar'}</span></button>)}</td></tr>); })}</tbody></table></div>
+                                  <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-sm text-left whitespace-nowrap"><thead className="bg-slate-100 text-slate-600 font-bold"><tr><th className="px-2 py-3 w-40 max-w-[160px] sticky left-0 bg-slate-100 border-r border-slate-200 truncate">Estudiante</th><th className="px-1 py-3 text-center w-8 text-[10px]">S1</th><th className="px-1 py-3 text-center w-8 text-[10px]">S2</th><th className="px-1 py-3 text-center w-8 text-[10px]">S3</th><th className="px-1 py-3 text-center w-8 text-[10px]">S4</th><th className="px-1 py-3 text-center w-8 text-[10px]">S5</th><th className="px-1 py-3 text-center w-8 text-[10px]">S6</th><th className="px-2 py-3 text-center w-16 text-xs">% Asist</th>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, i) => (<th key={i} className="px-1 py-3 text-center w-12 text-xs">N{i + 1}</th>))}<th className="px-2 py-3 text-center w-20">Final</th><th className="px-1 py-3 text-center w-24 text-xs">Estado</th><th className="px-1 py-3 text-center w-32 text-xs">Certificado</th></tr></thead><tbody className="divide-y divide-slate-100">{sortedEnrollments.map(enr => { const user = users.find(u => u.rut === enr.rut); const status = getComputedStatus(enr, selectedCourse); const minPassingGrade = config.minPassingGrade || 4.0; const minAttendance = config.minAttendancePercentage || 75; const displayName = (user && user.names) ? `${user.paternalSurname} ${user.maternalSurname || ''}, ${user.names}` : enr.rut; return (<tr key={enr.id} className="hover:bg-blue-50/30"><td className="px-2 py-2 max-w-[160px] sticky left-0 bg-white border-r border-slate-100 font-medium text-slate-700 truncate" title={displayName}>{displayName}</td>{['attendanceSession1', 'attendanceSession2', 'attendanceSession3', 'attendanceSession4', 'attendanceSession5', 'attendanceSession6'].map((key) => (<td key={key} className="px-1 py-2 text-center"><input type="checkbox" checked={!!enr[key as keyof Enrollment]} onChange={() => handleToggleAttendance(enr.id, key)} className="rounded text-[#647FBC] focus:ring-[#647FBC] cursor-pointer w-3 h-3"/></td>))}<td className="px-2 py-2 text-center"><span className={(enr.attendancePercentage || 0) < minAttendance ? 'bg-red-50 text-red-600 font-bold px-2 py-1 rounded' : 'text-slate-600 font-bold'}>{enr.attendancePercentage || 0}%</span></td>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, idx) => { const gradeVal = enr.grades?.[idx]; return (<td key={idx} className="px-1 py-2"><input type="number" step="0.1" min="1" max="7" className={`w-full text-center border border-slate-200 rounded py-1 text-sm font-bold px-1 focus:border-[#647FBC] focus:ring-1 focus:ring-[#647FBC] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal !== undefined && gradeVal < minPassingGrade && gradeVal > 0 ? 'text-red-600' : 'text-slate-700'}`} value={enr.grades?.[idx] || ''} onChange={(e) => handleUpdateGrade(enr.id, idx, e.target.value)} /></td>); })}<td className={`px-2 py-2 text-center text-sm ${(enr.finalGrade || 0) < minPassingGrade && (enr.finalGrade || 0) > 0 ? 'text-red-600 font-bold' : 'text-slate-800 font-bold'}`}>{enr.finalGrade || '-'}</td><td className="px-1 py-2 text-center"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase block w-full truncate ${ ((isAdmin || isAdvisor) && status === ActivityState.APROBADO) ? 'bg-green-50 text-green-700' : ((isAdmin || isAdvisor) && status === ActivityState.REPROBADO) ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600'}`}>{status}</span></td><td className="px-1 py-2 text-center">{status === 'APROBADO' && (<button onClick={() => handleGenerateCertificate(user, selectedCourse)} disabled={isGeneratingPdf} className="text-white bg-[#647FBC] hover:bg-blue-700 px-2 py-1 rounded text-[10px] font-bold shadow-sm transition-colors flex items-center justify-center gap-1 mx-auto w-full disabled:opacity-50"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg><span className="hidden xl:inline">{isGeneratingPdf ? '...' : 'Descargar'}</span></button>)}</td></tr>); })}</tbody></table></div>
                               </div>
                           </div>
                       )}

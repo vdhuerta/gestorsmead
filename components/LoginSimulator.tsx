@@ -66,8 +66,9 @@ export const LoginSimulator: React.FC<LoginSimulatorProps> = ({ onLogin }) => {
                      foundUser = {
                          rut: data.rut,
                          names: data.names,
-                         paternal_surname: data.paternal_surname,
-                         maternal_surname: data.maternal_surname,
+                         // FIX: Incorrect property names. Should be camelCase.
+                         paternalSurname: data.paternal_surname,
+                         maternalSurname: data.maternal_surname,
                          email: data.email,
                          phone: data.phone,
                          photoUrl: data.photo_url,
@@ -81,7 +82,7 @@ export const LoginSimulator: React.FC<LoginSimulatorProps> = ({ onLogin }) => {
                          teachingSemester: data.teaching_semester,
                          campus: data.campus,
                          title: data.title
-                     } as any;
+                     } as User;
                  }
              } catch (fetchError) {
                  console.warn("Fallback login fetch failed (Offline?):", fetchError);
