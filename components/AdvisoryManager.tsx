@@ -1,10 +1,9 @@
-
-// ... (imports remain the same)
 import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Enrollment, User, UserRole, Activity, SessionLog } from '../types';
 import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST } from '../constants';
 import { SmartSelect } from './SmartSelect';
+import { supabase } from '../services/supabaseClient';
 
 // ID Constante para la actividad contenedora de todas las asesorías del año
 const ADVISORY_ACTIVITY_ID = `ADVISORY-GENERAL-${new Date().getFullYear()}`;
@@ -67,7 +66,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         modality: 'Presencial'
     });
 
-    // ... (Init effect remains the same)
     // --- INIT: Asegurar que existe la "Actividad" Contenedora ---
     useEffect(() => {
         const checkAndCreateActivity = async () => {
@@ -107,7 +105,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         return { students: advisoryEnrollments.length, sessions: totalSessions, hours: totalHours.toFixed(1) };
     }, [advisoryEnrollments]);
 
-    // ... (Search handlers remain the same)
     // --- HANDLERS BUSQUEDA ---
     const handleSearchRutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value;
@@ -159,7 +156,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         setSurnameSuggestions([]);
     };
 
-    // ... (Enrollment handlers remain the same)
     // --- HANDLERS GESTIÓN ---
 
     const handleOpenEnrollModal = () => {
@@ -307,32 +303,61 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         setSignatureStep('qr-wait');
     };
 
-    // 2. Efecto para escuchar cambios en tiempo real (Supabase via DataContext)
+    // 2. Efecto para escuchar cambios en tiempo real (Polling Robustecido)
+    // Se usa polling directo a Supabase para evitar retrasos del contexto en Netlify
     useEffect(() => {
+        let interval: any;
+
         if (signatureStep === 'qr-wait' && selectedEnrollmentId && currentSessionId) {
-            const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
-            if (enrollment) {
-                const logs = enrollment.sessionLogs || [];
-                const mySession = logs.find(l => l.id === currentSessionId);
-                
-                // Si la sesión existe y ya está verificada (por el estudiante desde su móvil)
-                if (mySession && mySession.verified) {
-                    setSignatureStep('success');
-                    setTimeout(() => {
-                        // Reset form
-                        setSessionForm({ 
-                            date: new Date().toISOString().split('T')[0], 
-                            duration: 60, 
-                            observation: '',
-                            location: '',
-                            modality: 'Presencial'
-                        });
-                        setSignatureStep('form');
-                    }, 3000);
+            
+            const checkStatus = async () => {
+                try {
+                    // Consulta directa para mayor velocidad y fiabilidad
+                    const { data, error } = await supabase
+                        .from('enrollments')
+                        .select('session_logs')
+                        .eq('id', selectedEnrollmentId)
+                        .single();
+
+                    if (data && data.session_logs) {
+                        const logs = data.session_logs as SessionLog[];
+                        const mySession = logs.find(l => l.id === currentSessionId);
+
+                        if (mySession && mySession.verified) {
+                            clearInterval(interval);
+                            
+                            // 1. Actualizar contexto local para que el historial refleje el cambio INMEDIATAMENTE
+                            await updateEnrollment(selectedEnrollmentId, { sessionLogs: logs });
+                            
+                            // 2. Cambiar UI a éxito
+                            setSignatureStep('success');
+                            
+                            setTimeout(() => {
+                                setSessionForm({ 
+                                    date: new Date().toISOString().split('T')[0], 
+                                    duration: 60, 
+                                    observation: '',
+                                    location: '',
+                                    modality: 'Presencial'
+                                });
+                                setSignatureStep('form');
+                            }, 3000);
+                        }
+                    }
+                } catch (err) {
+                    console.error("Error verificando firma:", err);
                 }
-            }
+            };
+
+            // Chequeo inicial inmediato y luego polling
+            checkStatus();
+            interval = setInterval(checkStatus, 3000);
         }
-    }, [enrollments, signatureStep, selectedEnrollmentId, currentSessionId]);
+
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [signatureStep, selectedEnrollmentId, currentSessionId, updateEnrollment]);
 
     // MODIFIED: Delete Session Logic using Index fallback for legacy data
     const handleDeleteSession = async (indexOrId: number | string) => {
@@ -391,7 +416,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                     
                     {/* COL 1: Ficha del Estudiante (Solo Lectura aquí) */}
                     <div className="space-y-6">
-                        {/* ... (Student Card content same as before) ... */}
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                             <div className="flex items-center gap-4 mb-4">
                                 <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-bold text-xl">
@@ -440,7 +464,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                         
                         {/* FORMULARIO SESIÓN CON FIRMA DIGITAL */}
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 overflow-hidden relative">
-                            {/* ... (Signature form content remains identical) ... */}
                             <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4 flex items-center gap-2">
                                 <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                 Registrar Nueva Sesión
@@ -700,8 +723,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     // --- LIST VIEW ---
     return (
         <div className="animate-fadeIn space-y-6">
-            {/* Header, Search, and Table sections remain the same */}
-            {/* ... */}
             
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-r from-slate-800 to-slate-700 p-6 rounded-xl shadow-lg text-white">
@@ -863,7 +884,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             </div>
 
             {/* Modal Crear Expediente (13 Campos) */}
-            {/* ... (Create Modal Content) ... */}
             {showEnrollModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-slate-200">
