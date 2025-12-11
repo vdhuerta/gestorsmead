@@ -16,8 +16,8 @@ import { GeneralActivityManager } from './components/GeneralActivityManager';
 import { ParticipantManager } from './components/ParticipantManager';
 import { AdvisorManager } from './components/AdvisorManager'; 
 import { PostgraduateManager } from './components/PostgraduateManager'; 
-import { AdvisoryManager } from './components/AdvisoryManager';
-import { StudentSignature } from './components/StudentSignature'; // Nuevo Import
+import { AdvisoryManager, PublicVerification } from './components/AdvisoryManager'; // Added PublicVerification
+import { StudentSignature } from './components/StudentSignature'; 
 import { DataProvider, useData } from './context/DataContext';
 import { checkConnection } from './services/supabaseClient'; 
 
@@ -38,8 +38,9 @@ const MainContent: React.FC = () => {
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'error'>('checking');
   const [connectionMsg, setConnectionMsg] = useState('');
 
-  // --- ROUTING LOGIC FOR SIGNATURE ---
+  // --- ROUTING LOGIC FOR SIGNATURE & VERIFICATION ---
   const [signatureParams, setSignatureParams] = useState<{eid: string, sid: string} | null>(null);
+  const [verificationCode, setVerificationCode] = useState<string | null>(null);
 
   // Verificar conexión y Rutas al montar
   useEffect(() => {
@@ -54,21 +55,28 @@ const MainContent: React.FC = () => {
       };
       verify();
 
-      // Check URL for Signature Mode
+      // Check URL for Signature Mode or Verification Mode
       const params = new URLSearchParams(window.location.search);
       const mode = params.get('mode');
-      const eid = params.get('eid'); // Enrollment ID
-      const sid = params.get('sid'); // Session ID
-
-      if (mode === 'sign' && eid && sid) {
-          setSignatureParams({ eid, sid });
+      
+      if (mode === 'sign') {
+          const eid = params.get('eid'); // Enrollment ID
+          const sid = params.get('sid'); // Session ID
+          if (eid && sid) setSignatureParams({ eid, sid });
+      } else if (mode === 'verify') {
+          const code = params.get('code');
+          if (code) setVerificationCode(code);
       }
 
   }, []);
 
-  // --- SPECIAL RENDER FOR STUDENT SIGNATURE (NO LOGIN REQUIRED) ---
+  // --- SPECIAL RENDER FOR PUBLIC VIEWS (NO LOGIN REQUIRED) ---
   if (signatureParams) {
       return <StudentSignature enrollmentId={signatureParams.eid} sessionId={signatureParams.sid} />;
+  }
+
+  if (verificationCode) {
+      return <PublicVerification code={verificationCode} />;
   }
 
   const handleLogout = () => {
