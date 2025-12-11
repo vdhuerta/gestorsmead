@@ -344,17 +344,41 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const enrollUser = async (rut: string, activityId: string) => {
+      // Check local duplicate
       if (enrollments.some(e => e.rut === rut && e.activityId === activityId)) return;
       
-      const { error } = await supabase.from('enrollments').insert({
+      // 1. Optimistic Update (Immediate Feedback)
+      const tempId = `temp-${Date.now()}`;
+      const optimisticEnrollment: Enrollment = {
+          id: tempId,
+          rut: rut,
+          activityId: activityId,
+          state: ActivityState.INSCRITO, 
+          grades: [],
+          finalGrade: undefined,
+          attendancePercentage: undefined,
+          sessionLogs: []
+      };
+
+      setEnrollments(prev => [...prev, optimisticEnrollment]);
+
+      // 2. DB Insert
+      const { data, error } = await supabase.from('enrollments').insert({
           user_rut: rut,
           activity_id: activityId,
           state: 'Inscrito',
           session_logs: [] 
-      });
+      }).select().single();
 
       if (error) {
+          console.error("Error enrolling user:", error.message);
           alert("Error al matricular: " + error.message);
+          // Rollback if error
+          setEnrollments(prev => prev.filter(e => e.id !== tempId));
+      } else if (data) {
+          // 3. Replace temp with real data
+          const realEnrollment = mapEnrollmentFromDB(data);
+          setEnrollments(prev => prev.map(e => e.id === tempId ? realEnrollment : e));
       }
   };
 
@@ -384,6 +408,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               alert("Error en carga masiva a la BD: " + error.message);
               return { success: 0, skipped: uniqueRuts.length };
           }
+          // After bulk, we fetch to sync
+          fetchData();
       }
       return { success, skipped };
   };
