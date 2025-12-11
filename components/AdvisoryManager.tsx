@@ -27,27 +27,32 @@ export const PublicVerification: React.FC<{ code: string }> = ({ code }) => {
     useEffect(() => {
         const verifyCode = async () => {
             try {
-                // Buscar en la BD la inscripción que contenga este código en sus logs
-                // Usamos filtro de texto sobre JSONB para simplificar la búsqueda
+                // CORRECCIÓN: Usar .contains en lugar de .ilike para columnas JSONB
+                // Esto busca si el array session_logs contiene un objeto con esa verificationCode
                 const { data, error } = await supabase
                     .from('enrollments')
                     .select('*, user:users(*)')
-                    .ilike('session_logs::text', `%${code}%`)
+                    .contains('session_logs', JSON.stringify([{ verificationCode: code }]))
                     .limit(1)
-                    .single();
+                    .maybeSingle();
 
-                if (error || !data) throw new Error('Código no encontrado o inválido.');
+                if (error) throw error;
+                
+                if (!data) {
+                    throw new Error('El código no existe en nuestros registros.');
+                }
 
                 const logs = data.session_logs as SessionLog[];
                 const targetLog = logs.find(l => l.verificationCode === code);
 
-                if (!targetLog) throw new Error('Registro de sesión no coincide.');
+                if (!targetLog) throw new Error('Registro de sesión no coincide (Integridad de datos).');
 
                 setVerifiedData({
                     log: targetLog,
                     student: data.user
                 });
             } catch (err: any) {
+                console.error("Verification Error:", err);
                 setError(err.message || 'Error de verificación');
             } finally {
                 setLoading(false);
@@ -60,16 +65,22 @@ export const PublicVerification: React.FC<{ code: string }> = ({ code }) => {
 
     if (loading) return (
         <div className="min-h-screen bg-slate-100 flex items-center justify-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+            <div className="flex flex-col items-center gap-4">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-indigo-600"></div>
+                <p className="text-slate-500 font-medium animate-pulse">Verificando autenticidad...</p>
+            </div>
         </div>
     );
 
     if (error || !verifiedData) return (
         <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
             <div className="bg-white p-8 rounded-xl shadow-lg text-center max-w-md w-full border-t-4 border-red-500">
-                <div className="text-red-500 text-5xl mb-4">✕</div>
+                <div className="text-red-500 text-5xl mb-4 mx-auto w-fit">
+                    <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </div>
                 <h2 className="text-2xl font-bold text-slate-800 mb-2">Verificación Fallida</h2>
-                <p className="text-slate-600">{error}</p>
+                <p className="text-slate-600 mb-6">{error}</p>
+                <a href="/" className="text-indigo-600 hover:underline text-sm font-bold">Volver al inicio</a>
             </div>
         </div>
     );
@@ -89,44 +100,50 @@ export const PublicVerification: React.FC<{ code: string }> = ({ code }) => {
                     
                     {/* SECCIÓN VALIDACIÓN VISUAL (REEMPLAZA AL QR) */}
                     <div className="mb-6 bg-green-50 border-2 border-green-200 rounded-xl p-6 w-full">
-                        <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm">
                             <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                         </div>
                         <h2 className="text-lg font-black text-green-800 uppercase tracking-tight leading-tight">
-                            CÓDIGO DE AUTENTIFICACIÓN VERIFICADA
+                            DOCUMENTO AUTÉNTICO
                         </h2>
-                        <p className="text-sm text-green-700 font-medium mt-1">
+                        <p className="text-sm text-green-700 font-bold mt-1">
                             Unidad de Acompañamiento Docente
                         </p>
+                        <p className="text-xs text-green-600/80 mt-1">Universidad de Playa Ancha</p>
                     </div>
                     
-                    <div className="w-full text-left bg-slate-50 rounded-lg border border-slate-200 p-4 space-y-3 text-sm">
+                    <div className="w-full text-left bg-slate-50 rounded-lg border border-slate-200 p-5 space-y-4 text-sm">
                         <div className="flex justify-between border-b border-slate-200 pb-2">
-                            <span className="text-slate-500 font-medium">Código:</span>
-                            <span className="font-mono font-bold text-slate-700">{log.verificationCode}</span>
+                            <span className="text-slate-500 font-medium text-xs uppercase tracking-wide">Código Único</span>
+                            <span className="font-mono font-bold text-slate-800 bg-slate-200 px-2 rounded">{log.verificationCode}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-200 pb-2 items-center">
+                            <span className="text-slate-500 font-medium text-xs uppercase tracking-wide">Docente Atendido</span>
+                            <div className="text-right">
+                                <span className="font-bold text-slate-800 block">{student?.names} {student?.paternal_surname}</span>
+                                <span className="text-xs text-slate-500 font-mono block">{student?.rut}</span>
+                            </div>
                         </div>
                         <div className="flex justify-between border-b border-slate-200 pb-2">
-                            <span className="text-slate-500 font-medium">Estudiante:</span>
-                            <span className="font-bold text-slate-700 text-right">{student?.names} {student?.paternal_surname}</span>
-                        </div>
-                        <div className="flex justify-between border-b border-slate-200 pb-2">
-                            <span className="text-slate-500 font-medium">Fecha:</span>
-                            <span className="font-bold text-slate-700">
-                                {log.date}
+                            <span className="text-slate-500 font-medium text-xs uppercase tracking-wide">Fecha Sesión</span>
+                            <span className="font-bold text-slate-800">
+                                {new Date(log.date + 'T12:00:00').toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })}
                             </span>
                         </div>
                         <div className="flex justify-between border-b border-slate-200 pb-2">
-                            <span className="text-slate-500 font-medium">Modalidad:</span>
-                            <span className="font-bold text-slate-700">{log.modality || 'Presencial'}</span>
+                            <span className="text-slate-500 font-medium text-xs uppercase tracking-wide">Modalidad</span>
+                            <span className="font-bold text-slate-800">{log.modality || 'Presencial'}</span>
                         </div>
-                        <div className="flex justify-between">
-                            <span className="text-slate-500 font-medium">Asesor:</span>
-                            <span className="font-bold text-slate-700 text-right">{log.advisorName}</span>
+                        <div className="flex justify-between items-center">
+                            <span className="text-slate-500 font-medium text-xs uppercase tracking-wide">Asesor Responsable</span>
+                            <span className="font-bold text-indigo-700 text-right">{log.advisorName}</span>
                         </div>
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-6 max-w-xs">
-                        Este documento digital certifica que la sesión de asesoría fue realizada y validada correctamente en los sistemas de la institución.
-                    </p>
+                    
+                    <div className="mt-6 flex items-center justify-center gap-2 text-[10px] text-slate-400">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                        Validación criptográfica segura mediante Supabase
+                    </div>
                 </div>
             </div>
         </div>
@@ -845,7 +862,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     // --- LIST VIEW ---
     return (
         <div className="animate-fadeIn space-y-6">
-            {/* ... (Contenido de listado permanece igual, solo para referencia) */}
+            
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-r from-slate-800 to-slate-700 p-6 rounded-xl shadow-lg text-white">
                 <div>
@@ -1015,7 +1032,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                         </div>
                         
                         <form onSubmit={handleEnrollSubmit} className="p-8 space-y-6">
-                            {/* ... (Contenido del formulario permanece igual) */}
+                            
                             {/* Identificación */}
                             <div className="space-y-4">
                                 <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wide border-b border-indigo-100 pb-1">1. Identificación del Docente</h4>
