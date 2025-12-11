@@ -139,7 +139,7 @@ export const LoginSimulator: React.FC<LoginSimulatorProps> = ({ onLogin }) => {
         <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 z-10">
             <div className="w-24 h-24 bg-white rounded-full shadow-lg flex items-center justify-center p-1 border-4 border-[#F9F8F6]">
                 <img 
-                    src="https://github.com/vdhuerta/assets-aplications/blob/main/Logo_SMEAD.png?raw=true" 
+                    src="https://raw.githubusercontent.com/vdhuerta/assets-aplications/main/Logo_SMEAD.png" 
                     alt="Logo SMEAD" 
                     className="w-full h-full object-contain"
                 />

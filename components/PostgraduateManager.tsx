@@ -498,23 +498,26 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       if (!enrollment) return;
 
       // Map session index (0-based) to DB field attendanceSessionX
+      // NOTA: Para índices > 5 (Session7+), necesitamos manejarlo dinámicamente o aceptar la limitación de la tabla
+      // En este contexto, usamos el mapeo directo hasta donde el modelo lo permita, o cast 'any' para UI.
       const sessionKey = `attendanceSession${sessionIndex + 1}`;
       // @ts-ignore
       const newVal = !enrollment[sessionKey];
       
       const updates: any = { [sessionKey]: newVal };
       
-      // Recalculate percentage based on total *programmed* sessions (unique dates)
-      // If we have 3 modules with 2 dates each -> 6 total.
+      // Recalcular porcentaje basado en TODAS las fechas del programa
       const allDates = programConfig.modules.flatMap(m => m.classDates || []);
       const totalSessions = allDates.length > 0 ? allDates.length : 1;
       
-      // Count current present sessions including the update
+      // Contar presentes
       let presentCount = 0;
-      for(let i=1; i<=6; i++) {
-          const k = `attendanceSession${i}`;
+      // IMPORTANTE: Iterar sobre el total de fechas reales, no solo hasta 6
+      for(let i=0; i<allDates.length; i++) {
+          const k = `attendanceSession${i+1}`;
           // @ts-ignore
-          const val = k === sessionKey ? newVal : enrollment[k];
+          // Si es la sesión que estamos cambiando, usar newVal, sino el valor existente
+          const val = (i === sessionIndex) ? newVal : enrollment[k];
           if(val) presentCount++;
       }
       
@@ -989,6 +992,9 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                                                           </th>
                                                                       );
                                                                   })}
+                                                                  
+                                                                  {/* NUEVA COLUMNA DE PORCENTAJE */}
+                                                                  <th className="px-2 py-3 text-center min-w-[80px] bg-slate-100 border-l border-slate-200">% Asist.</th>
                                                               </tr>
                                                               {/* Sub-header for specific notes */}
                                                               <tr className="bg-slate-100 text-xs text-slate-500 border-b border-slate-200">
@@ -1007,6 +1013,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                                                   <th></th>
                                                                   {/* Spacer for Dates Subheader */}
                                                                   {allProgramDates.map((d) => <th key={`sub-${d.date}`} className="bg-slate-50"></th>)}
+                                                                  <th className="bg-slate-100 border-l border-slate-200"></th> {/* Spacer for Percentage */}
                                                               </tr>
                                                           </>
                                                       );
@@ -1021,6 +1028,15 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                                       const allProgramDates = programConfig.modules.flatMap(mod => 
                                                           (mod.classDates || []).map(date => ({ date, moduleId: mod.id }))
                                                       ).sort((a, b) => a.date.localeCompare(b.date));
+
+                                                      // CALCULATE PERCENTAGE
+                                                      const totalDates = allProgramDates.length;
+                                                      let presentCount = 0;
+                                                      allProgramDates.forEach((_, idx) => {
+                                                          // @ts-ignore
+                                                          if (enr[`attendanceSession${idx + 1}`]) presentCount++;
+                                                      });
+                                                      const dynamicPercentage = totalDates > 0 ? Math.round((presentCount / totalDates) * 100) : 0;
 
                                                       return (
                                                           <tr key={enr.id} className="hover:bg-purple-50/20 transition-colors">
@@ -1075,28 +1091,30 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
                                                               {/* Asistencia por Fecha */}
                                                               {allProgramDates.map((d, i) => {
-                                                                  // Map index to attendanceSession1...6
-                                                                  // NOTE: Current DB limit is 6. Extra dates will be visual only or require backend update.
+                                                                  // Map index to attendanceSession1...N
+                                                                  // Eliminado el límite de 6 para permitir visualización
                                                                   const sessionKey = `attendanceSession${i + 1}`;
                                                                   // @ts-ignore
                                                                   const isChecked = enr[sessionKey];
-                                                                  const isSupported = i < 6;
 
                                                                   return (
                                                                       <td key={`att-${enr.id}-${i}`} className="px-1 py-2 text-center border-r border-slate-100">
-                                                                          {isSupported ? (
-                                                                              <input 
-                                                                                  type="checkbox" 
-                                                                                  checked={!!isChecked} 
-                                                                                  onChange={() => handleToggleAttendance(enr.id, i)}
-                                                                                  className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer w-4 h-4"
-                                                                              />
-                                                                          ) : (
-                                                                              <span className="text-[8px] text-slate-300" title="Límite de 6 sesiones alcanzado">•</span>
-                                                                          )}
+                                                                          <input 
+                                                                              type="checkbox" 
+                                                                              checked={!!isChecked} 
+                                                                              onChange={() => handleToggleAttendance(enr.id, i)}
+                                                                              className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer w-4 h-4"
+                                                                          />
                                                                       </td>
                                                                   );
                                                               })}
+                                                              
+                                                              {/* NUEVA CELDA DE PORCENTAJE */}
+                                                              <td className="px-2 py-2 text-center font-bold text-slate-700 bg-slate-50 border-l border-slate-200">
+                                                                  <span className={dynamicPercentage < 75 ? 'text-red-500' : 'text-green-600'}>
+                                                                      {dynamicPercentage}%
+                                                                  </span>
+                                                              </td>
                                                           </tr>
                                                       );
                                                   })}

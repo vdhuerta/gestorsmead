@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useData } from '../context/DataContext';
 import { Enrollment, User, UserRole, Activity, SessionLog } from '../types';
 import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST } from '../constants';
@@ -185,6 +185,11 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const [enrollMsg, setEnrollMsg] = useState<{ type: 'success'|'error', text: string } | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
 
+    // --- ESTADOS PARA SUGERENCIAS EN MODAL ---
+    const [suggestions, setSuggestions] = useState<User[]>([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const suggestionsRef = useRef<HTMLDivElement>(null);
+
     // --- STATES PARA FIRMA DIGITAL REAL ---
     const [signatureStep, setSignatureStep] = useState<'form' | 'qr-wait' | 'success'>('form');
     const [currentSessionId, setCurrentSessionId] = useState<string>(''); // ID Real de la sesión pendiente
@@ -198,6 +203,17 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         location: '',
         modality: 'Presencial'
     });
+
+    // --- CLICK OUTSIDE FOR SUGGESTIONS ---
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
+                setShowSuggestions(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     // --- INIT: Asegurar que existe la "Actividad" Contenedora ---
     useEffect(() => {
@@ -289,7 +305,48 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         setSurnameSuggestions([]);
     };
 
-    // --- HANDLERS GESTIÓN ---
+    // --- HANDLERS GESTIÓN (MODIFICADO PARA SUGERENCIAS) ---
+
+    const handleEnrollChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setEnrollForm(prev => ({ ...prev, [name]: value }));
+
+        if (name === 'rut') {
+            const rawInput = value.replace(/[^0-9kK]/g, '').toLowerCase();
+            if (rawInput.length >= 2) {
+                const matches = users.filter(u =>
+                    u.rut.replace(/[^0-9kK]/g, '').toLowerCase().includes(rawInput)
+                );
+                setSuggestions(matches.slice(0, 5)); // Limit to 5
+                setShowSuggestions(matches.length > 0);
+            } else {
+                setSuggestions([]);
+                setShowSuggestions(false);
+            }
+        }
+    };
+
+    const handleSelectSuggestion = (user: User) => {
+        setEnrollForm(prev => ({
+            ...prev,
+            rut: user.rut,
+            names: user.names,
+            paternalSurname: user.paternalSurname,
+            maternalSurname: user.maternalSurname || '',
+            email: user.email || '',
+            phone: user.phone || '',
+            academicRole: user.academicRole || '',
+            faculty: user.faculty || '',
+            department: user.department || '',
+            career: user.career || '',
+            contractType: user.contractType || '',
+            teachingSemester: user.teachingSemester || '',
+            campus: user.campus || '',
+            systemRole: user.systemRole
+        }));
+        setEnrollMsg({ type: 'success', text: 'Datos cargados desde Base Maestra.' });
+        setShowSuggestions(false);
+    };
 
     const handleOpenEnrollModal = () => {
         setEnrollForm({
@@ -300,33 +357,23 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         setEnrollMsg(null);
         setIsProcessing(false);
         setShowEnrollModal(true);
+        setSuggestions([]);
+        setShowSuggestions(false);
     };
 
     const handleRutBlur = () => {
-        if (!enrollForm.rut) return;
-        const formatted = cleanRutFormat(enrollForm.rut);
-        setEnrollForm(prev => ({...prev, rut: formatted}));
-        
-        const existing = getUser(formatted);
-        if (existing) {
-            setEnrollForm(prev => ({
-                ...prev,
-                names: existing.names,
-                paternalSurname: existing.paternalSurname,
-                maternalSurname: existing.maternalSurname || '',
-                email: existing.email || '',
-                phone: existing.phone || '',
-                academicRole: existing.academicRole || '',
-                faculty: existing.faculty || '',
-                department: existing.department || '',
-                career: existing.career || '',
-                contractType: existing.contractType || '',
-                teachingSemester: existing.teachingSemester || '',
-                campus: existing.campus || '',
-                systemRole: existing.systemRole
-            }));
-            setEnrollMsg({ type: 'success', text: 'Datos cargados desde Base Maestra.' });
-        }
+        // Small delay to allow click on suggestion
+        setTimeout(() => {
+            if (!enrollForm.rut) return;
+            const formatted = cleanRutFormat(enrollForm.rut);
+            setEnrollForm(prev => ({...prev, rut: formatted}));
+            
+            const existing = getUser(formatted);
+            if (existing) {
+                // ... same logic as before for consistency
+                setEnrollMsg({ type: 'success', text: 'Datos cargados desde Base Maestra.' });
+            }
+        }, 200);
     };
 
     const handleEnrollSubmit = async (e: React.FormEvent) => {
@@ -1037,9 +1084,33 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                             <div className="space-y-4">
                                 <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wide border-b border-indigo-100 pb-1">1. Identificación del Docente</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                    <div className="md:col-span-1">
+                                    <div className="md:col-span-1 relative">
                                         <label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label>
-                                        <input type="text" value={enrollForm.rut} onChange={e => setEnrollForm({...enrollForm, rut: e.target.value})} onBlur={handleRutBlur} placeholder="12345678-9" className="w-full px-3 py-2 border border-slate-300 rounded font-bold text-sm focus:ring-2 focus:ring-indigo-500"/>
+                                        <input 
+                                            type="text" 
+                                            name="rut"
+                                            value={enrollForm.rut} 
+                                            onChange={handleEnrollChange} 
+                                            onBlur={handleRutBlur} 
+                                            placeholder="12345678-9" 
+                                            autoComplete="off"
+                                            className="w-full px-3 py-2 border border-slate-300 rounded font-bold text-sm focus:ring-2 focus:ring-indigo-500"
+                                        />
+                                        {/* Suggestions Dropdown */}
+                                        {showSuggestions && suggestions.length > 0 && (
+                                            <div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
+                                                {suggestions.map((s) => (
+                                                    <div 
+                                                        key={s.rut} 
+                                                        onMouseDown={() => handleSelectSuggestion(s)} 
+                                                        className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"
+                                                    >
+                                                        <span className="font-bold block text-slate-800">{s.rut}</span>
+                                                        <span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" required value={enrollForm.names} onChange={e => setEnrollForm({...enrollForm, names: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div>
                                     <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label><input type="text" required value={enrollForm.paternalSurname} onChange={e => setEnrollForm({...enrollForm, paternalSurname: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div>

@@ -73,7 +73,7 @@ export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabCh
           <div className="flex items-center gap-3">
             <div className="bg-transparent rounded-lg">
               <img 
-                src="https://github.com/vdhuerta/assets-aplications/blob/main/Logo_SMEAD.png?raw=true" 
+                src="https://raw.githubusercontent.com/vdhuerta/assets-aplications/main/Logo_SMEAD.png" 
                 alt="Logo SMEAD" 
                 className="h-10 w-auto object-contain"
               />
