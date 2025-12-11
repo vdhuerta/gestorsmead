@@ -1,4 +1,5 @@
 
+// ... (imports remain the same)
 import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Enrollment, User, UserRole, Activity, SessionLog } from '../types';
@@ -66,6 +67,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         modality: 'Presencial'
     });
 
+    // ... (Init effect remains the same)
     // --- INIT: Asegurar que existe la "Actividad" Contenedora ---
     useEffect(() => {
         const checkAndCreateActivity = async () => {
@@ -105,6 +107,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         return { students: advisoryEnrollments.length, sessions: totalSessions, hours: totalHours.toFixed(1) };
     }, [advisoryEnrollments]);
 
+    // ... (Search handlers remain the same)
     // --- HANDLERS BUSQUEDA ---
     const handleSearchRutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value;
@@ -156,6 +159,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         setSurnameSuggestions([]);
     };
 
+    // ... (Enrollment handlers remain the same)
     // --- HANDLERS GESTIÓN ---
 
     const handleOpenEnrollModal = () => {
@@ -330,14 +334,24 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         }
     }, [enrollments, signatureStep, selectedEnrollmentId, currentSessionId]);
 
-    const handleDeleteSession = async (sessionId: string) => {
+    // MODIFIED: Delete Session Logic using Index fallback for legacy data
+    const handleDeleteSession = async (indexOrId: number | string) => {
         if (!selectedEnrollmentId) return;
         
         if (window.confirm("¿Está seguro que desea eliminar este registro de sesión del historial?")) {
             const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
             if (enrollment) {
                 const currentLogs = enrollment.sessionLogs || [];
-                const updatedLogs = currentLogs.filter(log => log.id !== sessionId);
+                let updatedLogs = [];
+
+                if (typeof indexOrId === 'number') {
+                    // Si se pasa un número, es el índice original en el array
+                    updatedLogs = currentLogs.filter((_, i) => i !== indexOrId);
+                } else {
+                    // Si se pasa un string, es el ID
+                    updatedLogs = currentLogs.filter(log => log.id !== indexOrId);
+                }
+                
                 await updateEnrollment(selectedEnrollmentId, { sessionLogs: updatedLogs });
             }
         }
@@ -346,9 +360,8 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     // Construir URL Real para el QR
     const getQrUrl = () => {
         if (!selectedEnrollmentId || !currentSessionId) return '';
-        // URL de producción específica (Netlify) para garantizar acceso externo
-        const baseUrl = 'https://gestionsmead.netlify.app';
-        return `${baseUrl}?mode=sign&eid=${selectedEnrollmentId}&sid=${currentSessionId}`;
+        const baseUrl = window.location.origin;
+        return `${baseUrl}/?mode=sign&eid=${selectedEnrollmentId}&sid=${currentSessionId}`;
     };
 
     // Copiar enlace al portapapeles
@@ -378,6 +391,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                     
                     {/* COL 1: Ficha del Estudiante (Solo Lectura aquí) */}
                     <div className="space-y-6">
+                        {/* ... (Student Card content same as before) ... */}
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                             <div className="flex items-center gap-4 mb-4">
                                 <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-bold text-xl">
@@ -426,6 +440,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                         
                         {/* FORMULARIO SESIÓN CON FIRMA DIGITAL */}
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 overflow-hidden relative">
+                            {/* ... (Signature form content remains identical) ... */}
                             <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4 flex items-center gap-2">
                                 <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                 Registrar Nueva Sesión
@@ -521,6 +536,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                                 Copiar
                                             </button>
                                         </div>
+                                        <p className="text-[10px] text-slate-400 mb-4 italic">El enlace se genera según su dirección actual: {window.location.origin}</p>
 
                                         <button onClick={() => setSignatureStep('form')} className="px-4 py-2 text-xs text-red-500 font-bold hover:text-red-700 hover:underline">Cancelar Espera</button>
                                     </div>
@@ -547,14 +563,23 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                 <p className="text-slate-400 text-sm italic text-center py-8">No hay sesiones registradas aún.</p>
                             ) : (
                                 <div className="space-y-4">
-                                    {[...logs].reverse().map((log, idx) => (
-                                        <div key={idx} className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm relative pl-6 group">
+                                    {[...logs].reverse().map((log, idx) => {
+                                        // Calculate original index because array is reversed
+                                        const originalIndex = logs.length - 1 - idx;
+                                        
+                                        return (
+                                        <div key={log.id || idx} className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm relative pl-6 group">
                                             <div className={`absolute left-0 top-0 bottom-0 w-1 ${log.verified ? 'bg-green-500' : 'bg-amber-300'} rounded-l-lg`}></div>
                                             
-                                            {/* Delete Session Button */}
+                                            {/* Delete Session Button - FIXED & ROBUST */}
                                             <button 
-                                                onClick={() => handleDeleteSession(log.id)}
-                                                className="absolute top-4 right-4 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                type="button"
+                                                onClick={(e) => { 
+                                                    e.stopPropagation(); 
+                                                    // Pass index if id is missing, or prefer ID if present
+                                                    handleDeleteSession(log.id ? log.id : originalIndex); 
+                                                }}
+                                                className="absolute top-4 right-4 text-slate-300 hover:text-red-500 transition-colors z-10 cursor-pointer"
                                                 title="Eliminar registro de sesión"
                                             >
                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -602,7 +627,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                                 </div>
                                             )}
                                         </div>
-                                    ))}
+                                    )})}
                                 </div>
                             )}
                         </div>
@@ -612,6 +637,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                 
                 {/* MODAL CERTIFICADO DE AUTENTICIDAD */}
                 {showVerificationModal && (
+                    // ... (Modal Content remains the same)
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
                         <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200">
                             <div className="bg-slate-800 p-4 text-white flex justify-between items-center">
@@ -674,6 +700,8 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     // --- LIST VIEW ---
     return (
         <div className="animate-fadeIn space-y-6">
+            {/* Header, Search, and Table sections remain the same */}
+            {/* ... */}
             
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-r from-slate-800 to-slate-700 p-6 rounded-xl shadow-lg text-white">
@@ -835,6 +863,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             </div>
 
             {/* Modal Crear Expediente (13 Campos) */}
+            {/* ... (Create Modal Content) ... */}
             {showEnrollModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-slate-200">
