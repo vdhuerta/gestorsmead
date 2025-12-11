@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Enrollment, User, UserRole, Activity, SessionLog } from '../types';
@@ -660,7 +661,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                 
                 {/* MODAL CERTIFICADO DE AUTENTICIDAD */}
                 {showVerificationModal && (
-                    // ... (Modal Content remains the same)
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
                         <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200">
                             <div className="bg-slate-800 p-4 text-white flex justify-between items-center">
@@ -672,8 +672,9 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                             </div>
                             <div className="p-6 flex flex-col items-center text-center">
                                 <div className="border-4 border-slate-800 p-2 rounded-lg mb-4">
+                                    {/* MODIFIED: QR ahora contiene una URL real de verificación */}
                                     <img 
-                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=UPLA-VERIFY:${showVerificationModal.verificationCode}`} 
+                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${window.location.origin}/?verify=${showVerificationModal.verificationCode}`)}`} 
                                         alt="QR Verificación" 
                                         className="w-32 h-32"
                                     />
