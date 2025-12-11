@@ -487,6 +487,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
       } else if (act.category === 'POSTGRADUATE') {
           // Navegación específica para postítulos
           onNavigate('postgraduate');
+      } else if (act.category === 'ADVISORY') {
+          // Navegación específica para asesorías
+          onNavigate('advisory');
       } else {
           localStorage.setItem('jumpto_course_id', act.id);
           localStorage.setItem('jumpto_tab_course', targetTab); 
@@ -1011,436 +1014,76 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                   </div>
               </div>
 
+              {/* SECCIÓN 4: ASESORÍAS (NEW) */}
+              <div>
+                  <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-blue-200 pb-4">
+                      <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+                      Asesorías y Acompañamiento
+                  </h3>
+                  
+                  <div className="bg-white border border-blue-100 rounded-xl shadow-sm overflow-hidden">
+                      <div className="overflow-x-auto">
+                          <table className="w-full text-sm text-left">
+                              <thead className="bg-blue-50 text-blue-800 font-bold border-b border-blue-100">
+                                  <tr>
+                                      <th className="px-6 py-4">Programa</th>
+                                      <th className="px-6 py-4">Periodo</th>
+                                      <th className="px-6 py-4">Docentes en Acompañamiento</th>
+                                      <th className="px-6 py-4">Sesiones Realizadas</th>
+                                      <th className="px-6 py-4 text-center">Acción</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                  {offerActivities.filter(a => a.category === 'ADVISORY').map(act => {
+                                      const advisoryEnrollments = enrollments.filter(e => e.activityId === act.id);
+                                      const count = advisoryEnrollments.length;
+                                      const totalSessions = advisoryEnrollments.reduce((acc, e) => acc + (e.sessionLogs?.length || 0), 0);
+                                      
+                                      return (
+                                          <tr key={act.id} className="hover:bg-blue-50/30 transition-colors group">
+                                              <td className="px-6 py-4">
+                                                  <div className="font-bold text-slate-800">{act.name}</div>
+                                                  <div className="text-xs text-slate-500 font-mono">{act.internalCode || act.id}</div>
+                                              </td>
+                                              <td className="px-6 py-4 text-sm text-slate-600">
+                                                  {act.year} - ANUAL
+                                              </td>
+                                              <td className="px-6 py-4">
+                                                  <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold border border-blue-200">
+                                                      {count} Expedientes
+                                                  </span>
+                                              </td>
+                                              <td className="px-6 py-4">
+                                                  <div className="flex items-center gap-2">
+                                                      <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                                      <span className="font-bold text-slate-700">{totalSessions} Sesiones</span>
+                                                  </div>
+                                              </td>
+                                              <td className="px-6 py-4 text-center">
+                                                  <button 
+                                                      onClick={() => handleAdvisorNavigate(act)}
+                                                      className="text-blue-600 hover:text-white hover:bg-blue-600 font-bold text-xs bg-blue-50 border border-blue-200 px-4 py-2 rounded-lg transition-colors shadow-sm"
+                                                  >
+                                                      Gestionar Bitácoras
+                                                  </button>
+                                              </td>
+                                          </tr>
+                                      );
+                                  })}
+                                  {offerActivities.filter(a => a.category === 'ADVISORY').length === 0 && (
+                                      <tr>
+                                          <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
+                                              No hay programas de asesoría activos. Ingrese al módulo de Asesorías para inicializar.
+                                          </td>
+                                      </tr>
+                                  )}
+                              </tbody>
+                          </table>
+                      </div>
+                  </div>
+              </div>
+
           </div>
       ) : null }
       
       {/* --- CATCH-ALL FOR STUDENT & ADMIN (If not Asesor) --- */}
-      {user.systemRole !== UserRole.ASESOR && user.systemRole !== UserRole.ADMIN && (
-          <div className="space-y-12">
-              {/* BLOQUE 1: OFERTA VIGENTE */}
-              <div>
-                  <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-slate-200 pb-4">
-                      <svg className="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
-                      Oferta Académica Vigente
-                  </h3>
-                  
-                  {offerActivities.length > 0 ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                          {offerActivities.map(act => {
-                              const isAcademic = act.category === 'ACADEMIC';
-                              const isStudent = user.systemRole === UserRole.ESTUDIANTE;
-                              
-                              let btnClass: string;
-                              if (isStudent) {
-                                  if (isAcademic) {
-                                      btnClass = 'bg-[#EEF2FF] text-[#3730A3] hover:bg-indigo-200';
-                                  } else {
-                                      btnClass = 'bg-[#F0FDFA] text-[#115E59] hover:bg-teal-100';
-                                  }
-                              } else {
-                                  btnClass = 'bg-emerald-600 hover:bg-emerald-700 text-white';
-                              }
-
-                              return (
-                              <div key={act.id} className="relative bg-white border border-slate-200 rounded-xl p-6 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all">
-                                  
-                                  <div className="absolute top-4 left-4">
-                                      {act.category === 'ACADEMIC' ? (
-                                          <span className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-1 rounded font-bold uppercase border border-indigo-100 shadow-sm">
-                                              CURSO UAD
-                                          </span>
-                                      ) : act.category === 'POSTGRADUATE' ? (
-                                          <span className="bg-purple-50 text-purple-700 text-[10px] px-2 py-1 rounded font-bold uppercase border border-purple-100 shadow-sm">
-                                              POSTÍTULO
-                                          </span>
-                                      ) : (
-                                          <span className="bg-teal-50 text-teal-700 text-[10px] px-2 py-1 rounded font-bold uppercase border border-teal-100 shadow-sm">
-                                              EXTENSIÓN
-                                          </span>
-                                      )}
-                                  </div>
-
-                                  <div className="absolute top-4 right-4">
-                                      <span className="bg-amber-100 text-amber-800 text-[10px] px-2 py-1 rounded font-bold uppercase border border-amber-200 animate-pulse shadow-sm">
-                                          Inscripciones Abiertas
-                                      </span>
-                                  </div>
-
-                                  <div className="mt-10">
-                                      <h4 className="font-bold text-slate-900 text-lg mb-2 line-clamp-2 h-14 leading-tight">{act.name}</h4>
-                                      <div className="text-sm text-slate-600 space-y-1 mb-6">
-                                          <p className="flex items-center gap-2"><span className="text-slate-400">📅</span> Inicio: {formatDateCL(act.startDate)}</p>
-                                          <p className="flex items-center gap-2"><span className="text-slate-400">🎓</span> Modalidad: {act.modality}</p>
-                                          <p className="flex items-center gap-2"><span className="text-slate-400">👨‍🏫</span> {act.relator || 'Docente UPLA'}</p>
-                                      </div>
-                                      <button 
-                                          onClick={() => handleOpenEnrollModal(act)}
-                                          className={`w-full py-3 rounded-xl font-bold shadow-md transition-colors flex items-center justify-center gap-2 ${btnClass}`}
-                                      >
-                                          {user.systemRole === UserRole.ESTUDIANTE ? 'Matricúlate Agora' : 'Gestionar'}
-                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-                                      </button>
-                                  </div>
-                              </div>
-                          )})}
-                      </div>
-                  ) : (
-                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
-                          <p className="text-slate-600 font-medium">No hay actividades con matrícula abierta en este momento.</p>
-                          <p className="text-sm text-slate-400 mt-1">Revisa periódicamente este portal.</p>
-                      </div>
-                  )}
-              </div>
-
-              {/* BLOQUE 2: CATALOGO / REFERENCIA (VISTA ESTUDIANTE) */}
-              {user.systemRole === UserRole.ESTUDIANTE && (
-                  <div className="animate-fadeIn">
-                      <h3 className="text-2xl font-bold text-slate-600 flex items-center gap-2 mb-6 border-b border-slate-200 pb-4">
-                          <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
-                          Catálogo de Cursos (Historial Anual)
-                      </h3>
-                      
-                      {catalogActivities.length > 0 ? (
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                              {catalogActivities.map(act => (
-                                  <div key={act.id} className="relative bg-slate-50 border border-slate-200 rounded-xl p-6 shadow-sm opacity-90 hover:opacity-100 transition-opacity">
-                                      
-                                      <div className="flex justify-between items-start mb-4">
-                                         <span className="bg-slate-200 text-slate-600 text-[10px] px-2 py-1 rounded font-bold uppercase border border-slate-300">
-                                              {act.category === 'ACADEMIC' ? 'Curso UAD' : act.category === 'POSTGRADUATE' ? 'Postítulo' : 'Extensión'}
-                                         </span>
-                                         <span className="text-slate-400 text-[10px] font-bold uppercase border border-slate-200 px-2 py-1 rounded">
-                                             {act.category === 'GENERAL' ? 'CERRADO' : 'Matrícula Cerrada'}
-                                         </span>
-                                      </div>
-
-                                      <h4 className="font-bold text-slate-700 text-lg mb-2 line-clamp-2 h-14 leading-tight">{act.name}</h4>
-                                      <div className="text-sm text-slate-500 space-y-1 mb-6">
-                                          <p className="flex items-center gap-2"><span className="text-slate-400">📅</span> Inicio: {formatDateCL(act.startDate)}</p>
-                                          <p className="flex items-center gap-2"><span className="text-slate-400">🎓</span> Modalidad: {act.modality}</p>
-                                      </div>
-                                      <button 
-                                          className="w-full text-slate-500 border border-slate-300 py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 cursor-not-allowed bg-slate-100"
-                                          disabled
-                                      >
-                                          Solo Referencia
-                                      </button>
-                                  </div>
-                              ))}
-                          </div>
-                      ) : (
-                          <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center border-dashed">
-                              <p className="text-slate-400 italic">No hay cursos finalizados o cerrados en el historial de este año.</p>
-                          </div>
-                      )}
-                  </div>
-              )}
-          </div>
-      )}
-
-      {/* MODAL DETALLE ACADÉMICO EXPANDIDO */}
-      {showDetailModal && selectedEnrollmentDetail && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200">
-                  
-                  {/* Modal Header */}
-                  <div className="bg-[#647FBC] p-4 text-white flex justify-between items-center">
-                      <h3 className="font-bold flex items-center gap-2">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
-                          Detalle Académico Completo
-                      </h3>
-                      <button onClick={() => setShowDetailModal(false)} className="text-white hover:bg-white/20 p-1 rounded">✕</button>
-                  </div>
-                  
-                  <div className="p-6">
-                      {(() => {
-                          const act = activities.find(a => a.id === selectedEnrollmentDetail.activityId);
-                          
-                          // --- CASO ESPECIAL: ASESORÍA / ACOMPAÑAMIENTO ---
-                          if (act?.category === 'ADVISORY') {
-                              const logs = selectedEnrollmentDetail.sessionLogs || [];
-                              return (
-                                  <div className="space-y-6">
-                                      {/* Header Info */}
-                                      <div className="border-b border-slate-100 pb-4">
-                                          <h2 className="text-xl font-bold text-slate-800">{act.name}</h2>
-                                          <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">PLAN DE ACOMPAÑAMIENTO</span>
-                                      </div>
-
-                                      {/* Summary Card */}
-                                      <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex justify-around">
-                                          <div className="text-center">
-                                              <span className="block text-2xl font-bold text-indigo-700">{logs.length}</span>
-                                              <span className="text-xs text-indigo-500 uppercase font-bold">Sesiones Realizadas</span>
-                                          </div>
-                                      </div>
-
-                                      {/* Timeline of Sessions */}
-                                      <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar">
-                                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Bitácora de Encuentros</h4>
-                                          {logs.length === 0 ? (
-                                              <p className="text-center text-slate-400 text-sm py-4 border border-dashed border-slate-200 rounded-lg">No hay sesiones registradas aún.</p>
-                                          ) : (
-                                              logs.map((log, idx) => (
-                                                  <div key={idx} className="bg-white border border-slate-200 p-3 rounded-lg shadow-sm">
-                                                      <div className="flex justify-between mb-1">
-                                                          <span className="font-bold text-slate-700 text-sm">{new Date(log.date).toLocaleDateString()}</span>
-                                                          <span className="text-xs bg-slate-100 px-2 rounded text-slate-500 font-bold">{log.modality || 'Presencial'}</span>
-                                                      </div>
-                                                      <div className="text-xs text-slate-600 space-y-1">
-                                                          <p className="flex gap-1"><strong>Asesor:</strong> <span>{log.advisorName || 'Equipo UAD'}</span></p>
-                                                          {log.location && <p className="flex gap-1"><strong>Lugar:</strong> <span>{log.location}</span></p>}
-                                                          <p className="italic text-slate-500 mt-1 border-t border-slate-50 pt-1">"{log.observation}"</p>
-                                                      </div>
-                                                  </div>
-                                              ))
-                                          )}
-                                      </div>
-                                  </div>
-                              );
-                          }
-
-                          // --- CASO ESTÁNDAR: CURSOS Y TALLERES (NOTAS Y ASISTENCIA) ---
-                          const isApproved = selectedEnrollmentDetail.state === 'Aprobado';
-                          
-                          return (
-                              <div className="space-y-6">
-                                  {/* 1. Información del Curso */}
-                                  <div className="border-b border-slate-100 pb-4">
-                                      <div className="flex justify-between items-start">
-                                          <div>
-                                              <h2 className="text-xl font-bold text-slate-800 mb-1">{act?.name || 'Actividad No Encontrada'}</h2>
-                                              <div className="flex gap-2 text-xs text-slate-500">
-                                                  <span className="font-mono bg-slate-100 px-2 py-0.5 rounded">COD: {act?.internalCode || act?.id}</span>
-                                                  <span>|</span>
-                                                  <span>{act?.year}</span>
-                                                  <span>|</span>
-                                                  <span>{act?.relator}</span>
-                                              </div>
-                                          </div>
-                                          <div className="flex flex-col items-end">
-                                              <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${isApproved ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
-                                                  {selectedEnrollmentDetail.state}
-                                              </span>
-                                          </div>
-                                      </div>
-                                  </div>
-
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                      
-                                      {/* 2. Panel de Asistencia */}
-                                      <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
-                                          <h4 className="text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
-                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                              Registro de Asistencia
-                                          </h4>
-                                          
-                                          <div className="flex justify-between mb-4 px-1">
-                                              {[1, 2, 3, 4, 5, 6].map(num => {
-                                                  // @ts-ignore
-                                                  const isPresent = selectedEnrollmentDetail[`attendanceSession${num}`];
-                                                  return (
-                                                      <div key={num} className="flex flex-col items-center gap-1">
-                                                          <span className="text-[10px] text-slate-400 font-bold">S{num}</span>
-                                                          <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all ${isPresent ? 'bg-green-500 border-green-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-300'}`}>
-                                                              {isPresent ? (
-                                                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                                                              ) : (
-                                                                  <span className="text-xs">•</span>
-                                                              )}
-                                                          </div>
-                                                      </div>
-                                                  );
-                                              })}
-                                          </div>
-                                          
-                                          <div className="flex justify-between items-center border-t border-blue-100 pt-2">
-                                              <span className="text-xs text-blue-700 font-medium">Porcentaje Total</span>
-                                              <span className="text-xl font-bold text-slate-700">{selectedEnrollmentDetail.attendancePercentage || 0}%</span>
-                                          </div>
-                                      </div>
-
-                                      {/* 3. Panel de Calificaciones */}
-                                      <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100">
-                                          <h4 className="text-sm font-bold text-amber-800 mb-3 flex items-center gap-2">
-                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                                              Evaluaciones Parciales
-                                          </h4>
-                                          
-                                          <div className="flex flex-wrap gap-2 mb-4 justify-center">
-                                              {selectedEnrollmentDetail.grades && selectedEnrollmentDetail.grades.length > 0 ? (
-                                                  selectedEnrollmentDetail.grades.map((g, idx) => (
-                                                      <div key={idx} className="bg-white border border-amber-200 rounded-lg px-3 py-2 text-center shadow-sm min-w-[50px]">
-                                                          <span className={`block text-lg font-bold ${g >= 4.0 ? 'text-slate-700' : 'text-red-500'}`}>{g}</span>
-                                                          <span className="text-[10px] text-slate-400 font-bold uppercase">Nota {idx + 1}</span>
-                                                      </div>
-                                                  ))
-                                              ) : (
-                                                  <span className="text-sm text-slate-400 italic py-2">Sin notas registradas</span>
-                                              )}
-                                          </div>
-                                          
-                                          <div className="flex justify-between items-center border-t border-amber-100 pt-2">
-                                              <span className="text-xs text-amber-800 font-medium">Promedio Final</span>
-                                              <div className="bg-white px-3 py-1 rounded border border-slate-200 shadow-sm">
-                                                  <span className={`text-xl font-bold ${selectedEnrollmentDetail.finalGrade && selectedEnrollmentDetail.finalGrade >= 4 ? 'text-blue-600' : 'text-red-500'}`}>
-                                                      {selectedEnrollmentDetail.finalGrade || '--'}
-                                                  </span>
-                                              </div>
-                                          </div>
-                                      </div>
-                                  </div>
-
-                                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-center">
-                                      <p className="text-xs text-slate-500">
-                                          Estado Académico Actual: <strong className="uppercase text-slate-700">{selectedEnrollmentDetail.state}</strong>
-                                      </p>
-                                  </div>
-                              </div>
-                          );
-                      })()}
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* --- MODAL DE AUTO-MATRÍCULA FORMULARIO COMPLETO (VISTA ESTUDIANTE) --- */}
-      {showStudentEnrollModal && targetEnrollActivity && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn overflow-y-auto">
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-200 transform transition-all scale-100 my-8">
-                  
-                  {/* Header Visual */}
-                  <div className="bg-[#647FBC] px-6 py-6 text-white flex flex-col md:flex-row justify-between items-center relative overflow-hidden">
-                      <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
-                      <div className="relative z-10 text-center md:text-left">
-                          <h3 className="text-lg font-bold uppercase tracking-wider mb-1 opacity-90">Formulario de Matrícula</h3>
-                          <h2 className="text-2xl font-bold leading-tight">{targetEnrollActivity.name}</h2>
-                          <div className="flex gap-2 mt-2 justify-center md:justify-start">
-                              <span className="px-3 py-1 bg-white/20 rounded-full text-xs font-bold backdrop-blur-sm">{targetEnrollActivity.internalCode || 'ACTIVIDAD'}</span>
-                              <span className="px-3 py-1 bg-white/20 rounded-full text-xs font-bold backdrop-blur-sm">{targetEnrollActivity.year}</span>
-                          </div>
-                      </div>
-                      <div className="relative z-10 mt-4 md:mt-0 bg-white/10 p-3 rounded-lg backdrop-blur-md border border-white/20">
-                          <p className="text-xs font-bold text-blue-100 uppercase mb-1">Identificación</p>
-                          <p className="text-lg font-mono font-bold truncate max-w-[150px]">{enrollForm.rut || '...'}</p>
-                      </div>
-                  </div>
-
-                  {enrollSuccessMsg ? (
-                      <div className="p-12 text-center animate-fadeIn">
-                          <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
-                              <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                          </div>
-                          <h4 className="text-2xl font-bold text-slate-800 mb-2">¡Matrícula Exitosa!</h4>
-                          <p className="text-slate-600 mb-6">
-                              Tus datos han sido actualizados en la Base Maestra y tu inscripción ha sido confirmada.
-                          </p>
-                          <div className="inline-block px-4 py-2 bg-slate-100 rounded text-xs text-slate-500 font-mono">
-                              Redirigiendo...
-                          </div>
-                      </div>
-                  ) : (
-                      <form onSubmit={handleEnrollFormSubmit} className="p-8">
-                          <div className="mb-6 bg-amber-50 border-l-4 border-amber-400 p-4 rounded-r text-amber-800 text-sm">
-                              <strong>Instrucciones:</strong> Ingrese su RUT y presione "Cargar Datos" para verificar su registro en la Base Maestra. Complete los 13 campos obligatorios de la Ficha Académica.
-                          </div>
-
-                          <div className="space-y-6">
-                              {/* 1. IDENTIFICACIÓN */}
-                              <div>
-                                  <h4 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-200 pb-2 mb-4">Datos Personales</h4>
-                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                      <div className="md:col-span-1">
-                                          <label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label>
-                                          <div className="flex gap-2">
-                                              <input 
-                                                  type="text" 
-                                                  name="rut" 
-                                                  placeholder="12345678-9"
-                                                  value={enrollForm.rut} 
-                                                  onChange={handleEnrollFormChange} 
-                                                  className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-[#647FBC] font-bold ${rutFound ? 'bg-green-50 border-green-300 text-green-700' : 'border-slate-300'}`}
-                                              />
-                                              <button 
-                                                  type="button"
-                                                  onClick={handleCheckRut}
-                                                  className="bg-[#647FBC] hover:bg-blue-700 text-white px-3 py-2 rounded font-bold text-xs flex items-center shadow-sm"
-                                                  title="Buscar en Base Maestra"
-                                              >
-                                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                                              </button>
-                                          </div>
-                                          {rutFound && <p className="text-[10px] text-green-600 mt-1 font-medium">✓ Datos cargados desde Base Maestra</p>}
-                                      </div>
-                                      <div>
-                                          <label className="block text-xs font-bold text-slate-700 mb-1">Nombres *</label>
-                                          <input type="text" name="names" value={enrollForm.names} onChange={handleEnrollFormChange} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-[#647FBC]"/>
-                                      </div>
-                                      <div>
-                                          <label className="block text-xs font-bold text-slate-700 mb-1">Apellido Paterno *</label>
-                                          <input type="text" name="paternalSurname" value={enrollForm.paternalSurname} onChange={handleEnrollFormChange} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-[#647FBC]"/>
-                                      </div>
-                                      <div>
-                                          <label className="block text-xs font-bold text-slate-700 mb-1">Apellido Materno</label>
-                                          <input type="text" name="maternalSurname" value={enrollForm.maternalSurname} onChange={handleEnrollFormChange} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-[#647FBC]"/>
-                                      </div>
-                                      <div className="md:col-span-2">
-                                          <label className="block text-xs font-bold text-slate-700 mb-1">Email Institucional *</label>
-                                          <input type="email" name="email" value={enrollForm.email} onChange={handleEnrollFormChange} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-[#647FBC]"/>
-                                      </div>
-                                      <div>
-                                          <label className="block text-xs font-bold text-slate-700 mb-1">Teléfono</label>
-                                          <input type="tel" name="phone" value={enrollForm.phone} onChange={handleEnrollFormChange} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-[#647FBC]"/>
-                                      </div>
-                                  </div>
-                              </div>
-
-                              {/* 2. ANTECEDENTES ACADÉMICOS */}
-                              <div>
-                                  <h4 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-200 pb-2 mb-4">Ficha Académica (Base Maestra)</h4>
-                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                      <SmartSelect label="Sede / Campus *" name="campus" value={enrollForm.campus} options={config.campuses || ["Valparaíso"]} onChange={handleEnrollFormChange} required />
-                                      <SmartSelect label="Facultad *" name="faculty" value={enrollForm.faculty} options={listFaculties} onChange={handleEnrollFormChange} required />
-                                      <SmartSelect label="Departamento *" name="department" value={enrollForm.department} options={listDepts} onChange={handleEnrollFormChange} required />
-                                      <SmartSelect label="Carrera / Programa *" name="career" value={enrollForm.career} options={listCareers} onChange={handleEnrollFormChange} required />
-                                      <SmartSelect label="Rol Académico *" name="academicRole" value={enrollForm.academicRole} options={listRoles} onChange={handleEnrollFormChange} required />
-                                      <SmartSelect label="Tipo Contrato *" name="contractType" value={enrollForm.contractType} options={listContracts} onChange={handleEnrollFormChange} required />
-                                      <SmartSelect label="Semestre Docencia *" name="teachingSemester" value={enrollForm.teachingSemester} options={listSemesters} onChange={handleEnrollFormChange} required />
-                                  </div>
-                              </div>
-                          </div>
-
-                          {formErrors.length > 0 && (
-                              <div className="mt-6 bg-red-50 border border-red-200 text-red-700 p-3 rounded text-sm">
-                                  <p className="font-bold mb-1">Por favor corrija los siguientes errores:</p>
-                                  <ul className="list-disc pl-5">
-                                      {formErrors.map((err, idx) => <li key={idx}>{err}</li>)}
-                                  </ul>
-                              </div>
-                          )}
-
-                          <div className="flex gap-4 pt-8 border-t border-slate-100 mt-6">
-                              <button 
-                                  type="button"
-                                  onClick={() => setShowStudentEnrollModal(false)}
-                                  className="w-1/3 py-3 bg-white border border-slate-300 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition-colors"
-                              >
-                                  Cancelar
-                              </button>
-                              <button 
-                                  type="submit"
-                                  className="flex-1 py-3 bg-[#647FBC] text-white font-bold rounded-xl hover:bg-blue-800 shadow-md hover:shadow-lg transition-all flex justify-center items-center gap-2"
-                              >
-                                  Confirmar Datos y Matricular
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                              </button>
-                          </div>
-                      </form>
-                  )}
-              </div>
-          </div>
-      )}
-
-    </div>
-  );
-};
