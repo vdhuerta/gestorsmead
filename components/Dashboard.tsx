@@ -1114,3 +1114,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
       ) : null }
       
       {/* --- CATCH-ALL FOR STUDENT & ADMIN (If not Asesor) --- */}
+    </div>
+  );
+};
