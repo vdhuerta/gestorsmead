@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { User } from './types';
+import { User, UserRole } from './types';
 import { LoginSimulator } from './components/LoginSimulator';
 import { RoleNavbar, TabType } from './components/RoleNavbar';
 import { Dashboard } from './components/Dashboard';
@@ -20,7 +20,7 @@ import { AdvisoryManager, PublicVerification } from './components/AdvisoryManage
 import { StudentSignature } from './components/StudentSignature'; 
 import { CertificateVerification } from './components/CertificateVerification'; // Import New Component
 import { DataProvider, useData } from './context/DataContext';
-import { checkConnection } from './services/supabaseClient'; 
+import { checkConnection, supabase } from './services/supabaseClient'; 
 
 // Color Mapping for Visuals - Updated to New Institutional Palette
 const TABLE_COLORS = [
@@ -43,6 +43,9 @@ const MainContent: React.FC = () => {
   const [signatureParams, setSignatureParams] = useState<{eid: string, sid: string} | null>(null);
   const [verificationCode, setVerificationCode] = useState<string | null>(null);
   const [certVerificationCode, setCertVerificationCode] = useState<string | null>(null); // New State
+
+  // --- REALTIME PRESENCE STATE (ASESORES) ---
+  const [onlinePeers, setOnlinePeers] = useState<{rut: string, names: string, photoUrl: string}[]>([]);
 
   // Verificar conexión y Rutas al montar
   useEffect(() => {
@@ -74,6 +77,56 @@ const MainContent: React.FC = () => {
       }
 
   }, []);
+
+  // --- REALTIME PRESENCE EFFECT (Only for Advisors) ---
+  useEffect(() => {
+      if (!user || user.systemRole !== UserRole.ASESOR) {
+          setOnlinePeers([]);
+          return;
+      }
+
+      const channel = supabase.channel('online-advisors', {
+          config: {
+              presence: {
+                  key: user.rut,
+              },
+          },
+      });
+
+      channel
+          .on('presence', { event: 'sync' }, () => {
+              const newState = channel.presenceState();
+              const peers: any[] = [];
+              
+              // Flatten presence state
+              for (let key in newState) {
+                  // newState[key] es un array de objetos de sesión para ese usuario
+                  if (newState[key].length > 0) {
+                      const peerData = newState[key][0]; // Tomamos la primera sesión
+                      // Filtramos para no mostrarnos a nosotros mismos en la lista "otros"
+                      if (peerData.rut !== user.rut) {
+                          peers.push(peerData);
+                      }
+                  }
+              }
+              setOnlinePeers(peers);
+          })
+          .subscribe(async (status) => {
+              if (status === 'SUBSCRIBED') {
+                  await channel.track({
+                      rut: user.rut,
+                      names: user.names,
+                      photoUrl: user.photoUrl,
+                      role: user.systemRole
+                  });
+              }
+          });
+
+      return () => {
+          supabase.removeChannel(channel);
+      };
+  }, [user]);
+
 
   // --- SPECIAL RENDER FOR PUBLIC VIEWS (NO LOGIN REQUIRED) ---
   if (signatureParams) {
@@ -254,9 +307,11 @@ const MainContent: React.FC = () => {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
         {renderContent()}
 
-        {/* FLOATING USER AVATAR */}
-        <div className="fixed bottom-6 left-6 z-50 group flex items-center gap-3 animate-fadeIn">
-            <div className="relative">
+        {/* FLOATING USER AVATAR & PRESENCE */}
+        <div className="fixed bottom-6 left-6 z-50 flex items-end gap-3 animate-fadeIn">
+            
+            {/* 1. USUARIO ACTUAL (SIEMPRE VISIBLE) */}
+            <div className="relative group">
                 <div className={`absolute -inset-1 rounded-full border-4 ${connectionStatus === 'error' ? 'border-red-500/60' : 'border-green-500/60'} animate-pulse`}></div>
                 <div className={`absolute inset-0 rounded-full border-4 ${connectionStatus === 'error' ? 'border-red-500' : 'border-green-500'}`}></div>
                 <div className="relative w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-xl bg-slate-200">
@@ -268,7 +323,40 @@ const MainContent: React.FC = () => {
                         </div>
                     )}
                 </div>
+                {/* Tooltip nombre propio */}
+                <div className="absolute left-full ml-2 bottom-2 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                    Tú ({user.names})
+                </div>
             </div>
+
+            {/* 2. OTROS ASESORES CONECTADOS (SOLO VISTA ASESOR) */}
+            {user.systemRole === UserRole.ASESOR && onlinePeers.length > 0 && (
+                <div className="flex -space-x-3 items-center pb-1">
+                    {onlinePeers.map((peer) => (
+                        <div key={peer.rut} className="relative group/peer cursor-help">
+                            <div className="w-10 h-10 rounded-full border-2 border-white shadow-md bg-slate-200 overflow-hidden relative z-10 hover:z-20 transition-all hover:scale-110">
+                                {peer.photoUrl ? (
+                                    <img src={peer.photoUrl} alt={peer.names} className="w-full h-full object-cover" />
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center bg-indigo-100 text-indigo-500 text-xs font-bold">
+                                        {peer.names.charAt(0)}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="absolute w-3 h-3 bg-green-500 border-2 border-white rounded-full bottom-0 right-0 z-20"></div>
+                            
+                            {/* Tooltip para colegas */}
+                            <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover/peer:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-30">
+                                {peer.names} (Conectado)
+                            </div>
+                        </div>
+                    ))}
+                    <div className="pl-4 text-[10px] font-bold text-slate-400 bg-white/80 px-2 py-1 rounded-full shadow-sm">
+                        +{onlinePeers.length} online
+                    </div>
+                </div>
+            )}
+
         </div>
 
         {/* Debug / Reset Button */}
