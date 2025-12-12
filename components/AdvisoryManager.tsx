@@ -467,7 +467,8 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             date: sessionForm.date,
             duration: sessionForm.duration,
             observation: sessionForm.observation,
-            advisorName: currentUser?.names,
+            // UPDATED: Now saves Full Name + Paternal Surname
+            advisorName: currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : 'Asesor',
             verified: false, // Pendiente
             signedAt: undefined,
             location: sessionForm.location, // Nuevo campo
@@ -590,7 +591,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         const logs = enrollment?.sessionLogs || [];
 
         // Calcular total horas de este estudiante
-        const studentTotalHours = (logs.reduce((acc, log) => acc + log.duration, 0) / 60).toFixed(1);
+        const studentTotalHours = (logs.reduce((acc, log) => acc + (log.duration || 0), 0) / 60).toFixed(1);
 
         return (
             <div className="animate-fadeIn max-w-6xl mx-auto space-y-6">
