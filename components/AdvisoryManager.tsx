@@ -169,6 +169,9 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const [view, setView] = useState<'list' | 'manage'>('list');
     const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string | null>(null);
     
+    // --- ESTADO PARA ACTUALIZACIÓN EN TIEMPO REAL (MULTI-USUARIO) ---
+    const [realtimeLogs, setRealtimeLogs] = useState<SessionLog[] | null>(null);
+
     // Estados de Buscador Rápido (Quick Search)
     const [searchRut, setSearchRut] = useState('');
     const [searchSurname, setSearchSurname] = useState('');
@@ -253,6 +256,43 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         });
         return { students: advisoryEnrollments.length, sessions: totalSessions, hours: totalHours.toFixed(1) };
     }, [advisoryEnrollments]);
+
+    // --- LÓGICA DE SINCRONIZACIÓN REALTIME (MULTI-USUARIO) ---
+    // Cuando cambiamos de estudiante, limpiamos los logs "live"
+    useEffect(() => {
+        setRealtimeLogs(null);
+    }, [selectedEnrollmentId]);
+
+    // Suscripción específica a la bitácora que estamos viendo
+    useEffect(() => {
+        if (view !== 'manage' || !selectedEnrollmentId) return;
+
+        // Crear un canal específico para este registro de inscripción
+        const channel = supabase.channel(`public:enrollments:id=eq.${selectedEnrollmentId}`)
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'enrollments', filter: `id=eq.${selectedEnrollmentId}` },
+                async (payload) => {
+                    // Cuando detectamos un cambio, hacemos fetch explícito para asegurar que tenemos el JSONB completo
+                    // Esto evita problemas si el payload viene incompleto o si hay race conditions
+                    const { data } = await supabase
+                        .from('enrollments')
+                        .select('session_logs')
+                        .eq('id', selectedEnrollmentId)
+                        .single();
+                    
+                    if (data && data.session_logs) {
+                        setRealtimeLogs(data.session_logs as SessionLog[]);
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [view, selectedEnrollmentId]);
+
 
     // --- HANDLERS BUSQUEDA ---
     const handleSearchRutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -588,7 +628,8 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     if (view === 'manage' && selectedEnrollmentId) {
         const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
         const student = users.find(u => u.rut === enrollment?.rut);
-        const logs = enrollment?.sessionLogs || [];
+        // USE REALTIME LOGS IF AVAILABLE, OTHERWISE USE CONTEXT LOGS
+        const logs = realtimeLogs || enrollment?.sessionLogs || [];
 
         // Calcular total horas de este estudiante
         const studentTotalHours = (logs.reduce((acc, log) => acc + (log.duration || 0), 0) / 60).toFixed(1);
