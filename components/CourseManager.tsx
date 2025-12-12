@@ -125,6 +125,265 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       setTimeout(() => setIsSyncing(false), 800);
   };
 
+  const handleGenerateCertificate = async (enrollment: Enrollment, user: User) => {
+      if (!selectedCourse) return;
+      setIsGeneratingPdf(true);
+
+      const doc = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'letter'
+      });
+
+      const logoUrl = "https://raw.githubusercontent.com/vdhuerta/assets-aplications/main/Logo-UAD%20(2).png";
+      let imgElement: HTMLImageElement | null = null;
+      let imgRatio = 1;
+
+      // 0. CARGAR IMAGEN PARA PROPORCIONES
+      try {
+          const img = new Image();
+          img.crossOrigin = "Anonymous";
+          img.src = logoUrl;
+          await new Promise((resolve) => {
+              img.onload = resolve;
+              img.onerror = resolve; // Continue even if error
+          });
+          if (img.width > 0) {
+              imgElement = img;
+              imgRatio = img.width / img.height;
+          }
+      } catch (e) { console.warn("Error cargando imagen:", e); }
+
+      // --- 1. MARCA DE AGUA (FONDO) ---
+      if (imgElement) {
+          try {
+              if (doc.saveGraphicsState) doc.saveGraphicsState();
+              // @ts-ignore
+              if (doc.setGState && jsPDF.GState) {
+                 // @ts-ignore
+                 doc.setGState(new jsPDF.GState({ opacity: 0.1 })); // 10% OPACIDAD (Muy sutil)
+              }
+              
+              // Calcular dimensiones proporcionales (Aumentado 30%: 140 * 1.3 = 182)
+              const wmWidth = 182; 
+              const wmHeight = wmWidth / imgRatio; 
+              
+              // Centrar y Bajar (Bajado 20mm adicionales)
+              const x = (216 - wmWidth) / 2;
+              const y = ((279 - wmHeight) / 2) + 20; 
+              
+              doc.addImage(imgElement, 'PNG', x, y, wmWidth, wmHeight, undefined, 'FAST');
+              
+              if (doc.restoreGraphicsState) doc.restoreGraphicsState();
+          } catch (e) {
+              console.warn("No se pudo dibujar la marca de agua:", e);
+          }
+      }
+
+      // --- 2. HEADER (Barra Superior Institucional) ---
+      // Fondo Negro/Gris
+      doc.setFillColor(30, 30, 30); 
+      doc.rect(0, 0, 216, 25, 'F');
+      
+      // Logo Superior Izquierdo (Proporcional)
+      if (imgElement) {
+          const hHeight = 18; // Altura fija para que quepa en la barra
+          const hWidth = hHeight * imgRatio; // Ancho proporcional
+          doc.addImage(imgElement, 'PNG', 15, 3.5, hWidth, hHeight);
+      }
+
+      // Texto Institucional Derecha
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      doc.text("Universidad de", 140, 10);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text("Playa Ancha", 140, 16);
+      
+      // Separador Vertical
+      doc.setDrawColor(255, 255, 255);
+      doc.setLineWidth(0.3);
+      doc.line(172, 6, 172, 20);
+
+      // Texto UAD Derecha
+      doc.setFontSize(7);
+      doc.text("UNIDAD DE", 176, 10);
+      doc.text("ACOMPAÑAMIENTO", 176, 13);
+      doc.text("DOCENTE", 176, 16);
+
+      // --- 3. TÍTULO ---
+      doc.setTextColor(0, 160, 233); // Cyan Institucional
+      doc.setFontSize(32);
+      doc.setFont("helvetica", "bold");
+      doc.text("CONSTANCIA DE", 108, 60, { align: "center" });
+      doc.text("PARTICIPACIÓN", 108, 75, { align: "center" });
+
+      // Línea Gris Separadora
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(1.5);
+      doc.line(25, 85, 191, 85);
+
+      // --- 4. CUERPO DEL TEXTO ---
+      doc.setTextColor(60, 60, 60);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      
+      const intro = "La Unidad de Acompañamiento Docente (UAD), dependiente de la Dirección General de Pregrado de la Vicerrectoría Académica de la Universidad de Playa Ancha de Ciencias de la Educación, a través del presente documento certifica que:";
+      const splitIntro = doc.splitTextToSize(intro, 166);
+      doc.text(splitIntro, 25, 100);
+
+      // --- 5. DATOS DEL ESTUDIANTE ---
+      // Etiqueta "Don/Doña" (Estilo Pastilla Azul)
+      doc.setFillColor(100, 150, 200); // Azul Claro
+      doc.roundedRect(25, 120, 25, 7, 2, 2, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text("Don/Doña", 37.5, 124.5, { align: "center" });
+
+      // Nombre del Estudiante
+      doc.setTextColor(40, 40, 40);
+      doc.setFontSize(14);
+      doc.text(`${user.names} ${user.paternalSurname} ${user.maternalSurname || ''}`, 55, 125);
+
+      // Separador Azul
+      doc.setDrawColor(0, 160, 233);
+      doc.setLineWidth(1);
+      doc.line(25, 133, 191, 133);
+
+      // --- 6. DETALLES DE ACTIVIDAD ---
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text("Con fecha:", 25, 145);
+      
+      doc.setFont("helvetica", "normal");
+      const date = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' });
+      doc.text(date, 50, 145);
+      
+      // Línea subrayado fecha (fina)
+      doc.setDrawColor(180, 180, 180);
+      doc.setLineWidth(0.5);
+      doc.line(48, 146, 140, 146);
+
+      doc.text("Ha participado de la Actividad Formativa denominada:", 25, 157);
+
+      // Nombre del Curso (Centrado)
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(0, 50, 100); // Azul Oscuro
+      const splitCourse = doc.splitTextToSize(selectedCourse.name, 150);
+      doc.text(splitCourse, 108, 175, { align: "center" });
+
+      // --- 7. DISCLAIMER & LÍNEA ---
+      doc.setDrawColor(0, 160, 233);
+      doc.setLineWidth(1);
+      doc.line(25, 180, 191, 180);
+
+      doc.setTextColor(80, 80, 80);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      const disclaimer = "(Esta constancia de participación solo acredita, que terminó satisfactoriamente la Ruta Formativa de este curso. Envíe este documento a uad@upla.cl para el certificado final)";
+      const splitDisc = doc.splitTextToSize(disclaimer, 160);
+      doc.text(splitDisc, 108, 190, { align: "center" });
+
+      // --- 8. TIMBRE ---
+      const cx = 45; 
+      const cy = 225;
+      doc.setDrawColor(0, 160, 233);
+      doc.setLineWidth(1.5);
+      doc.circle(cx, cy, 18);
+      doc.setLineWidth(0.5);
+      doc.circle(cx, cy, 16);
+
+      doc.setFontSize(6);
+      doc.setTextColor(0, 160, 233);
+      doc.setFont("helvetica", "bold");
+      doc.text("UNIDAD DE", cx, cy - 2, { align: "center" });
+      doc.text("ACOMPAÑAMIENTO", cx, cy + 2, { align: "center" });
+      doc.text("DOCENTE", cx, cy + 6, { align: "center" });
+
+      // --- 9. CÓDIGO QR ---
+      const verifyUrl = `${window.location.origin}/?mode=verify_cert&code=${enrollment.certificateCode || enrollment.id}`;
+      const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(verifyUrl)}`;
+      
+      try {
+          doc.addImage(qrApiUrl, 'PNG', 165, 210, 30, 30);
+          doc.setFontSize(8);
+          doc.setTextColor(100);
+          doc.text("Verificar Autenticidad", 180, 245, { align: "center" });
+      } catch (e) {
+          console.warn("Error cargando QR:", e);
+      }
+
+      // --- 10. PIE DE PÁGINA ---
+      doc.setFillColor(80, 80, 80);
+      doc.rect(0, 265, 216, 15, 'F');
+      
+      doc.setFillColor(0, 160, 233);
+      doc.triangle(180, 265, 216, 265, 216, 245, 'F');
+      doc.setFillColor(30, 30, 30);
+      doc.triangle(195, 265, 216, 265, 216, 255, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(8);
+      doc.text("Vicerrectoría Académica / Dirección General de Pregrado / Unidad de Acompañamiento Docente", 108, 274, { align: "center" });
+
+      doc.save(`Constancia_${user.rut}_${selectedCourse.internalCode || 'Curso'}.pdf`);
+      setIsGeneratingPdf(false);
+  };
+
+  // --- LÓGICA CENTRALIZADA DE ESTADO (REGLAS DE NEGOCIO ESTRICTAS) ---
+  const determineState = (grades: number[], attendancePct: number, evalCount: number): ActivityState => {
+      const minGrade = config.minPassingGrade || 4.0;
+      const minAtt = config.minAttendancePercentage || 75;
+      
+      // 1. Filtrar notas válidas (solo las mayores a 0 cuentan como "ingresadas")
+      const validGrades = grades.filter(g => g !== undefined && g !== null && g > 0);
+      const enteredCount = validGrades.length;
+      
+      // 2. Calcular promedio actual (solo de las notas ingresadas)
+      let currentAvg = 0;
+      if (enteredCount > 0) {
+          const sum = validGrades.reduce((a, b) => a + b, 0);
+          currentAvg = parseFloat((sum / enteredCount).toFixed(1));
+      }
+
+      // Banderas de control
+      const hasAllGrades = enteredCount >= evalCount;
+      const hasPassingAttendance = attendancePct >= minAtt;
+      const hasPassingAverage = currentAvg >= minGrade;
+
+      // REGLA E: Nada ingresado (0 notas y 0% asistencia) -> INSCRITO
+      if (enteredCount === 0 && attendancePct === 0) {
+          return ActivityState.INSCRITO;
+      }
+
+      // REGLA B: Notas Parciales (Falta al menos una nota)
+      // "si % no cumple, notas parcialmente ingresadas; estado AVANZANDO"
+      // Esto implica que si faltan notas, INDEPENDIENTE de la asistencia, es AVANZANDO.
+      if (!hasAllGrades) {
+          return ActivityState.AVANZANDO;
+      }
+
+      // --- A PARTIR DE AQUÍ, TODAS LAS NOTAS ESTÁN INGRESADAS (El curso terminó académicamente para el alumno) ---
+
+      // REGLA A y C: Reprobado por Asistencia O por Nota (con todas las notas puestas)
+      if (!hasPassingAttendance) {
+          // Asistencia insuficiente (< 75%) -> REPROBADO
+          // (Aunque tenga promedio 7.0)
+          return ActivityState.REPROBADO;
+      }
+
+      if (!hasPassingAverage) {
+          // Asistencia OK, pero Promedio insuficiente (< 4.0) -> REPROBADO
+          return ActivityState.REPROBADO;
+      }
+
+      // REGLA D: Cumple todo -> APROBADO
+      return ActivityState.APROBADO;
+  };
+
   const handleUpdateGrade = async (enrollmentId: string, gradeIndex: number, value: string) => {
       // 1. Validar input
       let numValue = parseFloat(value.replace(',', '.'));
@@ -144,27 +403,24 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       
       currentGrades[gradeIndex] = parseFloat(numValue.toFixed(1));
 
-      // 4. Calcular promedio simple (ignorando ceros para promedio parcial)
+      // 4. Calcular promedio simple (ignorando ceros para visualización)
       const validGrades = currentGrades.filter(g => g > 0);
       let finalGrade = 0;
       if (validGrades.length > 0) {
           const sum = validGrades.reduce((a, b) => a + b, 0);
-          // Si queremos promedio final real, se divide por total de notas esperadas (selectedCourse.evaluationCount)
-          // Si queremos promedio parcial ("lo que lleva"), se divide por validGrades.length
-          // Usemos lógica de promedio final estricto: Suma / Total Esperado
-          const totalExpected = selectedCourse?.evaluationCount || 3;
-          // OJO: Si faltan notas, el promedio baja.
-          // Alternativa común: Promedio de notas puestas.
           finalGrade = parseFloat((sum / validGrades.length).toFixed(1));
       }
 
-      const isPassing = finalGrade >= (config.minPassingGrade || 4.0);
+      // 5. DETERMINAR NUEVO ESTADO CON LÓGICA ESTRICTA
+      const totalExpected = selectedCourse?.evaluationCount || 3;
+      const currentAtt = enrollment.attendancePercentage || 0;
+      const newState = determineState(currentGrades, currentAtt, totalExpected);
 
-      // 5. Enviar actualización
+      // 6. Enviar actualización
       await updateEnrollment(enrollmentId, {
           grades: currentGrades,
           finalGrade: finalGrade,
-          state: isPassing ? ActivityState.APROBADO : ActivityState.REPROBADO
+          state: newState
       });
   };
 
@@ -176,8 +432,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       // @ts-ignore
       const newVal = !enrollment[fieldName];
       
-      // Calcular nuevo porcentaje (asumiendo 6 sesiones base para este ejemplo simple)
-      // En un caso real, esto debería basarse en el total de sesiones configuradas
       let presentCount = 0;
       for (let i = 1; i <= 6; i++) {
           const key = `attendanceSession${i}`;
@@ -186,13 +440,76 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       }
       const percentage = Math.round((presentCount / 6) * 100);
 
+      // DETERMINAR NUEVO ESTADO AL CAMBIAR ASISTENCIA
+      const totalExpected = selectedCourse?.evaluationCount || 3;
+      const currentGrades = enrollment.grades || [];
+      const newState = determineState(currentGrades, percentage, totalExpected);
+
       await updateEnrollment(enrollmentId, {
           [fieldName]: newVal,
-          attendancePercentage: percentage
+          attendancePercentage: percentage,
+          state: newState
       });
   };
 
-  // --- MANUAL ENROLLMENT FORM HANDLERS ---
+  // --- COURSE CRUD HANDLERS ---
+  const handleCreateSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      
+      const newId = selectedCourseId || `ACAD-${Date.now()}`;
+      
+      const activityPayload: Activity = {
+          id: newId,
+          category: 'ACADEMIC',
+          name: formData.nombre,
+          internalCode: formData.internalCode,
+          year: formData.year,
+          academicPeriod: formData.academicPeriod,
+          version: formData.version,
+          modality: formData.modality,
+          hours: formData.hours,
+          relator: formData.relator,
+          startDate: formData.startDate,
+          endDate: formData.endDate,
+          evaluationCount: formData.evaluationCount,
+          moduleCount: formData.moduleCount,
+          isPublic: true 
+      };
+
+      await addActivity(activityPayload);
+      setView('list');
+      setSelectedCourseId(null);
+  };
+
+  const handleEditCourse = (course: Activity) => {
+      setSelectedCourseId(course.id);
+      setFormData({
+          internalCode: course.internalCode || '',
+          year: course.year || new Date().getFullYear(),
+          academicPeriod: course.academicPeriod || '',
+          nombre: course.name,
+          version: course.version || '',
+          modality: course.modality,
+          hours: course.hours,
+          moduleCount: course.moduleCount || 1,
+          evaluationCount: course.evaluationCount || 3,
+          relator: course.relator || '',
+          startDate: course.startDate || '',
+          endDate: course.endDate || ''
+      });
+      setView('edit');
+  };
+
+  const handleDeleteCourse = async () => {
+      if (!selectedCourseId) return;
+      if (confirm("¿Está seguro de eliminar este curso y todos sus datos asociados?")) {
+          await deleteActivity(selectedCourseId);
+          setView('list');
+          setSelectedCourseId(null);
+      }
+  };
+
+  // --- MANUAL ENROLLMENT HANDLERS ---
   const handleEnrollChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       const { name, value } = e.target;
       setManualForm(prev => ({ ...prev, [name]: value }));
@@ -238,8 +555,159 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       setIsFoundInMaster(false);
   };
 
-  // --- RENDER ---
+  // --- BULK UPLOAD HANDLER ---
+  const handleBulkUpload = () => {
+      if (!uploadFile || !selectedCourseId) return;
+      const reader = new FileReader();
+      const isExcel = uploadFile.name.endsWith('.xlsx') || uploadFile.name.endsWith('.xls');
 
+      reader.onload = async (e) => {
+          let rows: any[][] = [];
+          if (isExcel) {
+              const data = e.target?.result;
+              const workbook = read(data, { type: 'array' });
+              rows = utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+          } else {
+              const text = e.target?.result as string;
+              const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== '');
+              if (lines.length > 0) {
+                  const delimiter = lines[0].includes(';') ? ';' : ',';
+                  rows = lines.map(line => line.split(delimiter));
+              }
+          }
+
+          if (rows.length < 1) return;
+
+          const usersToUpsert: User[] = [];
+          const rutsToEnroll: string[] = [];
+          let startRow = hasHeaders ? 1 : 0;
+
+          for (let i = startRow; i < rows.length; i++) {
+              const row = rows[i];
+              const rowStrings = row.map(cell => cell !== undefined && cell !== null ? String(cell).trim() : '');
+              if (rowStrings.length < 1 || !rowStrings[0]) continue;
+
+              const cleanRut = cleanRutFormat(rowStrings[0]);
+              rutsToEnroll.push(cleanRut);
+
+              const hasName = rowStrings[1] && rowStrings[1].length > 1;
+              if (hasName) {
+                  usersToUpsert.push({
+                      rut: cleanRut,
+                      names: rowStrings[1] || '',
+                      paternalSurname: rowStrings[2] || '',
+                      maternalSurname: rowStrings[3] || '',
+                      email: rowStrings[4] || '',
+                      phone: rowStrings[5] || '',
+                      academicRole: normalizeValue(rowStrings[6], listRoles),
+                      faculty: normalizeValue(rowStrings[7], listFaculties),
+                      department: normalizeValue(rowStrings[8], listDepts),
+                      career: normalizeValue(rowStrings[9], listCareers),
+                      contractType: normalizeValue(rowStrings[10], listContracts),
+                      teachingSemester: normalizeValue(rowStrings[11], listSemesters),
+                      campus: rowStrings[12] || '',
+                      systemRole: UserRole.ESTUDIANTE
+                  });
+              }
+          }
+
+          if (usersToUpsert.length > 0) { await upsertUsers(usersToUpsert); }
+          const result = await bulkEnroll(rutsToEnroll, selectedCourseId);
+          setEnrollMsg({ type: 'success', text: `Carga Masiva: ${result.success} nuevos inscritos, ${result.skipped} ya existentes.` });
+          setUploadFile(null);
+      };
+      isExcel ? reader.readAsArrayBuffer(uploadFile) : reader.readAsText(uploadFile);
+  };
+
+  // --- CREATE / EDIT VIEW ---
+  if (view === 'create' || view === 'edit') {
+      return (
+          <div className="animate-fadeIn max-w-4xl mx-auto">
+              <button onClick={() => setView('list')} className="text-slate-500 hover:text-slate-700 mb-6 flex items-center gap-1 text-sm font-bold">
+                  ← Cancelar y Volver
+              </button>
+              
+              <div className="bg-white rounded-xl shadow-lg border border-slate-200 p-8">
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6">
+                      <h2 className="text-2xl font-bold text-slate-800">
+                          {view === 'create' ? 'Crear Nuevo Curso' : 'Editar Curso'}
+                      </h2>
+                      {view === 'edit' && (
+                          <button onClick={handleDeleteCourse} className="text-red-500 hover:text-red-700 text-sm font-bold flex items-center gap-1">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                              Eliminar
+                          </button>
+                      )}
+                  </div>
+
+                  <form onSubmit={handleCreateSubmit} className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="col-span-2">
+                              <label className="block text-sm font-bold text-slate-700 mb-1">Nombre del Curso / Asignatura</label>
+                              <input required type="text" value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#647FBC]"/>
+                          </div>
+                          
+                          <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">Código Interno</label>
+                              <input type="text" value={formData.internalCode} onChange={e => setFormData({...formData, internalCode: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                  <label className="block text-sm font-medium text-slate-700 mb-1">Año</label>
+                                  <input type="number" value={formData.year} onChange={e => setFormData({...formData, year: Number(e.target.value)})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/>
+                              </div>
+                              <div>
+                                  <label className="block text-sm font-medium text-slate-700 mb-1">Semestre</label>
+                                  <input type="text" value={formData.academicPeriod} onChange={e => setFormData({...formData, academicPeriod: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/>
+                              </div>
+                          </div>
+
+                          <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">Director / Relator</label>
+                              <input type="text" value={formData.relator} onChange={e => setFormData({...formData, relator: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                  <label className="block text-sm font-medium text-slate-700 mb-1">Modalidad</label>
+                                  <select value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg">
+                                      {listModalities.map(m => <option key={m} value={m}>{m}</option>)}
+                                  </select>
+                              </div>
+                              <div>
+                                  <label className="block text-sm font-medium text-slate-700 mb-1">Horas</label>
+                                  <input type="number" value={formData.hours} onChange={e => setFormData({...formData, hours: Number(e.target.value)})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/>
+                              </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                  <label className="block text-sm font-medium text-slate-700 mb-1">Cant. Evaluaciones</label>
+                                  <select value={formData.evaluationCount} onChange={e => setFormData({...formData, evaluationCount: Number(e.target.value)})} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50">
+                                      {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
+                                  </select>
+                              </div>
+                              <div>
+                                  <label className="block text-sm font-medium text-slate-700 mb-1">Fecha Inicio</label>
+                                  <input type="date" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div className="pt-6 border-t border-slate-100 flex justify-end">
+                          <button type="submit" className="bg-[#647FBC] hover:bg-blue-800 text-white px-8 py-3 rounded-lg font-bold shadow-lg transition-colors flex items-center gap-2">
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                              {view === 'create' ? 'Crear Curso' : 'Guardar Cambios'}
+                          </button>
+                      </div>
+                  </form>
+              </div>
+          </div>
+      );
+  }
+
+  // --- VIEW DETAILS ---
   if (view === 'details' && selectedCourse) {
       return (
           <div className="animate-fadeIn space-y-6">
@@ -252,21 +720,29 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                   </div>
                   
                   {/* --- BARRA DE SINCRONIZACIÓN --- */}
-                  <div className="flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-lg border border-slate-100">
-                        <div className="flex items-center gap-2">
-                            <div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-green-500'}`}></div>
-                            <span className="text-[10px] font-bold uppercase text-slate-500">
-                                {isSyncing ? 'Sincronizando...' : 'En Línea'}
-                            </span>
+                  <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-lg border border-slate-100">
+                            <div className="flex items-center gap-2">
+                                <div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-green-500'}`}></div>
+                                <span className="text-[10px] font-bold uppercase text-slate-500">
+                                    {isSyncing ? 'Sincronizando...' : 'En Línea'}
+                                </span>
+                            </div>
+                            <div className="h-4 w-px bg-slate-300 mx-2"></div>
+                            <button 
+                                onClick={handleRefresh}
+                                className="text-xs font-bold text-[#647FBC] hover:text-blue-800 flex items-center gap-1"
+                            >
+                                <svg className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                Actualizar
+                            </button>
                         </div>
-                        <div className="h-4 w-px bg-slate-300 mx-2"></div>
-                        <button 
-                            onClick={handleRefresh}
-                            className="text-xs font-bold text-[#647FBC] hover:text-blue-800 flex items-center gap-1"
-                        >
-                            <svg className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                            Actualizar
-                        </button>
+                        
+                        {(isAdmin || isAdvisor) && (
+                            <button onClick={() => handleEditCourse(selectedCourse)} className="bg-white border border-slate-300 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold hover:bg-slate-50">
+                                Editar Curso
+                            </button>
+                        )}
                   </div>
               </div>
 
@@ -278,51 +754,126 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                   
                   <div className="bg-white rounded-b-xl rounded-tr-xl shadow-sm border border-[#647FBC]/30 border-t-0 p-8">
                       
-                      {/* TAB: ENROLLMENT */}
+                      {/* TAB: ENROLLMENT (UNIFICADO VERTICAL - Full Width Fix) */}
                       {activeDetailTab === 'enrollment' && (
-                          <div className="space-y-8 animate-fadeIn">
-                              {/* Formulario Manual */}
+                          <div className="space-y-12 animate-fadeIn w-full">
+                              
+                              {/* 1. Formulario Manual (13 Campos) */}
                               <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
-                                  <h3 className="font-bold text-slate-700 mb-4">Inscripción Manual</h3>
-                                  <form onSubmit={handleEnrollSubmit} className="space-y-4">
-                                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                          <div className="relative md:col-span-1">
-                                              <label className="block text-xs font-bold mb-1">RUT (Buscar)</label>
-                                              <input type="text" name="rut" value={manualForm.rut} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded" placeholder="12345678-9"/>
-                                              {showSuggestions && suggestions.length > 0 && (
-                                                  <div className="absolute z-10 w-full bg-white border mt-1 rounded shadow-xl">
-                                                      {suggestions.map(s => (
-                                                          <div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-xs">
-                                                              {s.rut} - {s.names}
-                                                          </div>
-                                                      ))}
-                                                  </div>
-                                              )}
+                                  <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 border-b border-slate-200 pb-2">
+                                      <svg className="w-5 h-5 text-[#647FBC]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+                                      Inscripción Manual (Registro Completo)
+                                  </h3>
+                                  <form onSubmit={handleEnrollSubmit} className="space-y-6">
+                                      {/* Identificación */}
+                                      <div className="space-y-2">
+                                          <h4 className="text-xs font-bold text-slate-400 uppercase">Identificación</h4>
+                                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                              <div className="relative md:col-span-1">
+                                                  <label className="block text-xs font-bold mb-1">RUT (Buscar)</label>
+                                                  <input type="text" name="rut" value={manualForm.rut} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-[#647FBC]" placeholder="12345678-9"/>
+                                                  {showSuggestions && suggestions.length > 0 && (
+                                                      <div className="absolute z-10 w-full bg-white border mt-1 rounded shadow-xl max-h-48 overflow-y-auto">
+                                                          {suggestions.map(s => (
+                                                              <div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-xs border-b border-slate-50">
+                                                                  <span className="font-bold block text-slate-800">{s.rut}</span>
+                                                                  <span className="text-slate-500">{s.names} {s.paternalSurname}</span>
+                                                              </div>
+                                                          ))}
+                                                      </div>
+                                                  )}
+                                              </div>
+                                              <div className="md:col-span-1"><label className="block text-xs font-bold mb-1">Nombres</label><input type="text" name="names" value={manualForm.names} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded"/></div>
+                                              <div className="md:col-span-1"><label className="block text-xs font-bold mb-1">Ap. Paterno</label><input type="text" name="paternalSurname" value={manualForm.paternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded"/></div>
+                                              <div className="md:col-span-1"><label className="block text-xs font-bold mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={manualForm.maternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded"/></div>
                                           </div>
-                                          <div className="md:col-span-1"><label className="block text-xs font-bold mb-1">Nombres</label><input type="text" name="names" value={manualForm.names} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded"/></div>
-                                          <div className="md:col-span-1"><label className="block text-xs font-bold mb-1">Ap. Paterno</label><input type="text" name="paternalSurname" value={manualForm.paternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded"/></div>
-                                          <div className="md:col-span-1"><label className="block text-xs font-bold mb-1">Email</label><input type="email" name="email" value={manualForm.email} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded"/></div>
                                       </div>
-                                      <button type="submit" className="bg-[#647FBC] text-white px-4 py-2 rounded text-sm font-bold">Matricular</button>
-                                      {enrollMsg && <p className={`text-xs ${enrollMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{enrollMsg.text}</p>}
+
+                                      {/* Contacto */}
+                                      <div className="space-y-2">
+                                          <h4 className="text-xs font-bold text-slate-400 uppercase">Contacto</h4>
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                              <div><label className="block text-xs font-bold mb-1">Email</label><input type="email" name="email" value={manualForm.email} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded"/></div>
+                                              <div><label className="block text-xs font-bold mb-1">Teléfono</label><input type="tel" name="phone" value={manualForm.phone} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded"/></div>
+                                          </div>
+                                      </div>
+
+                                      {/* Datos Académicos */}
+                                      <div className="space-y-2">
+                                          <h4 className="text-xs font-bold text-slate-400 uppercase">Ficha Académica</h4>
+                                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                              <div><SmartSelect label="Sede" name="campus" value={manualForm.campus} options={config.campuses || ["Valparaíso"]} onChange={handleEnrollChange} /></div>
+                                              <div><SmartSelect label="Facultad" name="faculty" value={manualForm.faculty} options={listFaculties} onChange={handleEnrollChange} /></div>
+                                              <div><SmartSelect label="Departamento" name="department" value={manualForm.department} options={listDepts} onChange={handleEnrollChange} /></div>
+                                              <div><SmartSelect label="Carrera" name="career" value={manualForm.career} options={listCareers} onChange={handleEnrollChange} /></div>
+                                              <div><SmartSelect label="Contrato" name="contractType" value={manualForm.contractType} options={listContracts} onChange={handleEnrollChange} /></div>
+                                              <div><SmartSelect label="Semestre" name="teachingSemester" value={manualForm.teachingSemester} options={listSemesters} onChange={handleEnrollChange} /></div>
+                                              <div><SmartSelect label="Rol Académico" name="academicRole" value={manualForm.academicRole} options={listRoles} onChange={handleEnrollChange} /></div>
+                                          </div>
+                                      </div>
+                                      
+                                      <button type="submit" className="w-full bg-[#647FBC] text-white px-4 py-3 rounded-lg text-sm font-bold shadow hover:bg-blue-800 transition-colors mt-4">
+                                          Matricular Estudiante
+                                      </button>
+                                      {enrollMsg && <p className={`text-xs text-center ${enrollMsg.type === 'success' ? 'text-green-600 font-bold' : 'text-red-600'}`}>{enrollMsg.text}</p>}
                                   </form>
                               </div>
 
-                              {/* Tabla Matriculados */}
-                              <div className="overflow-x-auto">
+                              {/* 2. Carga Masiva (Debajo del Manual) */}
+                              <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm flex flex-col">
+                                  <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 border-b border-slate-100 pb-2">
+                                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                      Carga Masiva (CSV / Excel)
+                                  </h3>
+                                  
+                                  <div className="flex-1 flex flex-col justify-center space-y-4">
+                                      <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadFile ? 'border-green-400 bg-green-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}>
+                                          <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                              {uploadFile ? (
+                                                  <>
+                                                      <svg className="w-8 h-8 text-green-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                                      <p className="mb-1 text-sm font-bold text-green-700">{uploadFile.name}</p>
+                                                  </>
+                                              ) : (
+                                                  <>
+                                                      <svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                                                      <p className="mb-1 text-xs text-slate-500">Click para subir archivo (13 columnas)</p>
+                                                  </>
+                                              )}
+                                          </div>
+                                          <input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} />
+                                      </label>
+                                      
+                                      <div className="flex items-center gap-2 justify-center">
+                                          <input type="checkbox" checked={hasHeaders} onChange={e => setHasHeaders(e.target.checked)} className="rounded text-[#647FBC] focus:ring-[#647FBC]"/>
+                                          <span className="text-xs text-slate-500">Ignorar encabezados</span>
+                                      </div>
+
+                                      <button 
+                                          onClick={handleBulkUpload} 
+                                          disabled={!uploadFile}
+                                          className="w-full bg-slate-800 text-white py-3 rounded-lg font-bold text-sm hover:bg-slate-900 disabled:opacity-50 transition-colors"
+                                      >
+                                          Procesar Archivo Masivo
+                                      </button>
+                                  </div>
+                              </div>
+
+                              {/* Tabla Resumen Matriculados */}
+                              <div className="overflow-x-auto bg-white rounded-lg border border-slate-200">
                                   <table className="w-full text-sm text-left">
-                                      <thead className="bg-slate-100 text-slate-600">
-                                          <tr><th className="px-4 py-2">RUT</th><th className="px-4 py-2">Estudiante</th><th className="px-4 py-2">Email</th><th className="px-4 py-2">Estado</th></tr>
+                                      <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                                          <tr><th className="px-6 py-3">RUT</th><th className="px-6 py-3">Estudiante</th><th className="px-6 py-3">Email</th><th className="px-6 py-3">Estado</th></tr>
                                       </thead>
                                       <tbody className="divide-y divide-slate-100">
                                           {sortedEnrollments.map(enr => {
                                               const u = users.find(user => user.rut === enr.rut);
                                               return (
-                                                  <tr key={enr.id}>
-                                                      <td className="px-4 py-2 font-mono text-xs">{enr.rut}</td>
-                                                      <td className="px-4 py-2 font-bold text-slate-700">{u?.paternalSurname} {u?.names}</td>
-                                                      <td className="px-4 py-2 text-xs text-slate-500">{u?.email}</td>
-                                                      <td className="px-4 py-2"><span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold">{enr.state}</span></td>
+                                                  <tr key={enr.id} className="hover:bg-slate-50">
+                                                      <td className="px-6 py-3 font-mono text-xs">{enr.rut}</td>
+                                                      <td className="px-6 py-3 font-bold text-slate-700">{u?.paternalSurname} {u?.names}</td>
+                                                      <td className="px-6 py-3 text-xs text-slate-500">{u?.email}</td>
+                                                      <td className="px-6 py-3"><span className={`px-2 py-1 rounded text-xs font-bold uppercase ${enr.state === ActivityState.APROBADO ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{enr.state}</span></td>
                                                   </tr>
                                               )
                                           })}
@@ -332,48 +883,86 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                           </div>
                       )}
 
-                      {/* TAB: TRACKING */}
+                      {/* TAB: TRACKING (REORDENADO: Estudiante -> Asistencia -> Notas -> Estado -> Certificado) */}
                       {activeDetailTab === 'tracking' && (
                           <div className="animate-fadeIn">
                               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                                   <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                                      <h3 className="font-bold text-slate-700">Sábana de Notas</h3>
-                                      <span className="text-xs text-slate-400 italic">Los cambios se guardan automáticamente en tiempo real.</span>
+                                      <h3 className="font-bold text-slate-700">Sábana de Notas y Asistencia</h3>
+                                      <div className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                          <span className="text-xs text-slate-500 italic">Guardado automático activo</span>
+                                      </div>
                                   </div>
                                   
                                   <div className="overflow-x-auto custom-scrollbar">
                                       <table className="w-full text-sm text-left whitespace-nowrap">
-                                          <thead className="bg-slate-100 text-slate-600 font-bold">
+                                          <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
                                               <tr>
-                                                  <th className="px-2 py-3 w-60 bg-slate-100 sticky left-0 border-r z-10">Estudiante</th>
+                                                  {/* 1. Estudiante */}
+                                                  <th className="px-4 py-3 w-60 bg-slate-100 sticky left-0 border-r z-10">Estudiante</th>
+                                                  
+                                                  {/* 2. Asistencia */}
+                                                  <th className="px-2 py-3 text-center w-32 border-r border-slate-200">Asistencia</th>
+                                                  
+                                                  {/* 3. Notas */}
                                                   {Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, i) => (
-                                                      <th key={i} className="px-2 py-3 text-center w-16">N{i+1}</th>
+                                                      <th key={i} className="px-2 py-3 text-center w-20 border-r border-slate-200">
+                                                          N{i+1}
+                                                      </th>
                                                   ))}
-                                                  <th className="px-2 py-3 text-center w-16 bg-slate-100 font-bold border-l">Final</th>
-                                                  <th className="px-2 py-3 text-center w-24">Asistencia</th>
+                                                  <th className="px-2 py-3 text-center w-20 bg-slate-50 font-bold border-r border-slate-200">Final</th>
+                                                  
+                                                  {/* 4. Estado */}
+                                                  <th className="px-4 py-3 text-center w-28 border-r border-slate-200">Estado</th>
+                                                  
+                                                  {/* 5. Certificado */}
+                                                  <th className="px-4 py-3 text-center w-28">Certificado</th>
                                               </tr>
                                           </thead>
                                           <tbody className="divide-y divide-slate-100">
                                               {sortedEnrollments.map(enr => {
                                                   const student = users.find(u => u.rut === enr.rut);
                                                   return (
-                                                      <tr key={enr.id} className="hover:bg-slate-50">
-                                                          <td className="px-2 py-2 sticky left-0 bg-white border-r z-10">
+                                                      <tr key={enr.id} className="hover:bg-slate-50 group">
+                                                          {/* 1. Estudiante */}
+                                                          <td className="px-4 py-3 sticky left-0 bg-white border-r border-slate-200 z-10 group-hover:bg-slate-50">
                                                               <div className="font-bold text-slate-700 truncate w-56" title={`${student?.paternalSurname} ${student?.names}`}>
                                                                   {student?.paternalSurname}, {student?.names}
                                                               </div>
                                                               <div className="text-[10px] text-slate-400 font-mono">{enr.rut}</div>
                                                           </td>
                                                           
-                                                          {/* Inputs de Notas */}
+                                                          {/* 2. Asistencia */}
+                                                          <td className="px-4 py-2 text-center border-r border-slate-200">
+                                                              <div className="flex flex-col items-center">
+                                                                  <div className="flex gap-1 justify-center mb-1">
+                                                                      {[0,1,2,3,4,5].map(idx => (
+                                                                          <input 
+                                                                              key={idx}
+                                                                              type="checkbox"
+                                                                              // @ts-ignore
+                                                                              checked={!!enr[`attendanceSession${idx+1}`]}
+                                                                              onChange={() => handleToggleAttendance(enr.id, idx)}
+                                                                              className="w-3 h-3 text-[#647FBC] rounded border-slate-300 focus:ring-[#647FBC] cursor-pointer"
+                                                                          />
+                                                                      ))}
+                                                                  </div>
+                                                                  <span className={`text-[10px] font-bold ${(enr.attendancePercentage || 0) < 75 ? 'text-red-500' : 'text-green-600'}`}>
+                                                                      {enr.attendancePercentage || 0}% Asistencia
+                                                                  </span>
+                                                              </div>
+                                                          </td>
+
+                                                          {/* 3. Notas */}
                                                           {Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, idx) => (
-                                                              <td key={idx} className="px-1 py-2 text-center">
+                                                              <td key={idx} className="px-1 py-2 text-center border-r border-slate-100">
                                                                   <input 
                                                                       type="number"
                                                                       step="0.1"
                                                                       min="1"
                                                                       max="7"
-                                                                      className={`w-full text-center border rounded py-1 text-xs font-bold focus:ring-2 focus:ring-[#647FBC] ${enr.grades?.[idx] && enr.grades[idx] < 4 ? 'text-red-500 border-red-200 bg-red-50' : 'text-slate-700 border-slate-200'}`}
+                                                                      className={`w-16 text-center border rounded py-1 text-sm font-bold focus:ring-2 focus:ring-[#647FBC] focus:outline-none transition-all ${enr.grades?.[idx] && enr.grades[idx] < 4 ? 'text-red-600 border-red-200 bg-red-50' : 'text-slate-700 border-slate-200'}`}
                                                                       value={enr.grades?.[idx] || ''}
                                                                       onChange={(e) => handleUpdateGrade(enr.id, idx, e.target.value)}
                                                                       disabled={isSyncing}
@@ -381,27 +970,29 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                               </td>
                                                           ))}
                                                           
-                                                          <td className="px-2 py-2 text-center border-l bg-slate-50 font-bold text-slate-800">
-                                                              {enr.finalGrade || '-'}
+                                                          <td className="px-2 py-2 text-center border-r border-slate-200 bg-slate-50 font-bold text-slate-800">
+                                                              <span className={enr.finalGrade && enr.finalGrade < 4 ? 'text-red-600' : ''}>
+                                                                  {enr.finalGrade || '-'}
+                                                              </span>
                                                           </td>
                                                           
-                                                          {/* Asistencia Simple (Checkbox simulando sesiones) */}
-                                                          <td className="px-2 py-2 text-center">
-                                                              <div className="flex gap-1 justify-center">
-                                                                  {[0,1,2,3,4,5].map(idx => (
-                                                                      <input 
-                                                                          key={idx}
-                                                                          type="checkbox"
-                                                                          // @ts-ignore
-                                                                          checked={!!enr[`attendanceSession${idx+1}`]}
-                                                                          onChange={() => handleToggleAttendance(enr.id, idx)}
-                                                                          className="w-3 h-3 text-[#647FBC] rounded"
-                                                                      />
-                                                                  ))}
-                                                              </div>
-                                                              <span className={`text-[10px] font-bold block mt-1 ${(enr.attendancePercentage || 0) < 75 ? 'text-red-500' : 'text-green-600'}`}>
-                                                                  {enr.attendancePercentage || 0}%
+                                                          {/* 4. Estado */}
+                                                          <td className="px-2 py-2 text-center border-r border-slate-200">
+                                                              <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${enr.state === ActivityState.APROBADO ? 'bg-green-100 text-green-700' : enr.state === ActivityState.REPROBADO ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                                  {enr.state}
                                                               </span>
+                                                          </td>
+
+                                                          {/* 5. Certificado */}
+                                                          <td className="px-2 py-2 text-center">
+                                                              <button 
+                                                                  onClick={() => student && handleGenerateCertificate(enr, student)}
+                                                                  disabled={enr.state !== ActivityState.APROBADO}
+                                                                  className={`p-1.5 rounded transition-colors ${enr.state === ActivityState.APROBADO ? 'text-[#647FBC] hover:bg-blue-50 hover:text-blue-800' : 'text-slate-300 cursor-not-allowed'}`}
+                                                                  title={enr.state === ActivityState.APROBADO ? "Descargar Certificado PDF" : "No disponible (Debe Aprobar)"}
+                                                              >
+                                                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                                              </button>
                                                           </td>
                                                       </tr>
                                                   )
@@ -426,8 +1017,19 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                   <h2 className="text-2xl font-bold text-slate-800">Gestión de Cursos Curriculares</h2>
                   <p className="text-sm text-slate-500">Administración de asignaturas académicas y registro de notas.</p>
               </div>
-              {isAdmin && (
-                  <button onClick={() => setView('create')} className="bg-[#647FBC] text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-800 transition-colors flex items-center gap-2">
+              {(isAdmin || isAdvisor) && (
+                  <button 
+                    onClick={() => {
+                        setFormData({
+                            internalCode: '', year: new Date().getFullYear(), academicPeriod: '2025-1',
+                            nombre: '', version: 'V1', modality: 'Presencial', hours: 0,
+                            moduleCount: 1, evaluationCount: 3, relator: '',
+                            startDate: '', endDate: ''
+                        });
+                        setView('create');
+                    }} 
+                    className="bg-[#647FBC] text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-800 transition-colors flex items-center gap-2"
+                  >
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                       Nuevo Curso
                   </button>
@@ -480,7 +1082,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
               {academicActivities.length === 0 && (
                   <div className="col-span-full py-12 text-center bg-slate-50 border border-dashed border-slate-300 rounded-xl">
                       <p className="text-slate-500 font-medium">No hay cursos registrados en el sistema.</p>
-                      {isAdmin && <p className="text-xs text-slate-400 mt-1">Utilice el botón "Nuevo Curso" para comenzar.</p>}
+                      {(isAdmin || isAdvisor) && <p className="text-xs text-slate-400 mt-1">Utilice el botón "Nuevo Curso" para comenzar.</p>}
                   </div>
               )}
           </div>
