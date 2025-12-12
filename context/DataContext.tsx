@@ -98,7 +98,8 @@ const mapEnrollmentFromDB = (e: any): Enrollment => ({
     attendancePercentage: e.attendance_percentage,
     observation: e.observation,
     situation: e.situation,
-    sessionLogs: e.session_logs 
+    sessionLogs: e.session_logs,
+    certificateCode: e.certificate_code // Mapped new field
 });
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -424,6 +425,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (updates.attendancePercentage !== undefined) dbUpdates.attendance_percentage = updates.attendancePercentage;
       if (updates.observation) dbUpdates.observation = updates.observation;
       if (updates.sessionLogs) dbUpdates.session_logs = updates.sessionLogs; 
+      if (updates.certificateCode) dbUpdates.certificate_code = updates.certificateCode; // Mapped new field
       
       if (updates.attendanceSession1 !== undefined) dbUpdates.attendance_session_1 = updates.attendanceSession1;
       if (updates.attendanceSession2 !== undefined) dbUpdates.attendance_session_2 = updates.attendanceSession2;

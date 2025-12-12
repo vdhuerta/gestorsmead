@@ -142,6 +142,7 @@ export interface Enrollment {
   responsible?: string; // Who enrolled them or manages this record
   diagnosticResult?: string;
   sessionLogs?: SessionLog[]; // Nuevo: Historial de Asesorías (JSONB)
+  certificateCode?: string; // Nuevo: Código único de certificado
 }
 
 // For Visualization

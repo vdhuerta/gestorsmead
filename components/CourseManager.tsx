@@ -536,13 +536,16 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   };
 
   // --- HTML CERTIFICATE GENERATION LOGIC ---
-  const generateHTMLCertificate = (user: User, course: Activity, enrollmentId: string, dateStr: string) => {
+  const generateHTMLCertificate = (user: User, course: Activity, enrollment: Enrollment, dateStr: string) => {
       const win = window.open('', '_blank');
       if (!win) { alert("Por favor habilite las ventanas emergentes para descargar el certificado."); return; }
       
       const fullName = `${user.names} ${user.paternalSurname} ${user.maternalSurname || ''}`.toUpperCase();
       const courseName = course.name.toUpperCase();
-      const qrData = `${window.location.origin}/?verify=${enrollmentId}`;
+      const certCode = enrollment.certificateCode;
+      
+      // La URL ahora incluye el modo de verificación de certificado
+      const qrData = `${window.location.origin}/?mode=verify_cert&code=${certCode}`;
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(qrData)}`;
       
       // Official Logos
@@ -607,6 +610,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                 .qr-box { text-align: center; }
                 .qr-img { width: 90px; height: 90px; }
                 .qr-text { font-size: 9px; color: #999; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
+                .cert-code { font-family: monospace; font-weight: bold; font-size: 10px; margin-top: 2px; color: #555; background: #eee; padding: 2px 4px; border-radius: 4px; }
 
                 .seal-box { width: 110px; height: 110px; border-radius: 50%; border: 2px solid #009FE3; display: flex; align-items: center; justify-content: center; background: white; }
                 .seal-img { width: 80%; opacity: 0.8; }
@@ -665,6 +669,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                         <div class="qr-box">
                             <img src="${qrUrl}" class="qr-img" alt="QR Verificación">
                             <div class="qr-text">Escanee para verificar</div>
+                            <div class="cert-code">${certCode}</div>
                         </div>
                         
                         <div class="seal-box">
@@ -691,16 +696,25 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const handleGenerateCertificate = async (user: User | undefined, course: Activity | undefined) => {
       if (!user || !course) return;
       
-      // Find specific enrollment ID for verification QR
+      // Find specific enrollment
       const enrollment = enrollments.find(e => e.rut === user.rut && e.activityId === course.id);
-      const enrollmentId = enrollment ? enrollment.id : 'unknown';
+      if (!enrollment) return;
 
       setIsGeneratingPdf(true);
+      
+      // 1. Verificar si ya tiene código de certificado, si no, generar uno.
+      let updatedEnrollment = enrollment;
+      if (!enrollment.certificateCode) {
+          const newCode = `CERT-${Math.random().toString(36).substr(2, 5).toUpperCase()}-${Date.now().toString().slice(-4)}`;
+          await updateEnrollment(enrollment.id, { certificateCode: newCode });
+          updatedEnrollment = { ...enrollment, certificateCode: newCode };
+      }
+
       const date = new Date();
       const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' };
       const dateStr = date.toLocaleDateString('es-CL', options);
       
-      generateHTMLCertificate(user, course, enrollmentId, dateStr);
+      generateHTMLCertificate(user, course, updatedEnrollment, dateStr);
       setIsGeneratingPdf(false);
   };
 

@@ -203,6 +203,7 @@ export const SCHEMA_TABLES: SchemaTable[] = [
       { name: 'notas_array', type: 'DECIMAL[]', description: 'Calificaciones' },
       { name: 'asistencia_json', type: 'JSONB', description: 'Registro de Asistencia' },
       { name: 'session_logs', type: 'JSONB', description: 'Historial de Sesiones de Asesoría' },
+      { name: 'certificate_code', type: 'VARCHAR(50)', description: 'Código único para validación de certificados' },
     ]
   }
 ];
@@ -373,6 +374,9 @@ ADD COLUMN IF NOT EXISTS state text DEFAULT 'Inscrito';
 
 ALTER TABLE public.enrollments 
 ADD COLUMN IF NOT EXISTS session_logs jsonb DEFAULT '[]'::jsonb;
+
+ALTER TABLE public.enrollments 
+ADD COLUMN IF NOT EXISTS certificate_code text;
 
 -- 2. REINICIAR POLÍTICAS DE SEGURIDAD (RLS)
 -- Esto corrige el error "infinite recursion" y problemas de permisos de escritura.

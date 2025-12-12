@@ -16,8 +16,9 @@ import { GeneralActivityManager } from './components/GeneralActivityManager';
 import { ParticipantManager } from './components/ParticipantManager';
 import { AdvisorManager } from './components/AdvisorManager'; 
 import { PostgraduateManager } from './components/PostgraduateManager'; 
-import { AdvisoryManager, PublicVerification } from './components/AdvisoryManager'; // Added PublicVerification
+import { AdvisoryManager, PublicVerification } from './components/AdvisoryManager';
 import { StudentSignature } from './components/StudentSignature'; 
+import { CertificateVerification } from './components/CertificateVerification'; // Import New Component
 import { DataProvider, useData } from './context/DataContext';
 import { checkConnection } from './services/supabaseClient'; 
 
@@ -41,6 +42,7 @@ const MainContent: React.FC = () => {
   // --- ROUTING LOGIC FOR SIGNATURE & VERIFICATION ---
   const [signatureParams, setSignatureParams] = useState<{eid: string, sid: string} | null>(null);
   const [verificationCode, setVerificationCode] = useState<string | null>(null);
+  const [certVerificationCode, setCertVerificationCode] = useState<string | null>(null); // New State
 
   // Verificar conexión y Rutas al montar
   useEffect(() => {
@@ -66,6 +68,9 @@ const MainContent: React.FC = () => {
       } else if (mode === 'verify') {
           const code = params.get('code');
           if (code) setVerificationCode(code);
+      } else if (mode === 'verify_cert') { // New Mode
+          const code = params.get('code');
+          if (code) setCertVerificationCode(code);
       }
 
   }, []);
@@ -77,6 +82,10 @@ const MainContent: React.FC = () => {
 
   if (verificationCode) {
       return <PublicVerification code={verificationCode} />;
+  }
+
+  if (certVerificationCode) {
+      return <CertificateVerification code={certVerificationCode} />;
   }
 
   const handleLogout = () => {
