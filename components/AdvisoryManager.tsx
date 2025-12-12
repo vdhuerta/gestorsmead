@@ -28,7 +28,6 @@ export const PublicVerification: React.FC<{ code: string }> = ({ code }) => {
         const verifyCode = async () => {
             try {
                 // CORRECCIÓN: Usar .contains en lugar de .ilike para columnas JSONB
-                // Esto busca si el array session_logs contiene un objeto con esa verificationCode
                 const { data, error } = await supabase
                     .from('enrollments')
                     .select('*, user:users(*)')
@@ -97,8 +96,6 @@ export const PublicVerification: React.FC<{ code: string }> = ({ code }) => {
                     </h3>
                 </div>
                 <div className="p-6 flex flex-col items-center text-center">
-                    
-                    {/* SECCIÓN VALIDACIÓN VISUAL (REEMPLAZA AL QR) */}
                     <div className="mb-6 bg-green-50 border-2 border-green-200 rounded-xl p-6 w-full">
                         <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm">
                             <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
@@ -171,6 +168,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     
     // --- ESTADO PARA ACTUALIZACIÓN EN TIEMPO REAL (MULTI-USUARIO) ---
     const [realtimeLogs, setRealtimeLogs] = useState<SessionLog[] | null>(null);
+    const [isSyncing, setIsSyncing] = useState(false);
 
     // Estados de Buscador Rápido (Quick Search)
     const [searchRut, setSearchRut] = useState('');
@@ -263,30 +261,47 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         setRealtimeLogs(null);
     }, [selectedEnrollmentId]);
 
+    // Función auxiliar para refrescar logs manualmente
+    const fetchLatestLogs = async (id: string) => {
+        setIsSyncing(true);
+        const { data, error } = await supabase
+            .from('enrollments')
+            .select('session_logs')
+            .eq('id', id)
+            .single();
+        
+        if (data && data.session_logs) {
+            setRealtimeLogs(data.session_logs as SessionLog[]);
+        }
+        setTimeout(() => setIsSyncing(false), 500);
+    };
+
     // Suscripción específica a la bitácora que estamos viendo
     useEffect(() => {
         if (view !== 'manage' || !selectedEnrollmentId) return;
 
-        // Crear un canal específico para este registro de inscripción
-        const channel = supabase.channel(`public:enrollments:id=eq.${selectedEnrollmentId}`)
+        console.log(`🔌 Conectando a canal de actualizaciones para ID: ${selectedEnrollmentId}`);
+
+        // Crear un canal con nombre único para evitar colisiones
+        const channel = supabase.channel(`advisory-sync-${selectedEnrollmentId}`)
             .on(
                 'postgres_changes',
-                { event: 'UPDATE', schema: 'public', table: 'enrollments', filter: `id=eq.${selectedEnrollmentId}` },
+                // Escuchamos TODOS los UPDATEs en la tabla enrollment (sin filtro server-side para evitar problemas de formato UUID)
+                { event: 'UPDATE', schema: 'public', table: 'enrollments' },
                 async (payload) => {
-                    // Cuando detectamos un cambio, hacemos fetch explícito para asegurar que tenemos el JSONB completo
-                    // Esto evita problemas si el payload viene incompleto o si hay race conditions
-                    const { data } = await supabase
-                        .from('enrollments')
-                        .select('session_logs')
-                        .eq('id', selectedEnrollmentId)
-                        .single();
-                    
-                    if (data && data.session_logs) {
-                        setRealtimeLogs(data.session_logs as SessionLog[]);
+                    // Filtramos en el cliente para asegurarnos que es el registro que nos interesa
+                    if (payload.new && payload.new.id === selectedEnrollmentId) {
+                        console.log("⚡ Cambio detectado en tiempo real. Actualizando bitácora...");
+                        await fetchLatestLogs(selectedEnrollmentId);
                     }
                 }
             )
-            .subscribe();
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    // Carga inicial al suscribirse para asegurar frescura
+                    fetchLatestLogs(selectedEnrollmentId);
+                }
+            });
 
         return () => {
             supabase.removeChannel(channel);
@@ -607,12 +622,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const getQrUrl = () => {
         if (!selectedEnrollmentId || !currentSessionId) return '';
         const baseUrl = window.location.origin;
-        // Ahora usamos 'mode=verify' en lugar de 'mode=sign' para que coincida con la nueva vista pública
-        // PERO 'mode=sign' es para firmar, y el modal es para verificar...
-        // El QR que se genera en "Registrar Nueva Sesión" debe permitir al estudiante FIRMAR (mode=sign)
-        // El QR que se genera en "Verificar Autenticidad" debe permitir validar (mode=verify)
-        
-        // Aquí estamos en "Registrar Nueva Sesión", por lo que debe ser SIGN
         return `${baseUrl}/?mode=sign&eid=${selectedEnrollmentId}&sid=${currentSessionId}`;
     };
 
@@ -628,7 +637,9 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     if (view === 'manage' && selectedEnrollmentId) {
         const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
         const student = users.find(u => u.rut === enrollment?.rut);
-        // USE REALTIME LOGS IF AVAILABLE, OTHERWISE USE CONTEXT LOGS
+        
+        // --- REALTIME OVERRIDE ---
+        // Si tenemos datos en tiempo real (prioridad), los usamos. Si no, usamos el contexto (que puede tener lag).
         const logs = realtimeLogs || enrollment?.sessionLogs || [];
 
         // Calcular total horas de este estudiante
@@ -636,9 +647,33 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
 
         return (
             <div className="animate-fadeIn max-w-6xl mx-auto space-y-6">
-                <button onClick={() => setView('list')} className="text-slate-500 hover:text-slate-700 flex items-center gap-1 text-sm font-bold">
-                    ← Volver al Listado
-                </button>
+                <div className="flex justify-between items-center">
+                    <button onClick={() => setView('list')} className="text-slate-500 hover:text-slate-700 flex items-center gap-1 text-sm font-bold">
+                        ← Volver al Listado
+                    </button>
+                    
+                    {/* INDICADOR DE SINCRONIZACIÓN */}
+                    <div className="flex items-center gap-3">
+                        {isSyncing ? (
+                            <span className="text-xs text-indigo-500 font-bold flex items-center gap-1 animate-pulse">
+                                <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                Sincronizando...
+                            </span>
+                        ) : (
+                            <span className="text-[10px] text-green-600 font-bold flex items-center gap-1 bg-green-50 px-2 py-1 rounded-full border border-green-100">
+                                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                                En Línea
+                            </span>
+                        )}
+                        <button 
+                            onClick={() => fetchLatestLogs(selectedEnrollmentId)}
+                            className="text-xs text-slate-400 hover:text-indigo-600 underline"
+                            title="Forzar actualización de datos"
+                        >
+                            Actualizar
+                        </button>
+                    </div>
+                </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     
