@@ -113,6 +113,10 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const [isAlreadyEnrolled, setIsAlreadyEnrolled] = useState(false);
   const [enrollMsg, setEnrollMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
   
+  // --- BULK UPLOAD STATES ---
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [hasHeaders, setHasHeaders] = useState(true);
+
   const courseEnrollments = enrollments.filter(e => e.activityId === selectedCourseId);
 
   // Sorting
@@ -397,6 +401,70 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
           console.error("Error en matrícula:", error);
           setEnrollMsg({ type: 'error', text: `Error al matricular: ${error.message || 'Verifique conexión'}` });
       }
+  };
+
+  // --- BULK UPLOAD HANDLER ---
+  const handleBulkUpload = () => {
+      if (!uploadFile || !selectedCourseId) return;
+      const reader = new FileReader(); 
+      const isExcel = uploadFile.name.endsWith('.xlsx') || uploadFile.name.endsWith('.xls');
+      
+      reader.onload = async (e) => {
+          let rows: any[][] = [];
+          if (isExcel) { 
+              const data = e.target?.result; 
+              const workbook = read(data, { type: 'array' }); 
+              rows = utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 }); 
+          } else { 
+              const text = e.target?.result as string; 
+              const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== ''); 
+              if (lines.length > 0) { 
+                  const delimiter = lines[0].includes(';') ? ';' : ','; 
+                  rows = lines.map(line => line.split(delimiter)); 
+              } 
+          }
+          
+          if (rows.length < 1) return;
+          
+          const usersToUpsert: User[] = []; 
+          const rutsToEnroll: string[] = []; 
+          let startRow = hasHeaders ? 1 : 0;
+          
+          for (let i = startRow; i < rows.length; i++) {
+              const row = rows[i]; 
+              const rowStrings = row.map(cell => cell !== undefined && cell !== null ? String(cell).trim() : '');
+              if (rowStrings.length < 1 || !rowStrings[0]) continue;
+              
+              const cleanRut = cleanRutFormat(rowStrings[0]); 
+              rutsToEnroll.push(cleanRut);
+              
+              const hasName = rowStrings[1] && rowStrings[1].length > 1;
+              if (hasName) {
+                  usersToUpsert.push({ 
+                      rut: cleanRut, 
+                      names: rowStrings[1] || '', 
+                      paternalSurname: rowStrings[2] || '', 
+                      maternalSurname: rowStrings[3] || '', 
+                      email: rowStrings[4] || '', 
+                      phone: rowStrings[5] || '', 
+                      academicRole: normalizeValue(rowStrings[6], listRoles), 
+                      faculty: normalizeValue(rowStrings[7], listFaculties), 
+                      department: normalizeValue(rowStrings[8], listDepts), 
+                      career: normalizeValue(rowStrings[9], listCareers), 
+                      contractType: normalizeValue(rowStrings[10], listContracts), 
+                      teachingSemester: normalizeValue(rowStrings[11], listSemesters), 
+                      campus: rowStrings[12] || '', 
+                      systemRole: UserRole.ESTUDIANTE 
+                  });
+              }
+          }
+          
+          if (usersToUpsert.length > 0) { await upsertUsers(usersToUpsert); }
+          const result = await bulkEnroll(rutsToEnroll, selectedCourseId);
+          setEnrollMsg({ type: 'success', text: `Carga Masiva: ${result.success} nuevos inscritos, ${result.skipped} ya existentes.` }); 
+          setUploadFile(null);
+      };
+      isExcel ? reader.readAsArrayBuffer(uploadFile) : reader.readAsText(uploadFile);
   };
 
   // --- GRADING & TRACKING LOGIC (POSTGRADUATE) ---
@@ -690,9 +758,10 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
                   <div className="bg-white rounded-b-xl rounded-tr-xl shadow-sm border border-purple-200 border-t-0 p-8">
                       
-                      {/* TAB: ENROLLMENT (UPDATED TO 13 FIELDS) */}
+                      {/* TAB: ENROLLMENT (UPDATED TO 13 FIELDS + BULK UPLOAD) */}
                       {activeDetailTab === 'enrollment' && (
-                          <div className="space-y-6">
+                          <div className="space-y-8">
+                              {/* Manual Enrollment Form (Full Width) */}
                               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                   <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-slate-800 text-lg">Matrícula Individual</h3>{isFoundInMaster && (<span className="text-xs px-2 py-1 rounded border bg-green-50 text-green-700 border-green-200">Datos de Base Maestra</span>)}</div>
                                   <form onSubmit={handleManualEnroll} className="space-y-8">
@@ -732,6 +801,47 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                           <button type="submit" disabled={isAlreadyEnrolled} className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all ${isAlreadyEnrolled ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-purple-600 text-white hover:bg-purple-700'}`}>{isAlreadyEnrolled ? 'Usuario Ya Matriculado' : 'Matricular Usuario'}</button>
                                           {enrollMsg && (<div className={`text-xs p-3 rounded-lg text-center font-medium ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{enrollMsg.text}</div>)}
                                   </form>
+                              </div>
+
+                              {/* Bulk Upload Form (Added Below Manual) */}
+                              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
+                                  <h3 className="font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100 flex items-center gap-2">
+                                      <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                                      Carga Masiva (CSV / Excel)
+                                  </h3>
+                                  <div className="flex-1 space-y-6 flex flex-col justify-center">
+                                      <p className="text-sm text-slate-600">Suba un archivo con las 13 columnas requeridas para la matrícula.<br/><span className="text-xs text-slate-400">.csv, .xls, .xlsx</span></p>
+                                      
+                                      <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-purple-200 bg-purple-50 hover:bg-purple-100'}`}>
+                                          <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                              {uploadFile ? (
+                                                  <>
+                                                      <svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                                      <p className="mb-1 text-sm font-bold text-emerald-700">{uploadFile.name}</p>
+                                                  </>
+                                              ) : (
+                                                  <>
+                                                      <svg className="w-8 h-8 text-purple-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                      <p className="mb-1 text-sm text-purple-600 font-semibold">Seleccionar archivo</p>
+                                                  </>
+                                              )}
+                                          </div>
+                                          <input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} />
+                                      </label>
+                                      
+                                      <div className="flex items-center justify-center gap-2 mt-2">
+                                          <input type="checkbox" id="hasHeadersEnrollment" checked={hasHeaders} onChange={e => setHasHeaders(e.target.checked)} className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer" />
+                                          <label htmlFor="hasHeadersEnrollment" className="text-sm text-slate-700 cursor-pointer select-none">Ignorar primera fila (encabezados)</label>
+                                      </div>
+                                      
+                                      <button 
+                                          onClick={handleBulkUpload} 
+                                          disabled={!uploadFile} 
+                                          className="mt-auto w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-900 disabled:opacity-50 shadow-md transition-all"
+                                      >
+                                          Procesar Archivo
+                                      </button>
+                                  </div>
                               </div>
                               
                               <div className="overflow-hidden rounded-xl border border-slate-200">

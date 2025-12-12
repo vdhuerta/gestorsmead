@@ -1,6 +1,4 @@
 
-// ... imports
-// (Keep existing imports)
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole } from '../types';
@@ -11,7 +9,7 @@ import { read, utils } from 'xlsx';
 // @ts-ignore
 import { jsPDF } from 'jspdf';
 
-// ... (Keep utility functions cleanRutFormat, formatDateCL, normalizeValue)
+// --- UTILITY FUNCTIONS ---
 const cleanRutFormat = (rut: string): string => {
     let clean = rut.replace(/[^0-9kK]/g, '');
     if (clean.length < 2) return rut; 
@@ -48,7 +46,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const isAdmin = currentUser?.systemRole === UserRole.ADMIN;
   const isAdvisor = currentUser?.systemRole === UserRole.ASESOR;
   
-  // ... (Keep existing dynamic lists consts)
+  // Dynamic Lists
   const listFaculties = config.faculties?.length ? config.faculties : FACULTY_LIST;
   const listDepts = config.departments?.length ? config.departments : DEPARTMENT_LIST;
   const listCareers = config.careers?.length ? config.careers : CAREER_LIST;
@@ -64,8 +62,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('enrollment');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
-  // --- AUTO-JUMP LOGIC FROM DASHBOARD ---
-  // Reads local storage signals to set the initial view state
+  // Auto-jump logic
   useEffect(() => {
       const jumpId = localStorage.getItem('jumpto_course_id');
       const jumpTab = localStorage.getItem('jumpto_tab_course') as DetailTab | null;
@@ -75,35 +72,17 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           if (exists) {
               setSelectedCourseId(jumpId);
               setView('details');
-              // If dashboard requested a specific tab (like 'enrollment'), switch to it.
-              if (jumpTab) {
-                  setActiveDetailTab(jumpTab);
-              }
+              if (jumpTab) setActiveDetailTab(jumpTab);
           }
-          // Clear signals so they don't persist on reload
           localStorage.removeItem('jumpto_course_id');
           localStorage.removeItem('jumpto_tab_course');
       }
   }, [academicActivities]);
 
+  // Form States
   const [formData, setFormData] = useState({
-    internalCode: '',
-    year: new Date().getFullYear(),
-    semester: '1',
-    nombre: '', 
-    version: 'V1', 
-    modality: listModalities[0], 
-    horas: 0, 
-    relator: '', 
-    fechaInicio: '',
-    fechaTermino: '',
-    moduleCount: 0,
-    evaluationCount: 3,
-    linkRecursos: '',
-    linkClase: '',
-    linkEvaluacion: ''
+    internalCode: '', year: new Date().getFullYear(), semester: '1', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', moduleCount: 0, evaluationCount: 3, linkRecursos: '', linkClase: '', linkEvaluacion: ''
   });
-
   const [suggestedEndDateDisplay, setSuggestedEndDateDisplay] = useState<string>('');
   const [suggestedEndDateISO, setSuggestedEndDateISO] = useState<string>('');
 
@@ -121,33 +100,28 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [isFoundInMaster, setIsFoundInMaster] = useState(false);
   const [isAlreadyEnrolled, setIsAlreadyEnrolled] = useState(false);
   const [enrollMsg, setEnrollMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
-  
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [hasHeaders, setHasHeaders] = useState(true);
 
   const selectedCourse = academicActivities.find(a => a.id === selectedCourseId);
   const courseEnrollments = enrollments.filter(e => e.activityId === selectedCourseId);
 
-  // --- SORTING LOGIC: ALPHABETICAL BY PATERNAL SURNAME ---
+  // Sorting
   const sortedEnrollments = useMemo(() => {
       return [...courseEnrollments].sort((a, b) => {
           const userA = users.find(u => u.rut === a.rut);
           const userB = users.find(u => u.rut === b.rut);
-          
           const surnameA = userA?.paternalSurname || '';
           const surnameB = userB?.paternalSurname || '';
-          
-          // Primary: Paternal Surname
           const compareSurname = surnameA.localeCompare(surnameB, 'es', { sensitivity: 'base' });
           if (compareSurname !== 0) return compareSurname;
-
-          // Secondary: First Name
           const nameA = userA?.names || '';
           const nameB = userB?.names || '';
           return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
       });
   }, [courseEnrollments, users]);
 
+  // Click outside suggestions
   useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
           if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
@@ -158,6 +132,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Suggested End Date
   useEffect(() => {
     if (formData.fechaInicio && formData.moduleCount > 0) {
         const [y, m, d] = formData.fechaInicio.split('-').map(Number);
@@ -168,268 +143,217 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
         endDate.setDate(startDate.getDate() + daysToAdd);
         const isoDate = endDate.toISOString().split('T')[0];
         setSuggestedEndDateISO(isoDate);
-        const dd = String(endDate.getDate()).padStart(2, '0');
-        const mm = String(endDate.getMonth() + 1).padStart(2, '0');
-        const yyyy = endDate.getFullYear();
-        setSuggestedEndDateDisplay(`${dd}-${mm}-${yyyy}`);
+        setSuggestedEndDateDisplay(`${String(endDate.getDate()).padStart(2, '0')}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${endDate.getFullYear()}`);
     } else {
         setSuggestedEndDateDisplay('');
         setSuggestedEndDateISO('');
     }
   }, [formData.fechaInicio, formData.moduleCount]);
 
-  // --- HTML CERTIFICATE GENERATION LOGIC ---
-  const generateHTMLCertificate = (user: User, course: Activity, dateStr: string) => {
-      const win = window.open('', '_blank');
-      if (!win) { alert("Por favor habilite las ventanas emergentes (pop-ups) para generar el certificado."); return; }
-      
-      const fullName = `${user.names} ${user.paternalSurname} ${user.maternalSurname || ''}`.toUpperCase();
-      const courseName = course.name.toUpperCase();
-      const imageUrl = 'https://github.com/vdhuerta/assets-aplications/blob/main/Formato_Constancia.png?raw=true';
+  // --- LOGIC: STATUS CALCULATION (RESTORED & FIXED) ---
+  const getComputedStatus = (enrollment: Enrollment, activity: Activity): ActivityState => {
+      // 1. Verificar si hay asistencia registrada
+      const hasAttendance = [
+          enrollment.attendanceSession1, enrollment.attendanceSession2, enrollment.attendanceSession3, 
+          enrollment.attendanceSession4, enrollment.attendanceSession5, enrollment.attendanceSession6
+      ].some(val => val === true);
 
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html lang="es">
-        <head>
-            <meta charset="UTF-8">
-            <title>Certificado - ${fullName}</title>
-            <style>
-                @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');
-                
-                @page { 
-                    size: portrait;
-                    margin: 0; 
-                }
-                
-                body { 
-                    margin: 0; 
-                    padding: 0; 
-                    width: 100%;
-                    height: 100vh;
-                    font-family: 'Montserrat', sans-serif;
-                    background-color: #555;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                }
+      // 2. Verificar si hay notas registradas (mayores a 0)
+      const recordedGrades = (enrollment.grades || []).filter(g => typeof g === 'number' && g > 0).length;
+      const expectedGrades = activity.evaluationCount || 3;
 
-                .certificate-container {
-                    position: relative;
-                    width: 794px;
-                    height: 1123px;
-                    background-image: url('${imageUrl}');
-                    background-size: contain;
-                    background-position: center;
-                    background-repeat: no-repeat;
-                    background-color: white;
-                    box-shadow: 0 0 20px rgba(0,0,0,0.5);
-                    overflow: hidden;
-                }
+      // 3. LOGICA RESTAURADA:
+      // Si no hay asistencia ni notas -> INSCRITO
+      if (!hasAttendance && recordedGrades === 0) {
+          return ActivityState.INSCRITO;
+      }
 
-                .text-overlay {
-                    position: absolute;
-                    width: 100%;
-                    text-align: center;
-                    z-index: 10;
-                }
+      // Si hay algo de avance (asistencia o algunas notas) pero faltan notas -> EN PROCESO
+      if (recordedGrades < expectedGrades) {
+          // Podríamos diferenciar "Avanzando" si ya tiene notas, pero "En Proceso" es seguro.
+          return recordedGrades > 0 ? ActivityState.AVANZANDO : ActivityState.EN_PROCESO;
+      }
 
-                .student-name {
-                    top: 36%;
-                    left: 26%;
-                    font-size: 22px; /* Reducido 20% */
-                    font-weight: 700;
-                    color: #000;
-                    text-transform: uppercase;
-                    letter-spacing: 1px;
-                    text-align: left;
-                    width: auto;
-                }
-
-                .course-name {
-                    top: 50%;
-                    left: 10%;
-                    width: 80%;
-                    font-size: 20px; /* Reducido 10% */
-                    font-weight: 700;
-                    color: #1a1a64;
-                    line-height: 1.3;
-                }
-
-                .date-text {
-                    top: 40%;
-                    left: 28%;
-                    width: auto;
-                    text-align: left;
-                    font-size: 16px;
-                    font-weight: 400;
-                    color: #444;
-                }
-
-                @media print {
-                    body { 
-                        background: none; 
-                        display: block;
-                        height: auto;
-                    }
-                    .certificate-container {
-                        box-shadow: none;
-                        width: 100%;
-                        height: 100%;
-                        page-break-after: always;
-                        -webkit-print-color-adjust: exact;
-                        print-color-adjust: exact;
-                    }
-                }
-            </style>
-        </head>
-        <body>
-            <div class="certificate-container">
-                <div class="text-overlay student-name">${fullName}</div>
-                <div class="text-overlay course-name">${courseName}</div>
-                <div class="text-overlay date-text">${dateStr}</div>
-            </div>
-            <script>
-                window.onload = function() {
-                    const img = new Image();
-                    img.onload = function() {
-                        // La imagen está cargada y lista para ser impresa.
-                        // Se agrega un pequeño delay para asegurar el renderizado final del navegador.
-                        setTimeout(function() {
-                            window.print();
-                        }, 100);
-                    };
-                    img.onerror = function() {
-                        alert('Error: No se pudo cargar la plantilla del certificado. Revise su conexión a Internet.');
-                    };
-                    img.src = '${imageUrl}';
-                };
-            </script>
-        </body>
-        </html>
-      `;
-      
-      win.document.write(htmlContent);
-      win.document.close();
-  };
-
-  const handleGenerateCertificate = async (user: User | undefined, course: Activity | undefined) => {
-      if (!user || !course) return;
-      setIsGeneratingPdf(true); // Mantiene el estado de carga para feedback visual
-      
-      const date = new Date();
-      const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' };
-      const dateStr = date.toLocaleDateString('es-CL', options);
-
-      // Llama a la nueva función que genera el HTML
-      generateHTMLCertificate(user, course, dateStr);
-      
-      setIsGeneratingPdf(false);
-  };
-
-  const getEnrollmentStats = () => {
-      const students = courseEnrollments.map(e => users.find(u => u.rut === e.rut)).filter(Boolean) as User[];
-      let emptyFieldsCount = 0; let inconsistenciesCount = 0;
-      students.forEach(u => {
-          if (!u.email || !u.phone || !u.contractType || !u.campus) emptyFieldsCount++;
-          if (u.faculty && !listFaculties.includes(u.faculty)) inconsistenciesCount++;
-          if (u.department && !listDepts.includes(u.department)) inconsistenciesCount++;
-          if (u.career && !listCareers.includes(u.career)) inconsistenciesCount++;
-          if (u.academicRole && !listRoles.includes(u.academicRole)) inconsistenciesCount++;
-          if (u.contractType && !listContracts.includes(u.contractType)) inconsistenciesCount++;
-      });
-      return { total: students.length, empty: emptyFieldsCount, inconsistent: inconsistenciesCount };
-  };
-  const stats = getEnrollmentStats();
-
-  const getComputedStatus = (enr: Enrollment, act: Activity): string => {
-      const hasAttendance = [enr.attendanceSession1, enr.attendanceSession2, enr.attendanceSession3, enr.attendanceSession4, enr.attendanceSession5, enr.attendanceSession6].some(Boolean);
-      const expectedGrades = act.evaluationCount || 3;
-      const recordedGrades = (enr.grades || []).filter(g => g !== undefined && g !== null && g > 0).length;
-      if (!hasAttendance && recordedGrades === 0) return ActivityState.INSCRITO;
-      if (hasAttendance && recordedGrades === 0) return ActivityState.EN_PROCESO;
-      if (recordedGrades > 0 && recordedGrades < expectedGrades) return ActivityState.AVANZANDO;
+      // Si ya tiene TODAS las notas -> Evaluar Aprobación
       if (recordedGrades >= expectedGrades) {
           const minGrade = config.minPassingGrade || 4.0;
           const minAtt = config.minAttendancePercentage || 75;
-          const isGradePass = (enr.finalGrade || 0) >= minGrade;
-          const isAttPass = (enr.attendancePercentage || 0) >= minAtt;
-          if (isGradePass && isAttPass) return ActivityState.APROBADO;
-          return ActivityState.REPROBADO;
+          
+          const finalGrade = enrollment.finalGrade || 0;
+          const attendancePct = enrollment.attendancePercentage || 0;
+
+          // Solo se aprueba si cumple AMBOS requisitos
+          if (finalGrade >= minGrade && attendancePct >= minAtt) {
+              return ActivityState.APROBADO;
+          } else {
+              return ActivityState.REPROBADO;
+          }
       }
+
       return ActivityState.PENDIENTE;
   };
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanCode = formData.internalCode.trim().toUpperCase().replace(/\s+/g, '-');
-    const academicPeriodText = `${formData.year}-${formData.semester}`;
-    const generatedId = `${cleanCode}-${academicPeriodText}-${formData.version}`;
-    const versionDisplay = `${formData.version} - ${formData.semester === '1' ? 'Primer Semestre' : formData.semester === '2' ? 'Segundo Semestre' : formData.semester}`;
-    const finalId = (view === 'edit' && selectedCourseId) ? selectedCourseId : generatedId;
-    
-    // FIX: Added isPublic: true as default for Academic Courses
-    const newActivity: Activity = {
-        id: finalId, category: 'ACADEMIC', internalCode: formData.internalCode, year: formData.year, academicPeriod: academicPeriodText, name: formData.nombre, version: versionDisplay, modality: formData.modality, hours: formData.horas, moduleCount: formData.moduleCount, evaluationCount: formData.evaluationCount, relator: formData.relator, startDate: formData.fechaInicio, endDate: formData.fechaTermino, linkResources: formData.linkRecursos, classLink: formData.linkClase, evaluationLink: formData.linkEvaluacion, isPublic: true
-    };
-    
-    addActivity(newActivity);
-    if (view === 'edit') { setView('details'); } else {
-        setFormData({ internalCode: '', year: new Date().getFullYear(), semester: '1', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', moduleCount: 0, evaluationCount: 3, linkRecursos: '', linkClase: '', linkEvaluacion: '' });
-        setSuggestedEndDateDisplay(''); setView('list');
-    }
-  };
+  const stats = useMemo(() => {
+      const total = sortedEnrollments.length;
+      let empty = 0;
+      let inconsistent = 0;
+      
+      sortedEnrollments.forEach(enr => {
+          const user = users.find(u => u.rut === enr.rut);
+          if (!user) {
+              empty++; 
+          } else {
+              if (!user.email || !user.faculty) inconsistent++;
+          }
+      });
+      
+      return { total, empty, inconsistent };
+  }, [sortedEnrollments, users]);
 
-  const handleEditCourse = () => {
-    if (!selectedCourse) return;
-    const sem = selectedCourse.academicPeriod ? selectedCourse.academicPeriod.split('-')[1] || '1' : '1';
-    setFormData({
-        internalCode: selectedCourse.internalCode || '', year: selectedCourse.year || new Date().getFullYear(), semester: sem, nombre: selectedCourse.name, version: selectedCourse.version ? selectedCourse.version.split(' - ')[0] : 'V1', modality: selectedCourse.modality, horas: selectedCourse.hours, relator: selectedCourse.relator || '', fechaInicio: selectedCourse.startDate || '', fechaTermino: selectedCourse.endDate || '', moduleCount: selectedCourse.moduleCount || 0, evaluationCount: selectedCourse.evaluationCount || 3, linkRecursos: selectedCourse.linkResources || '', linkClase: selectedCourse.classLink || '', 
-        linkEvaluacion: selectedCourse.evaluationLink || ''
-    });
-    setView('edit');
-  };
+  // --- ACTIONS HANDLERS ---
 
   const handleCloneActivity = (act: Activity) => {
-      let nextVersion = "V1";
-      if (act.version && act.version.startsWith('V')) { const num = parseInt(act.version.charAt(1)); if (!isNaN(num)) nextVersion = `V${num + 1}`; }
-      setFormData({ internalCode: act.internalCode || 'N/A', year: act.year || new Date().getFullYear(), semester: act.academicPeriod ? act.academicPeriod.split('-')[1] || '1' : '1', nombre: act.name, version: nextVersion, modality: act.modality, horas: act.hours, relator: act.relator || '', fechaInicio: '', fechaTermino: '', moduleCount: act.moduleCount || 0, evaluationCount: act.evaluationCount || 3, linkRecursos: act.linkResources || '', linkClase: act.classLink || '', linkEvaluacion: act.evaluationLink || '' });
-      setView('create');
+      const newId = `${act.internalCode}-CLONE-${Date.now().toString().slice(-4)}`;
+      const cloned: Activity = {
+          ...act,
+          id: newId,
+          name: `${act.name} (Copia)`,
+          version: `${act.version} (Copia)`
+      };
+      addActivity(cloned);
+  };
+
+  const handleCreateSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      const cleanCode = formData.internalCode.trim().toUpperCase().replace(/\s+/g, '-');
+      const academicPeriodText = `${formData.year}-${formData.semester}`;
+      const generatedId = `${cleanCode}-${academicPeriodText}-${formData.version}`;
+      
+      const finalId = (view === 'edit' && selectedCourseId) ? selectedCourseId : generatedId;
+
+      const newActivity: Activity = {
+          id: finalId,
+          category: 'ACADEMIC',
+          internalCode: formData.internalCode,
+          year: formData.year,
+          academicPeriod: academicPeriodText,
+          name: formData.nombre,
+          version: formData.version,
+          modality: formData.modality,
+          hours: formData.horas,
+          moduleCount: formData.moduleCount,
+          evaluationCount: formData.evaluationCount,
+          relator: formData.relator,
+          startDate: formData.fechaInicio,
+          endDate: formData.fechaTermino, 
+          linkResources: formData.linkRecursos,
+          classLink: formData.linkClase,
+          evaluationLink: formData.linkEvaluacion,
+          isPublic: true 
+      };
+
+      addActivity(newActivity);
+      
+      if (view === 'edit') {
+          setView('details');
+      } else {
+          setFormData({ internalCode: '', year: new Date().getFullYear(), semester: '1', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', moduleCount: 0, evaluationCount: 3, linkRecursos: '', linkClase: '', linkEvaluacion: '' });
+          setView('list');
+      }
   };
 
   const handleDeleteActivity = async () => {
       if (!selectedCourseId || !selectedCourse) return;
       const password = prompt(`ADVERTENCIA: ¿Eliminar "${selectedCourse.name}"? Contraseña ADMIN:`);
-      if (password === currentUser?.password) { await deleteActivity(selectedCourseId); alert("Eliminado."); setView('list'); setSelectedCourseId(null); } else if (password !== null) { alert("Incorrecto."); }
+      if (password === currentUser?.password) {
+          await deleteActivity(selectedCourseId);
+          alert("Eliminado.");
+          setView('list');
+          setSelectedCourseId(null);
+      } else if (password !== null) {
+          alert("Incorrecto.");
+      }
   };
+
+  const handleEditCourse = () => {
+      if (!selectedCourse) return;
+      let sem = '1';
+      if (selectedCourse.academicPeriod) {
+          const parts = selectedCourse.academicPeriod.split('-');
+          if (parts.length > 1) sem = parts[1];
+      }
+
+      setFormData({
+          internalCode: selectedCourse.internalCode || '',
+          year: selectedCourse.year || new Date().getFullYear(),
+          semester: sem,
+          nombre: selectedCourse.name,
+          version: selectedCourse.version || 'V1',
+          modality: selectedCourse.modality,
+          horas: selectedCourse.hours,
+          relator: selectedCourse.relator || '',
+          fechaInicio: selectedCourse.startDate || '',
+          fechaTermino: selectedCourse.endDate || '',
+          moduleCount: selectedCourse.moduleCount || 0,
+          evaluationCount: selectedCourse.evaluationCount || 3,
+          linkRecursos: selectedCourse.linkResources || '',
+          linkClase: selectedCourse.classLink || '',
+          linkEvaluacion: selectedCourse.evaluationLink || ''
+      });
+      setView('edit');
+  };
+
+  // --- ENROLLMENT HANDLERS ---
 
   const handleManualFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       const { name, value } = e.target;
       setManualForm(prev => ({ ...prev, [name]: value }));
+      
       if (name === 'rut') {
-          setIsFoundInMaster(false); setIsAlreadyEnrolled(false); setEnrollMsg(null);
+          setIsFoundInMaster(false);
+          setIsAlreadyEnrolled(false);
+          setEnrollMsg(null);
           const rawInput = value.replace(/[^0-9kK]/g, '').toLowerCase();
           if (rawInput.length >= 2) { 
               const matches = users.filter(u => u.rut.replace(/[^0-9kK]/g, '').toLowerCase().includes(rawInput));
-              setSuggestions(matches.slice(0, 5)); setShowSuggestions(matches.length > 0);
-          } else { setSuggestions([]); setShowSuggestions(false); }
+              setSuggestions(matches.slice(0, 5));
+              setShowSuggestions(matches.length > 0);
+          } else {
+              setSuggestions([]);
+              setShowSuggestions(false);
+          }
       }
-  };
-
-  const checkEnrollmentStatus = (rut: string) => {
-      const existsInCourse = courseEnrollments.some(e => e.rut.toLowerCase() === rut.toLowerCase());
-      setIsAlreadyEnrolled(existsInCourse);
-      if (existsInCourse) { setEnrollMsg({ type: 'error', text: '¡Usuario ya matriculado!' }); }
-      return existsInCourse;
   };
 
   const handleSelectSuggestion = (user: User) => {
       suggestionClickedRef.current = true;
       setManualForm({
-          rut: user.rut, names: user.names, paternalSurname: user.paternalSurname, maternalSurname: user.maternalSurname || '', email: user.email || '', phone: user.phone || '', academicRole: user.academicRole || '', faculty: user.faculty || '', department: user.department || '', career: user.career || '', contractType: user.contractType || '', teachingSemester: user.teachingSemester || '', campus: user.campus || '', systemRole: user.systemRole
+          rut: user.rut,
+          names: user.names,
+          paternalSurname: user.paternalSurname,
+          maternalSurname: user.maternalSurname || '',
+          email: user.email || '',
+          phone: user.phone || '',
+          academicRole: user.academicRole || '',
+          faculty: user.faculty || '',
+          department: user.department || '',
+          career: user.career || '',
+          contractType: user.contractType || '',
+          teachingSemester: user.teachingSemester || '',
+          campus: user.campus || '',
+          systemRole: user.systemRole
       });
-      setIsFoundInMaster(true); setShowSuggestions(false); setSuggestions([]); 
-      const alreadyEnrolled = checkEnrollmentStatus(user.rut);
-      if (!alreadyEnrolled) setEnrollMsg({ type: 'success', text: 'Datos cargados desde Base Maestra.' });
+      setIsFoundInMaster(true);
+      setShowSuggestions(false);
+      setSuggestions([]);
+      
+      if (selectedCourseId) {
+          const exists = enrollments.some(e => e.activityId === selectedCourseId && e.rut === user.rut);
+          setIsAlreadyEnrolled(exists);
+          if (exists) setEnrollMsg({ type: 'error', text: 'Usuario ya inscrito.' });
+          else setEnrollMsg({ type: 'success', text: 'Datos cargados desde Base Maestra.' });
+      }
+      
       setTimeout(() => { suggestionClickedRef.current = false; }, 300);
   };
 
@@ -437,98 +361,154 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       setTimeout(() => {
           if (suggestionClickedRef.current) return;
           if (showSuggestions) setShowSuggestions(false);
-          if(!manualForm.rut) return;
-          const formatted = cleanRutFormat(manualForm.rut);
-          if (!isFoundInMaster) {
-            const user = getUser(formatted);
-            if(user) {
-                setManualForm(prev => ({ ...prev, rut: user.rut, names: user.names, paternalSurname: user.paternalSurname, maternalSurname: user.maternalSurname || '', email: user.email || '', phone: user.phone || '', academicRole: user.academicRole || '', faculty: user.faculty || '', department: user.department || '', career: user.career || '', contractType: user.contractType || '', teachingSemester: user.teachingSemester || '', campus: user.campus || '', systemRole: user.systemRole }));
-                setIsFoundInMaster(true);
-                const alreadyEnrolled = checkEnrollmentStatus(user.rut);
-                if (!alreadyEnrolled) setEnrollMsg({ type: 'success', text: 'Usuario encontrado en Base Maestra.' });
-            } else { setManualForm(prev => ({ ...prev, rut: formatted })); checkEnrollmentStatus(formatted); }
+          
+          if (manualForm.rut) {
+              const formatted = cleanRutFormat(manualForm.rut);
+              if (!isFoundInMaster) {
+                  const user = getUser(formatted);
+                  if (user) {
+                      handleSelectSuggestion(user);
+                  } else {
+                      setManualForm(prev => ({ ...prev, rut: formatted }));
+                  }
+              }
           }
       }, 200);
   };
 
-  const handleManualEnroll = (e: React.FormEvent) => {
+  const handleManualEnroll = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!selectedCourseId || isAlreadyEnrolled) return;
-      if (!manualForm.rut || !manualForm.names || !manualForm.paternalSurname) { setEnrollMsg({ type: 'error', text: 'Complete obligatorios.' }); return; }
+      if (!manualForm.rut || !manualForm.names || !manualForm.paternalSurname) {
+          setEnrollMsg({ type: 'error', text: 'Faltan datos obligatorios.' });
+          return;
+      }
+
       const formattedRut = cleanRutFormat(manualForm.rut);
-      if (checkEnrollmentStatus(formattedRut)) return;
+      
       const userToUpsert: User = {
-          rut: formattedRut, names: manualForm.names, paternalSurname: manualForm.paternalSurname, maternalSurname: manualForm.maternalSurname, email: manualForm.email, phone: manualForm.phone, academicRole: manualForm.academicRole, faculty: manualForm.faculty, department: manualForm.department, career: manualForm.career, contractType: manualForm.contractType, teachingSemester: manualForm.teachingSemester, campus: manualForm.campus, systemRole: manualForm.systemRole as UserRole
+          rut: formattedRut,
+          names: manualForm.names,
+          paternalSurname: manualForm.paternalSurname,
+          maternalSurname: manualForm.maternalSurname,
+          email: manualForm.email,
+          phone: manualForm.phone,
+          academicRole: manualForm.academicRole,
+          faculty: manualForm.faculty,
+          department: manualForm.department,
+          career: manualForm.career,
+          contractType: manualForm.contractType,
+          teachingSemester: manualForm.teachingSemester,
+          campus: manualForm.campus,
+          systemRole: manualForm.systemRole as UserRole
       };
-      upsertUsers([userToUpsert]);
-      enrollUser(formattedRut, selectedCourseId);
-      setEnrollMsg({ type: 'success', text: isFoundInMaster ? `Usuario matriculado.` : `Nuevo usuario creado y matriculado.` });
-      setManualForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
-      setIsFoundInMaster(false); setIsAlreadyEnrolled(false);
+
+      try {
+          await upsertUsers([userToUpsert]);
+          await enrollUser(formattedRut, selectedCourseId);
+          setEnrollMsg({ type: 'success', text: 'Matriculado correctamente.' });
+          setManualForm({ 
+              rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '',
+              academicRole: '', faculty: '', department: '', career: '', contractType: '',
+              teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE
+          }); 
+          setIsFoundInMaster(false);
+          setIsAlreadyEnrolled(false);
+      } catch (err: any) {
+          setEnrollMsg({ type: 'error', text: err.message });
+      }
   };
 
   const handleBulkEnroll = () => {
       if (!uploadFile || !selectedCourseId) return;
-      const reader = new FileReader(); const isExcel = uploadFile.name.endsWith('.xlsx') || uploadFile.name.endsWith('.xls');
+      const reader = new FileReader();
+      const isExcel = uploadFile.name.endsWith('.xlsx') || uploadFile.name.endsWith('.xls');
+
       reader.onload = async (e) => {
           let rows: any[][] = [];
-          if (isExcel) { const data = e.target?.result; const workbook = read(data, { type: 'array' }); rows = utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 }); } else { const text = e.target?.result as string; const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== ''); if (lines.length > 0) { const delimiter = lines[0].includes(';') ? ';' : ','; rows = lines.map(line => line.split(delimiter)); } }
-          if (rows.length < 1) return;
-          const usersToUpsert: User[] = []; const rutsToEnroll: string[] = []; let startRow = hasHeaders ? 1 : 0;
-          for (let i = startRow; i < rows.length; i++) {
-              const row = rows[i]; const rowStrings = row.map(cell => cell !== undefined && cell !== null ? String(cell).trim() : '');
-              if (rowStrings.length < 1 || !rowStrings[0]) continue;
-              const cleanRut = cleanRutFormat(rowStrings[0]); rutsToEnroll.push(cleanRut);
-              const hasName = rowStrings[1] && rowStrings[1].length > 1; const hasSurname = rowStrings[2] && rowStrings[2].length > 1;
-              if (hasName || hasSurname) {
-                  usersToUpsert.push({ rut: cleanRut, names: rowStrings[1] || '', paternalSurname: rowStrings[2] || '', maternalSurname: rowStrings[3] || '', email: rowStrings[4] || '', phone: rowStrings[5] || '', academicRole: normalizeValue(rowStrings[6], listRoles), faculty: normalizeValue(rowStrings[7], listFaculties), department: normalizeValue(rowStrings[8], listDepts), career: normalizeValue(rowStrings[9], listCareers), contractType: normalizeValue(rowStrings[10], listContracts), teachingSemester: normalizeValue(rowStrings[11], listSemesters), campus: rowStrings[12] || '', systemRole: UserRole.ESTUDIANTE });
+          if (isExcel) {
+              const data = e.target?.result;
+              const workbook = read(data, { type: 'array' });
+              rows = utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+          } else {
+              const text = e.target?.result as string;
+              const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== '');
+              if (lines.length > 0) {
+                  const delimiter = lines[0].includes(';') ? ';' : ',';
+                  rows = lines.map(line => line.split(delimiter));
               }
           }
+
+          if (rows.length < 1) return;
+
+          const usersToUpsert: User[] = [];
+          const rutsToEnroll: string[] = [];
+          let startRow = hasHeaders ? 1 : 0;
+
+          for (let i = startRow; i < rows.length; i++) {
+              const row = rows[i];
+              const rowStrings = row.map(cell => cell !== undefined && cell !== null ? String(cell).trim() : '');
+              if (rowStrings.length < 1 || !rowStrings[0]) continue;
+
+              const cleanRut = cleanRutFormat(rowStrings[0]);
+              rutsToEnroll.push(cleanRut);
+
+              const hasName = rowStrings[1] && rowStrings[1].length > 1;
+              if (hasName) {
+                  usersToUpsert.push({
+                      rut: cleanRut,
+                      names: rowStrings[1] || '',
+                      paternalSurname: rowStrings[2] || '',
+                      maternalSurname: rowStrings[3] || '',
+                      email: rowStrings[4] || '',
+                      phone: rowStrings[5] || '',
+                      academicRole: normalizeValue(rowStrings[6], listRoles),
+                      faculty: normalizeValue(rowStrings[7], listFaculties),
+                      department: normalizeValue(rowStrings[8], listDepts),
+                      career: normalizeValue(rowStrings[9], listCareers),
+                      contractType: normalizeValue(rowStrings[10], listContracts),
+                      teachingSemester: normalizeValue(rowStrings[11], listSemesters),
+                      campus: rowStrings[12] || '',
+                      systemRole: UserRole.ESTUDIANTE
+                  });
+              }
+          }
+
           if (usersToUpsert.length > 0) { await upsertUsers(usersToUpsert); }
           const result = await bulkEnroll(rutsToEnroll, selectedCourseId);
-          setEnrollMsg({ type: 'success', text: `Masivo: ${result.success} nuevos, ${result.skipped} existentes.` }); setUploadFile(null);
+          setEnrollMsg({ type: 'success', text: `Carga Masiva: ${result.success} nuevos inscritos, ${result.skipped} ya existentes.` });
+          setUploadFile(null);
       };
       isExcel ? reader.readAsArrayBuffer(uploadFile) : reader.readAsText(uploadFile);
   };
 
-  const handleUpdateGrade = (enrollmentId: string, index: number, value: string) => {
-    const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
-    if (!enrollment || !selectedCourse) return;
+  const handleUpdateGrade = (enrollmentId: string, gradeIndex: number, value: string) => {
+      if (!selectedCourse) return;
+      const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
+      if (!enrollment) return;
 
-    const currentGrades = enrollment.grades || [];
-    const newGrades = [...currentGrades];
-    while (newGrades.length < (selectedCourse.evaluationCount || 0)) {
-        newGrades.push(0);
-    }
+      let numValue = parseFloat(value);
+      if (value === '') numValue = 0;
+      if (isNaN(numValue)) numValue = 0;
+      if (numValue > 7.0) numValue = 7.0;
+      if (numValue < 0) numValue = 0;
 
-    let grade = parseFloat(value);
+      const currentGrades = [...(enrollment.grades || [])];
+      while (currentGrades.length <= gradeIndex) currentGrades.push(0);
+      
+      currentGrades[gradeIndex] = numValue;
 
-    // FIX: Validate and clamp the input to prevent overflow. Allow empty string to clear a grade.
-    if (value.trim() === '' || isNaN(grade)) {
-        grade = 0;
-    } else if (grade > config.gradingScaleMax) {
-        grade = config.gradingScaleMax;
-    } else if (grade < 0) {
-        grade = 0;
-    }
+      const validGrades = currentGrades.filter(g => g > 0);
+      const finalGrade = validGrades.length > 0 ? parseFloat((validGrades.reduce((a,b)=>a+b,0)/validGrades.length).toFixed(1)) : 0;
 
-    newGrades[index] = parseFloat(grade.toFixed(1));
+      const tempEnrollment: Enrollment = { ...enrollment, grades: currentGrades, finalGrade };
+      const newState = getComputedStatus(tempEnrollment, selectedCourse);
 
-    // FIX: Calculate average only on grades that have been entered (are > 0).
-    const validGrades = newGrades.filter(g => g > 0);
-    const finalGrade = validGrades.length > 0
-        ? parseFloat((validGrades.reduce((a, b) => a + b, 0) / validGrades.length).toFixed(1))
-        : 0;
-
-    // Use getComputedStatus for consistent state logic
-    const tempEnrollmentForState: Enrollment = {
-        ...enrollment,
-        grades: newGrades,
-        finalGrade: finalGrade,
-    };
-    const newState = getComputedStatus(tempEnrollmentForState, selectedCourse);
-
-    updateEnrollment(enrollmentId, { grades: newGrades, finalGrade: finalGrade, state: newState as ActivityState });
+      updateEnrollment(enrollmentId, {
+          grades: currentGrades,
+          finalGrade: finalGrade,
+          state: newState
+      });
   };
 
   const handleToggleAttendance = (enrollmentId: string, sessionKey: string) => {
@@ -537,7 +517,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
     // @ts-ignore
     const newValue = !enrollment[sessionKey];
-
     const tempEnrollmentState = { ...enrollment, [sessionKey]: newValue };
     
     let presentCount = 0;
@@ -550,14 +529,180 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     
     const totalSessions = 6;
     const newPercentage = Math.round((presentCount / totalSessions) * 100);
-
-    // Also recalculate state for consistency
     const tempEnrollmentForState: Enrollment = { ...tempEnrollmentState, attendancePercentage: newPercentage };
     const newState = getComputedStatus(tempEnrollmentForState, selectedCourse);
     
     updateEnrollment(enrollmentId, { [sessionKey]: newValue, attendancePercentage: newPercentage, state: newState as ActivityState });
   };
 
+  // --- HTML CERTIFICATE GENERATION LOGIC ---
+  const generateHTMLCertificate = (user: User, course: Activity, enrollmentId: string, dateStr: string) => {
+      const win = window.open('', '_blank');
+      if (!win) { alert("Por favor habilite las ventanas emergentes para descargar el certificado."); return; }
+      
+      const fullName = `${user.names} ${user.paternalSurname} ${user.maternalSurname || ''}`.toUpperCase();
+      const courseName = course.name.toUpperCase();
+      const qrData = `${window.location.origin}/?verify=${enrollmentId}`;
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(qrData)}`;
+      
+      // Official Logos
+      const logoSmead = 'https://raw.githubusercontent.com/vdhuerta/assets-aplications/main/Logo_SMEAD.png';
+      const logoUad = 'https://github.com/vdhuerta/assets-aplications/blob/main/Logo-UAD%20(2).png?raw=true';
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <title>Constancia - ${fullName}</title>
+            <style>
+                @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;700;800&display=swap');
+                @page { size: letter portrait; margin: 0; }
+                body { margin: 0; padding: 0; width: 100%; height: 100vh; font-family: 'Montserrat', sans-serif; background-color: #f5f5f5; display: flex; justify-content: center; align-items: center; }
+                .certificate-container { position: relative; width: 216mm; height: 279mm; background-color: white; box-shadow: 0 0 20px rgba(0,0,0,0.1); overflow: hidden; display: flex; flex-direction: column; }
+                
+                /* Sidebar decorativo */
+                .sidebar-left { position: absolute; left: 0; top: 0; bottom: 0; width: 25px; background: linear-gradient(to bottom, #009FE3, #004B87); }
+                
+                .content { flex: 1; margin: 50px 70px; display: flex; flex-direction: column; align-items: center; position: relative; z-index: 10; }
+                
+                /* Watermark (AGRANDADO Y POSICIONADO) */
+                .watermark { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); opacity: 0.05; width: 650px; z-index: 0; pointer-events: none; }
+
+                /* Header */
+                .header { width: 100%; display: flex; justify-content: space-between; align-items: center; margin-bottom: 60px; border-bottom: 2px solid #f0f0f0; padding-bottom: 20px; }
+                
+                /* Logo GestorSMEAD */
+                .header-left { display: flex; align-items: center; gap: 10px; }
+                .logo-smead { height: 50px; object-fit: contain; }
+                .logo-smead-text { font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 20px; color: #555; }
+
+                /* Logo UAD REDUCIDO */
+                .logo-uad { height: 42px; object-fit: contain; }
+
+                /* Titles */
+                .title-container { text-align: center; margin-bottom: 50px; }
+                .title-main { font-size: 48px; font-weight: 800; color: #009FE3; margin: 0; line-height: 0.9; text-transform: uppercase; letter-spacing: -1px; }
+                .title-sub { font-size: 36px; font-weight: 300; color: #555; margin: 5px 0 0 0; line-height: 1; text-transform: uppercase; letter-spacing: 4px; }
+
+                /* Text Body */
+                .text-body { text-align: justify; font-size: 16px; line-height: 1.8; color: #444; margin-bottom: 40px; width: 100%; }
+
+                /* Student Info */
+                .student-section { width: 100%; text-align: center; margin-bottom: 40px; }
+                .student-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 5px; }
+                .student-name { font-size: 32px; font-weight: 700; color: #222; text-transform: uppercase; border-bottom: 3px solid #009FE3; padding-bottom: 5px; display: inline-block; min-width: 80%; position: relative; z-index: 10; }
+
+                /* Activity Info */
+                .activity-section { width: 100%; margin-bottom: 40px; background-color: #f8fbff; padding: 30px; border-radius: 15px; border: 1px solid #eef4fc; text-align: center; box-shadow: 0 4px 15px rgba(0,159,227,0.05); }
+                .activity-label { font-size: 14px; color: #666; margin-bottom: 10px; font-style: italic; }
+                .activity-name { font-size: 24px; font-weight: 800; color: #004B87; margin: 0; line-height: 1.3; }
+                .activity-meta { font-size: 14px; margin-top: 15px; color: #555; font-weight: 500; }
+                
+                .date-section { text-align: right; width: 100%; font-size: 14px; color: #666; margin-bottom: 20px; }
+
+                /* VERIFICATION SECTION (QR + STAMP) */
+                .verification-container { width: 100%; display: flex; justify-content: space-between; align-items: center; margin-top: auto; margin-bottom: 40px; padding: 0 20px; }
+                
+                .qr-box { text-align: center; }
+                .qr-img { width: 90px; height: 90px; }
+                .qr-text { font-size: 9px; color: #999; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
+
+                .seal-box { width: 110px; height: 110px; border-radius: 50%; border: 2px solid #009FE3; display: flex; align-items: center; justify-content: center; background: white; }
+                .seal-img { width: 80%; opacity: 0.8; }
+
+                /* Footer */
+                .footer { width: 100%; background-color: #333; color: white; text-align: center; font-size: 10px; padding: 15px 0; position: absolute; bottom: 0; left: 0; text-transform: uppercase; letter-spacing: 2px; }
+                
+                @media print {
+                    body { background: none; display: block; height: auto; }
+                    .certificate-container { box-shadow: none; width: 100%; height: 100%; page-break-after: always; margin: 0; border: none; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="certificate-container">
+                <div class="sidebar-left"></div>
+                
+                <div class="content">
+                    <img src="${logoUad}" class="watermark" alt="Watermark">
+                    
+                    <div class="header">
+                        <div class="header-left">
+                            <img src="${logoSmead}" class="logo-smead" alt="GestorSMEAD">
+                            <span class="logo-smead-text">GestorSMEAD</span>
+                        </div>
+                        <img src="${logoUad}" class="logo-uad" alt="UAD UPLA">
+                    </div>
+
+                    <div class="title-container">
+                        <h1 class="title-main">CONSTANCIA</h1>
+                        <h2 class="title-sub">DE PARTICIPACIÓN</h2>
+                    </div>
+
+                    <p class="text-body">
+                        La <strong>Unidad de Acompañamiento Docente (UAD)</strong>, dependiente de la Dirección General de Pregrado de la Vicerrectoría Académica de la Universidad de Playa Ancha de Ciencias de la Educación, a través del presente documento certifica que:
+                    </p>
+
+                    <div class="student-section">
+                        <div class="student-label">Don/Doña</div>
+                        <span class="student-name">${fullName}</span>
+                    </div>
+
+                    <div class="activity-section">
+                        <div class="activity-label">Ha finalizado satisfactoriamente la Actividad Formativa denominada:</div>
+                        <div class="activity-name">${courseName}</div>
+                        <div class="activity-meta">
+                            Dictada en modalidad <strong>${course.modality.toUpperCase()}</strong> con una duración cronológica de <strong>${course.hours} horas</strong>.
+                        </div>
+                    </div>
+                    
+                    <div class="date-section">
+                        Valparaíso, ${dateStr}
+                    </div>
+
+                    <div class="verification-container">
+                        <div class="qr-box">
+                            <img src="${qrUrl}" class="qr-img" alt="QR Verificación">
+                            <div class="qr-text">Escanee para verificar</div>
+                        </div>
+                        
+                        <div class="seal-box">
+                            <img src="${logoUad}" class="seal-img" alt="Sello UAD">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="footer">
+                    Vicerrectoría Académica / Dirección General de Pregrado / Unidad de Acompañamiento Docente
+                </div>
+            </div>
+            <script>
+                window.onload = function() { setTimeout(function() { window.print(); }, 1000); };
+            </script>
+        </body>
+        </html>
+      `;
+      
+      win.document.write(htmlContent);
+      win.document.close();
+  };
+
+  const handleGenerateCertificate = async (user: User | undefined, course: Activity | undefined) => {
+      if (!user || !course) return;
+      
+      // Find specific enrollment ID for verification QR
+      const enrollment = enrollments.find(e => e.rut === user.rut && e.activityId === course.id);
+      const enrollmentId = enrollment ? enrollment.id : 'unknown';
+
+      setIsGeneratingPdf(true);
+      const date = new Date();
+      const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' };
+      const dateStr = date.toLocaleDateString('es-CL', options);
+      
+      generateHTMLCertificate(user, course, enrollmentId, dateStr);
+      setIsGeneratingPdf(false);
+  };
 
   if (view === 'list') {
       return (
@@ -595,8 +740,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       );
   }
 
-  // --- VIEW: CREATE/EDIT/DETAILS (Same as previous content but provided to satisfy strict replacement) ---
-  
+  // --- VIEW: CREATE/EDIT/DETAILS ---
   if (view === 'create' || view === 'edit') {
       const isDateWarning = formData.fechaTermino && suggestedEndDateISO && formData.fechaTermino < suggestedEndDateISO;
       const isEditMode = view === 'edit';
@@ -752,7 +896,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                           </div>
                                       );
                                   })()}
-                                  <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-sm text-left whitespace-nowrap"><thead className="bg-slate-100 text-slate-600 font-bold"><tr><th className="px-2 py-3 w-40 max-w-[160px] sticky left-0 bg-slate-100 border-r border-slate-200 truncate">Estudiante</th><th className="px-1 py-3 text-center w-8 text-[10px]">S1</th><th className="px-1 py-3 text-center w-8 text-[10px]">S2</th><th className="px-1 py-3 text-center w-8 text-[10px]">S3</th><th className="px-1 py-3 text-center w-8 text-[10px]">S4</th><th className="px-1 py-3 text-center w-8 text-[10px]">S5</th><th className="px-1 py-3 text-center w-8 text-[10px]">S6</th><th className="px-2 py-3 text-center w-16 text-xs">% Asist</th>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, i) => (<th key={i} className="px-1 py-3 text-center w-12 text-xs">N{i + 1}</th>))}<th className="px-2 py-3 text-center w-20">Final</th><th className="px-1 py-3 text-center w-24 text-xs">Estado</th><th className="px-1 py-3 text-center w-32 text-xs">Certificado</th></tr></thead><tbody className="divide-y divide-slate-100">{sortedEnrollments.map(enr => { const user = users.find(u => u.rut === enr.rut); const status = getComputedStatus(enr, selectedCourse); const minPassingGrade = config.minPassingGrade || 4.0; const minAttendance = config.minAttendancePercentage || 75; const displayName = (user && user.names) ? `${user.paternalSurname} ${user.maternalSurname || ''}, ${user.names}` : enr.rut; return (<tr key={enr.id} className="hover:bg-blue-50/30"><td className="px-2 py-2 max-w-[160px] sticky left-0 bg-white border-r border-slate-100 font-medium text-slate-700 truncate" title={displayName}>{displayName}</td>{['attendanceSession1', 'attendanceSession2', 'attendanceSession3', 'attendanceSession4', 'attendanceSession5', 'attendanceSession6'].map((key) => (<td key={key} className="px-1 py-2 text-center"><input type="checkbox" checked={!!enr[key as keyof Enrollment]} onChange={() => handleToggleAttendance(enr.id, key)} className="rounded text-[#647FBC] focus:ring-[#647FBC] cursor-pointer w-3 h-3"/></td>))}<td className="px-2 py-2 text-center"><span className={(enr.attendancePercentage || 0) < minAttendance ? 'bg-red-50 text-red-600 font-bold px-2 py-1 rounded' : 'text-slate-600 font-bold'}>{enr.attendancePercentage || 0}%</span></td>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, idx) => { const gradeVal = enr.grades?.[idx]; return (<td key={idx} className="px-1 py-2"><input type="number" step="0.1" min="1" max="7" className={`w-full text-center border border-slate-200 rounded py-1 text-sm font-bold px-1 focus:border-[#647FBC] focus:ring-1 focus:ring-[#647FBC] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal !== undefined && gradeVal < minPassingGrade && gradeVal > 0 ? 'text-red-600' : 'text-slate-700'}`} value={enr.grades?.[idx] || ''} onChange={(e) => handleUpdateGrade(enr.id, idx, e.target.value)} /></td>); })}<td className={`px-2 py-2 text-center text-sm ${(enr.finalGrade || 0) < minPassingGrade && (enr.finalGrade || 0) > 0 ? 'text-red-600 font-bold' : 'text-slate-800 font-bold'}`}>{enr.finalGrade || '-'}</td><td className="px-1 py-2 text-center"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase block w-full truncate ${ ((isAdmin || isAdvisor) && status === ActivityState.APROBADO) ? 'bg-green-50 text-green-700' : ((isAdmin || isAdvisor) && status === ActivityState.REPROBADO) ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600'}`}>{status}</span></td><td className="px-1 py-2 text-center">{status === 'APROBADO' && (<button onClick={() => handleGenerateCertificate(user, selectedCourse)} disabled={isGeneratingPdf} className="text-white bg-[#647FBC] hover:bg-blue-700 px-2 py-1 rounded text-[10px] font-bold shadow-sm transition-colors flex items-center justify-center gap-1 mx-auto w-full disabled:opacity-50"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg><span className="hidden xl:inline">{isGeneratingPdf ? '...' : 'Descargar'}</span></button>)}</td></tr>); })}</tbody></table></div>
+                                  <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-sm text-left whitespace-nowrap"><thead className="bg-slate-100 text-slate-600 font-bold"><tr><th className="px-2 py-3 w-40 max-w-[160px] sticky left-0 bg-slate-100 border-r border-slate-200 truncate">Estudiante</th><th className="px-1 py-3 text-center w-8 text-[10px]">S1</th><th className="px-1 py-3 text-center w-8 text-[10px]">S2</th><th className="px-1 py-3 text-center w-8 text-[10px]">S3</th><th className="px-1 py-3 text-center w-8 text-[10px]">S4</th><th className="px-1 py-3 text-center w-8 text-[10px]">S5</th><th className="px-1 py-3 text-center w-8 text-[10px]">S6</th><th className="px-2 py-3 text-center w-16 text-xs">% Asist</th>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, i) => (<th key={i} className="px-1 py-3 text-center w-12 text-xs">N{i + 1}</th>))}<th className="px-2 py-3 text-center w-20">Final</th><th className="px-1 py-3 text-center w-24 text-xs">Estado</th><th className="px-1 py-3 text-center w-32 text-xs">Certificado</th></tr></thead><tbody className="divide-y divide-slate-100">{sortedEnrollments.map(enr => { const user = users.find(u => u.rut === enr.rut); const status = getComputedStatus(enr, selectedCourse); const minPassingGrade = config.minPassingGrade || 4.0; const minAttendance = config.minAttendancePercentage || 75; const displayName = (user && user.names) ? `${user.paternalSurname} ${user.maternalSurname || ''}, ${user.names}` : enr.rut; return (<tr key={enr.id} className="hover:bg-blue-50/30"><td className="px-2 py-2 max-w-[160px] sticky left-0 bg-white border-r border-slate-100 font-medium text-slate-700 truncate" title={displayName}>{displayName}</td>{['attendanceSession1', 'attendanceSession2', 'attendanceSession3', 'attendanceSession4', 'attendanceSession5', 'attendanceSession6'].map((key) => (<td key={key} className="px-1 py-2 text-center"><input type="checkbox" checked={!!enr[key as keyof Enrollment]} onChange={() => handleToggleAttendance(enr.id, key)} className="rounded text-[#647FBC] focus:ring-[#647FBC] cursor-pointer w-3 h-3"/></td>))}<td className="px-2 py-2 text-center"><span className={(enr.attendancePercentage || 0) < minAttendance ? 'bg-red-50 text-red-600 font-bold px-2 py-1 rounded' : 'text-slate-600 font-bold'}>{enr.attendancePercentage || 0}%</span></td>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, idx) => { const gradeVal = enr.grades?.[idx]; return (<td key={idx} className="px-1 py-2"><input type="number" step="0.1" min="1" max="7" className={`w-full text-center border border-slate-200 rounded py-1 text-sm font-bold px-1 focus:border-[#647FBC] focus:ring-1 focus:ring-[#647FBC] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal !== undefined && gradeVal < minPassingGrade && gradeVal > 0 ? 'text-red-600' : 'text-slate-700'}`} value={enr.grades?.[idx] || ''} onChange={(e) => handleUpdateGrade(enr.id, idx, e.target.value)} /></td>); })}<td className={`px-2 py-2 text-center text-sm ${(enr.finalGrade || 0) < minPassingGrade && (enr.finalGrade || 0) > 0 ? 'text-red-600 font-bold' : 'text-slate-800 font-bold'}`}>{enr.finalGrade || '-'}</td><td className="px-1 py-2 text-center"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase block w-full truncate ${ ((isAdmin || isAdvisor) && status === ActivityState.APROBADO) ? 'bg-green-50 text-green-700' : ((isAdmin || isAdvisor) && status === ActivityState.REPROBADO) ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600'}`}>{status}</span></td><td className="px-1 py-2 text-center">{status === ActivityState.APROBADO && (<button onClick={() => handleGenerateCertificate(user, selectedCourse)} disabled={isGeneratingPdf} className="text-white bg-[#647FBC] hover:bg-blue-700 px-2 py-1 rounded text-[10px] font-bold shadow-sm transition-colors flex items-center justify-center gap-1 mx-auto w-full disabled:opacity-50"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg><span className="hidden xl:inline">{isGeneratingPdf ? '...' : 'Descargar'}</span></button>)}</td></tr>); })}</tbody></table></div>
                               </div>
                           </div>
                       )}

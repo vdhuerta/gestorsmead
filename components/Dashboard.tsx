@@ -151,6 +151,10 @@ interface DashboardProps {
 export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
   const { activities, users, enrollments, enrollUser, upsertUsers, addActivity, config, getUser } = useData();
   
+  // --- STATE FOR YEAR SELECTION (ADMIN & ASESOR) ---
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
+
   // Dynamic Lists from Config
   const listFaculties = config.faculties?.length ? config.faculties : FACULTY_LIST;
   const listDepts = config.departments?.length ? config.departments : DEPARTMENT_LIST;
@@ -205,7 +209,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
   }, [showStudentEnrollModal, user]);
 
   // --- AUTO-INIT: ASESORÍAS (Self-Repair for Netlify) ---
-  // Esta lógica asegura que la actividad contenedora exista incluso si no se ha visitado el gestor
   useEffect(() => {
       if (user.systemRole === UserRole.ASESOR && activities.length > 0) {
           const advisoryId = `ADVISORY-GENERAL-${new Date().getFullYear()}`;
@@ -231,18 +234,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
       }
   }, [user.systemRole, activities, addActivity]);
 
-  // --- General KPIs Calculation ---
-  const activeCourses = activities.filter(a => a.category === 'ACADEMIC').length;
-  const activeGeneral = activities.filter(a => a.category === 'GENERAL').length;
-  const activePostgraduate = activities.filter(a => a.category === 'POSTGRADUATE').length;
-  const totalEnrollments = enrollments.length;
+  // --- General KPIs Calculation (FILTERED BY SELECTED YEAR) ---
+  const activeCourses = activities.filter(a => a.category === 'ACADEMIC' && a.year === selectedYear).length;
+  const activeGeneral = activities.filter(a => a.category === 'GENERAL' && a.year === selectedYear).length;
+  const activePostgraduate = activities.filter(a => a.category === 'POSTGRADUATE' && a.year === selectedYear).length;
+  
+  // Enrollments filtered by activities in selected year
+  const totalEnrollments = enrollments.filter(e => {
+      const act = activities.find(a => a.id === e.activityId);
+      return act && act.year === selectedYear;
+  }).length;
 
-  // --- ASESOR KPIs Calculation ---
+  // --- ASESOR KPIs Calculation (FILTERED BY SELECTED YEAR) ---
   const advisorKpis = useMemo(() => {
     if (user.systemRole !== UserRole.ASESOR) return null;
 
+    // Filter Activities based on Selected Year
+    const yearActivities = activities.filter(a => a.year === selectedYear);
+
     // 1. Tasa de Aprobación
-    const academicEnrollments = enrollments.filter(e => activities.some(a => a.id === e.activityId && a.category === 'ACADEMIC'));
+    const academicEnrollments = enrollments.filter(e => yearActivities.some(a => a.id === e.activityId && a.category === 'ACADEMIC'));
     const aprobados = academicEnrollments.filter(e => e.state === ActivityState.APROBADO).length;
     const tasaAprobacion = academicEnrollments.length > 0 ? Math.round((aprobados / academicEnrollments.length) * 100) : 0;
 
@@ -257,7 +268,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
             return;
         }
 
-        const activity = activities.find(a => a.id === e.activityId);
+        const activity = yearActivities.find(a => a.id === e.activityId);
         if (!activity) return; // Actividad no encontrada, no se puede evaluar.
 
         const expectedGrades = activity.evaluationCount || 3;
@@ -285,7 +296,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     let totalSlots = 0;
     let filledSlots = 0;
     academicEnrollments.forEach(e => {
-        const act = activities.find(a => a.id === e.activityId);
+        const act = yearActivities.find(a => a.id === e.activityId);
         totalSlots += act?.evaluationCount || 0;
         filledSlots += e.grades?.filter(g => g > 0).length || 0;
     });
@@ -301,11 +312,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
         acc[e.activityId] = (acc[e.activityId] || 0) + 1;
         return acc;
     }, {} as Record<string, number>);
-    const cursosCriticos = activities.filter(a => a.category === 'ACADEMIC' && (enrollmentsByActivity[a.id] || 0) < 5).length;
+    const cursosCriticos = yearActivities.filter(a => a.category === 'ACADEMIC' && (enrollmentsByActivity[a.id] || 0) < 5).length;
     
     // 6. Cursos Finalizados
     const hoyStr = new Date().toISOString().split('T')[0];
-    const cursosFinalizados = activities.filter(a => a.category === 'ACADEMIC' && a.endDate && a.endDate < hoyStr).length;
+    const cursosFinalizados = yearActivities.filter(a => a.category === 'ACADEMIC' && a.endDate && a.endDate < hoyStr).length;
 
     return {
         tasaAprobacion,
@@ -315,7 +326,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
         cursosCriticos,
         cursosFinalizados
     };
-  }, [user.systemRole, activities, enrollments, config]);
+  }, [user.systemRole, activities, enrollments, config, selectedYear]);
 
 
   // --- LOGIC: SPLIT OFFER vs CATALOG (Updated for Students) ---
@@ -366,14 +377,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     return { offerActivities: offer, catalogActivities: catalog };
   }, [activities, user.systemRole]);
 
+  // --- LOGIC: Mis Cursos (My Enrollments) ---
+  const myEnrollments = useMemo(() => {
+      return enrollments.filter(e => e.rut === user.rut);
+  }, [enrollments, user.rut]);
+
   // --- LOGIC: FOR ADMIN's HISTORICAL CATALOG ---
   const availableYears = useMemo(() => {
-      const currentYear = new Date().getFullYear();
+      const cy = new Date().getFullYear();
       // FIX: Filter out undefined years to ensure the sort operation is performed on numbers only.
       // This prevents a runtime error when comparing elements.
       const yearSet = new Set<number>();
       activities.forEach(a => {
-        if (typeof a.year === 'number' && a.year !== currentYear) {
+        if (typeof a.year === 'number' && a.year !== cy) {
             yearSet.add(a.year);
         }
       });
@@ -565,7 +581,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
           <div className="relative z-10">
               <h1 className="text-3xl font-bold text-slate-800">Hola, {user.names}</h1>
               <p className="text-slate-500 mt-1 text-lg">Bienvenido al Panel de Gestión Académica SMEAD.</p>
-              <div className="flex gap-2 mt-4">
+              <div className="flex gap-2 mt-4 items-center">
                   <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border ${
                       user.systemRole === UserRole.ADMIN ? 'bg-blue-50 text-blue-700 border-blue-200' :
                       user.systemRole === UserRole.ASESOR ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
@@ -577,6 +593,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                       <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide bg-slate-50 text-slate-600 border border-slate-200">
                           Sede {user.campus}
                       </span>
+                  )}
+                  {/* --- YEAR SELECTOR FOR ADVISORS & ADMIN --- */}
+                  {(user.systemRole === UserRole.ASESOR || user.systemRole === UserRole.ADMIN) && (
+                        <div className="flex items-center bg-white rounded-full px-3 py-1 border border-slate-200 shadow-sm ml-2">
+                            <span className="text-[10px] font-bold uppercase text-slate-400 mr-2">Periodo:</span>
+                            <select
+                                value={selectedYear}
+                                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                                className="text-xs font-bold text-indigo-700 bg-transparent border-none focus:ring-0 p-0 cursor-pointer outline-none"
+                            >
+                                <option value={currentYear}>{currentYear} (Vigente)</option>
+                                <option value={currentYear - 1}>{currentYear - 1}</option>
+                                <option value={currentYear - 2}>{currentYear - 2}</option>
+                            </select>
+                        </div>
                   )}
               </div>
           </div>
@@ -636,7 +667,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                       </div>
                   </div>
 
-                  {/* 2. RESULTADOS DE BÚSQUEDA */}
+                  {/* 2. RESULTADOS DE BÚSQUEDA (KIOSCO) - MOVIDO AQUÍ PARA VISIBILIDAD INMEDIATA */}
                   {activeSearchRut && (
                       <div className="border-t-4 border-[#647FBC] bg-white rounded-xl shadow-md p-6 relative animate-fadeIn">
                           <button onClick={handleClearSearch} className="absolute top-4 right-4 text-slate-400 hover:text-red-500">
@@ -645,7 +676,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                           
                           <h3 className="text-xl font-bold text-slate-800 mb-1 flex items-center gap-2">
                               <svg className="w-6 h-6 text-[#647FBC]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                              Resultados para: {searchTargetUser ? `${searchTargetUser.names} ${searchTargetUser.paternalSurname}` : activeSearchRut}
+                              Resultados Búsqueda: {searchTargetUser ? `${searchTargetUser.names} ${searchTargetUser.paternalSurname}` : activeSearchRut}
                           </h3>
                           
                           {searchResults.length > 0 ? (
@@ -681,6 +712,87 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                           )}
                       </div>
                   )}
+
+                  {/* 3. OFERTA ACADÉMICA (RESTAURADO) */}
+                  <div>
+                      <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2 mb-4 border-b border-slate-200 pb-2">
+                          <svg className="w-6 h-6 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
+                          Inscripción Abierta (Oferta Disponible)
+                      </h3>
+                      {offerActivities.length > 0 ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {offerActivities.map(act => {
+                                  const isAcademic = act.category === 'ACADEMIC';
+                                  // Check if already enrolled
+                                  const isEnrolled = myEnrollments.some(e => e.activityId === act.id);
+
+                                  return (
+                                      <div key={act.id} className="relative bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:border-emerald-300 transition-all">
+                                          <div className="absolute top-4 right-4">
+                                              {isAcademic ? (
+                                                  <span className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-1 rounded font-bold uppercase border border-indigo-100">CURSO</span>
+                                              ) : (
+                                                  <span className="bg-teal-50 text-teal-700 text-[10px] px-2 py-1 rounded font-bold uppercase border border-teal-100">EXTENSIÓN</span>
+                                              )}
+                                          </div>
+                                          <div className="mt-6">
+                                              <h4 className="font-bold text-slate-800 text-base mb-2 line-clamp-2 h-10 leading-tight">{act.name}</h4>
+                                              <div className="text-xs text-slate-600 space-y-1 mb-4">
+                                                  <p className="flex items-center gap-2"><span className="font-bold text-xs text-slate-400">Inicio:</span> {formatDateCL(act.startDate)}</p>
+                                                  <p className="flex items-center gap-2"><span className="font-bold text-xs text-slate-400">Mod:</span> {act.modality}</p>
+                                              </div>
+                                              
+                                              {isEnrolled ? (
+                                                  <button disabled className="w-full py-2 rounded-lg font-bold text-xs bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200">
+                                                      Ya Inscrito
+                                                  </button>
+                                              ) : (
+                                                  <button 
+                                                      onClick={() => handleOpenEnrollModal(act)}
+                                                      className={`w-full py-2 rounded-lg font-bold shadow-sm text-xs transition-colors text-white flex items-center justify-center gap-2 ${isAcademic ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-teal-600 hover:bg-teal-700'}`}
+                                                  >
+                                                      Solicitar Inscripción
+                                                  </button>
+                                              )}
+                                          </div>
+                                      </div>
+                                  );
+                              })}
+                          </div>
+                      ) : (
+                          <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center"><p className="text-slate-600 font-medium">No hay actividades con matrícula abierta en este momento.</p></div>
+                  )}
+                  </div>
+
+                  {/* 4. CATÁLOGO HISTÓRICO (AGREGADO) */}
+                  {catalogActivities.length > 0 && (
+                      <div>
+                          <h3 className="text-xl font-bold text-slate-600 flex items-center gap-2 mb-4 border-b border-slate-200 pb-2">
+                              <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                              Catálogo Histórico (Cursos Finalizados)
+                          </h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {catalogActivities.map(act => (
+                                  <div key={act.id} className="bg-slate-50 border border-slate-200 rounded-xl p-5 relative opacity-80 hover:opacity-100 transition-opacity">
+                                      <div className="flex justify-between items-start mb-2">
+                                          <span className="text-[10px] font-bold uppercase bg-slate-200 text-slate-600 px-2 py-1 rounded">Finalizado</span>
+                                          <span className="text-xs text-slate-400 font-mono">{act.year}</span>
+                                      </div>
+                                      <h4 className="font-bold text-slate-700 text-base mb-1 line-clamp-2">{act.name}</h4>
+                                      <p className="text-xs text-slate-500 mb-4">{act.modality}</p>
+                                      
+                                      <button 
+                                          disabled 
+                                          className="w-full text-xs border border-slate-300 text-slate-400 px-3 py-2 rounded-lg font-bold cursor-default"
+                                      >
+                                          Inscripción Cerrada
+                                      </button>
+                                  </div>
+                              ))}
+                          </div>
+                      </div>
+                  )}
+
               </div>
 
               {/* COLUMNA DERECHA: CALENDARIO */}
@@ -698,11 +810,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
               <div>
                   <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-slate-200 pb-4">
                       <svg className="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
-                      Oferta Académica Vigente
+                      Oferta Académica Vigente ({selectedYear})
                   </h3>
-                  {offerActivities.length > 0 ? (
+                  {offerActivities.filter(act => act.year === selectedYear).length > 0 ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                          {offerActivities.map(act => {
+                          {offerActivities.filter(act => act.year === selectedYear).map(act => {
                               const isAcademic = act.category === 'ACADEMIC';
                               const isPostgraduate = act.category === 'POSTGRADUATE';
                               
@@ -741,7 +853,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                           })}
                       </div>
                   ) : (
-                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center"><p className="text-slate-600 font-medium">No hay actividades con matrícula abierta en este momento.</p></div>
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center"><p className="text-slate-600 font-medium">No hay actividades con matrícula abierta en este momento para el año {selectedYear}.</p></div>
                   )}
               </div>
 
@@ -806,7 +918,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
               <div>
                   <h3 className="text-lg font-bold text-slate-600 flex items-center gap-2 mb-4">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
-                      Indicadores Clave de Gestión
+                      Indicadores Clave de Gestión ({selectedYear})
                   </h3>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                       <KpiCardCompact title="Tasa Aprobación" value={advisorKpis.tasaAprobacion} suffix="%" colorClass="text-emerald-600" />
@@ -838,7 +950,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                   </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                  {offerActivities.filter(a => a.category === 'ACADEMIC').map(act => {
+                                  {offerActivities.filter(a => a.category === 'ACADEMIC' && a.year === selectedYear).map(act => {
                                       const { count, progress } = getCourseMetrics(act.id, act.evaluationCount);
                                       return (
                                           <tr key={act.id} className="hover:bg-indigo-50/30 transition-colors group">
@@ -884,10 +996,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                           </tr>
                                       );
                                   })}
-                                  {offerActivities.filter(a => a.category === 'ACADEMIC').length === 0 && (
+                                  {offerActivities.filter(a => a.category === 'ACADEMIC' && a.year === selectedYear).length === 0 && (
                                       <tr>
                                           <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
-                                              No hay cursos académicos asignados actualmente.
+                                              No hay cursos académicos asignados para el año {selectedYear}.
                                           </td>
                                       </tr>
                                   )}
@@ -917,7 +1029,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                   </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                  {offerActivities.filter(a => a.category === 'GENERAL').map(act => {
+                                  {offerActivities.filter(a => a.category === 'GENERAL' && a.year === selectedYear).map(act => {
                                       // Para actividades generales solo contamos inscritos
                                       const count = enrollments.filter(e => e.activityId === act.id).length;
                                       return (
@@ -959,10 +1071,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                           </tr>
                                       );
                                   })}
-                                  {offerActivities.filter(a => a.category === 'GENERAL').length === 0 && (
+                                  {offerActivities.filter(a => a.category === 'GENERAL' && a.year === selectedYear).length === 0 && (
                                       <tr>
                                           <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
-                                              No hay actividades de extensión registradas.
+                                              No hay actividades de extensión registradas para el año {selectedYear}.
                                           </td>
                                       </tr>
                                   )}
@@ -992,7 +1104,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                   </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                  {offerActivities.filter(a => a.category === 'POSTGRADUATE').map(act => {
+                                  {offerActivities.filter(a => a.category === 'POSTGRADUATE' && a.year === selectedYear).map(act => {
                                       const count = enrollments.filter(e => e.activityId === act.id).length;
                                       return (
                                           <tr key={act.id} className="hover:bg-purple-50/30 transition-colors group">
@@ -1028,10 +1140,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                           </tr>
                                       );
                                   })}
-                                  {offerActivities.filter(a => a.category === 'POSTGRADUATE').length === 0 && (
+                                  {offerActivities.filter(a => a.category === 'POSTGRADUATE' && a.year === selectedYear).length === 0 && (
                                       <tr>
                                           <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
-                                              No hay programas de postítulo activos.
+                                              No hay programas de postítulo activos para el año {selectedYear}.
                                           </td>
                                       </tr>
                                   )}
@@ -1061,7 +1173,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                   </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                  {offerActivities.filter(a => a.category === 'ADVISORY').map(act => {
+                                  {offerActivities.filter(a => a.category === 'ADVISORY' && a.year === selectedYear).map(act => {
                                       const advisoryEnrollments = enrollments.filter(e => e.activityId === act.id);
                                       const count = advisoryEnrollments.length;
                                       const totalSessions = advisoryEnrollments.reduce((acc, e) => acc + (e.sessionLogs?.length || 0), 0);
@@ -1097,10 +1209,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                           </tr>
                                       );
                                   })}
-                                  {offerActivities.filter(a => a.category === 'ADVISORY').length === 0 && (
+                                  {offerActivities.filter(a => a.category === 'ADVISORY' && a.year === selectedYear).length === 0 && (
                                       <tr>
                                           <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
-                                              No hay programas de asesoría activos. Inicializando datos...
+                                              No hay programas de asesoría activos para el año {selectedYear}.
                                           </td>
                                       </tr>
                                   )}
@@ -1114,6 +1226,121 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
       ) : null }
       
       {/* --- CATCH-ALL FOR STUDENT & ADMIN (If not Asesor) --- */}
+      
+      {/* --- MODAL DE DETALLES (RESTAURADO) --- */}
+      {showDetailModal && selectedEnrollmentDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-slate-200">
+                {(() => {
+                    const act = activities.find(a => a.id === selectedEnrollmentDetail.activityId);
+                    const isAdvisory = act?.category === 'ADVISORY';
+                    
+                    return (
+                        <>
+                            <div className={`p-6 border-b flex justify-between items-start ${isAdvisory ? 'bg-blue-50 border-blue-100' : 'bg-slate-50 border-slate-100'}`}>
+                                <div>
+                                    <h3 className={`text-xl font-bold ${isAdvisory ? 'text-blue-800' : 'text-slate-800'}`}>
+                                        {act?.name}
+                                    </h3>
+                                    <p className="text-sm text-slate-500 mt-1">{act?.modality} • {act?.year}</p>
+                                </div>
+                                <button onClick={() => setShowDetailModal(false)} className="text-slate-400 hover:text-slate-600 text-2xl font-bold leading-none">×</button>
+                            </div>
+                            
+                            <div className="p-6">
+                                {/* VISTA BITÁCORA (ASESORÍA) */}
+                                {isAdvisory ? (
+                                    <div className="space-y-6">
+                                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 flex items-center gap-4">
+                                            <div className="p-3 bg-white rounded-full text-blue-600 shadow-sm">
+                                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                                            </div>
+                                            <div>
+                                                <h4 className="font-bold text-blue-900">Bitácora de Acompañamiento</h4>
+                                                <p className="text-sm text-blue-700">Historial de sesiones registradas con tu asesor.</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            {selectedEnrollmentDetail.sessionLogs && selectedEnrollmentDetail.sessionLogs.length > 0 ? (
+                                                [...selectedEnrollmentDetail.sessionLogs].reverse().map((log, idx) => (
+                                                    <div key={idx} className="relative pl-6 pb-6 border-l-2 border-slate-200 last:pb-0">
+                                                        <div className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 ${log.verified ? 'bg-green-500 border-green-100' : 'bg-slate-300 border-slate-100'}`}></div>
+                                                        <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <div>
+                                                                    <span className="font-bold text-slate-700 block">{new Date(log.date).toLocaleDateString('es-CL', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                                                                    <span className="text-xs text-slate-500">Asesor: {log.advisorName || 'N/A'}</span>
+                                                                </div>
+                                                                {log.verified && (
+                                                                    <span className="bg-green-100 text-green-700 text-[10px] px-2 py-1 rounded font-bold uppercase border border-green-200 flex items-center gap-1">
+                                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                                        Firmado
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-sm text-slate-600 italic">"{log.observation}"</p>
+                                                            <div className="mt-3 flex gap-2 text-[10px] text-slate-400 font-mono">
+                                                                <span>Duración: {log.duration} min</span>
+                                                                {log.location && <span>• {log.location}</span>}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <div className="text-center py-8 text-slate-400 italic bg-slate-50 rounded-lg border border-dashed">
+                                                    No hay sesiones registradas en tu bitácora aún.
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    /* VISTA ACADÉMICA (CURSO) */
+                                    <div className="space-y-6">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-center">
+                                                <span className="block text-3xl font-bold text-slate-700">{selectedEnrollmentDetail.finalGrade || '-'}</span>
+                                                <span className="text-xs font-bold text-slate-400 uppercase">Nota Final</span>
+                                            </div>
+                                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-center">
+                                                <span className={`block text-3xl font-bold ${(selectedEnrollmentDetail.attendancePercentage || 0) < 75 ? 'text-red-500' : 'text-emerald-600'}`}>
+                                                    {selectedEnrollmentDetail.attendancePercentage || 0}%
+                                                </span>
+                                                <span className="text-xs font-bold text-slate-400 uppercase">Asistencia</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div>
+                                            <h4 className="font-bold text-slate-700 mb-3 text-sm border-b border-slate-100 pb-1">Calificaciones Parciales</h4>
+                                            <div className="flex gap-2">
+                                                {selectedEnrollmentDetail.grades && selectedEnrollmentDetail.grades.length > 0 ? (
+                                                    selectedEnrollmentDetail.grades.map((g, i) => (
+                                                        <div key={i} className="flex-1 bg-white border border-slate-200 p-2 rounded text-center">
+                                                            <span className="block text-xs text-slate-400 mb-1">N{i+1}</span>
+                                                            <span className="font-bold text-slate-700">{g}</span>
+                                                        </div>
+                                                    ))
+                                                ) : (
+                                                    <span className="text-sm text-slate-400 italic">Sin calificaciones registradas.</span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="pt-4 border-t border-slate-100">
+                                            <span className={`w-full block text-center py-2 rounded font-bold text-white ${selectedEnrollmentDetail.state === 'Aprobado' ? 'bg-emerald-500' : 'bg-slate-400'}`}>
+                                                Estado: {selectedEnrollmentDetail.state}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    );
+                })()}
+            </div>
+        </div>
+      )}
+
     </div>
   );
 };
