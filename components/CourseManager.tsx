@@ -135,7 +135,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           format: 'letter'
       });
 
-      const logoUrl = "https://raw.githubusercontent.com/vdhuerta/assets-aplications/main/Logo-UAD%20(2).png";
+      // CAMBIO DE IMAGEN: LOGO GRIS
+      const logoUrl = "https://raw.githubusercontent.com/vdhuerta/assets-aplications/main/Logo%20UAD%20-%20GRIS.png";
       let imgElement: HTMLImageElement | null = null;
       let imgRatio = 1;
 
@@ -185,11 +186,37 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       doc.setFillColor(30, 30, 30); 
       doc.rect(0, 0, 216, 25, 'F');
       
-      // Logo Superior Izquierdo (Proporcional)
-      if (imgElement) {
+      // Logo Superior Izquierdo (Proporcional) - Usamos la misma imagen para mantener consistencia visual si es necesario, o el logo original blanco si existe.
+      // Dado que el logo gris puede no verse bien sobre negro, mantenemos la lógica pero la imagen se cargó arriba.
+      // Si el logo gris es transparente con letras oscuras, puede no verse. 
+      // Asumiremos que el usuario quiere la marca de agua cambiada específicamente.
+      // Para el header, usamos el mismo objeto imgElement (ahora gris) o cargamos el original si es necesario.
+      // NOTA: Para el header sobre fondo oscuro, idealmente se usa una versión blanca.
+      // Si la imagen nueva es gris oscuro, se perderá. 
+      // Por seguridad y estética, cargaré el logo original (blanco/color) para el HEADER, y usaré el gris SOLO para la marca de agua.
+      
+      const logoHeaderUrl = "https://raw.githubusercontent.com/vdhuerta/assets-aplications/main/Logo-UAD%20(2).png";
+      let imgHeaderElement: HTMLImageElement | null = null;
+      let imgHeaderRatio = 1;
+
+      try {
+          const imgH = new Image();
+          imgH.crossOrigin = "Anonymous";
+          imgH.src = logoHeaderUrl;
+          await new Promise((resolve) => {
+              imgH.onload = resolve;
+              imgH.onerror = resolve;
+          });
+          if (imgH.width > 0) {
+              imgHeaderElement = imgH;
+              imgHeaderRatio = imgH.width / imgH.height;
+          }
+      } catch (e) {}
+
+      if (imgHeaderElement) {
           const hHeight = 18; // Altura fija para que quepa en la barra
-          const hWidth = hHeight * imgRatio; // Ancho proporcional
-          doc.addImage(imgElement, 'PNG', 15, 3.5, hWidth, hHeight);
+          const hWidth = hHeight * imgHeaderRatio; // Ancho proporcional
+          doc.addImage(imgHeaderElement, 'PNG', 15, 3.5, hWidth, hHeight);
       }
 
       // Texto Institucional Derecha
