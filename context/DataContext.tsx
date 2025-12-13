@@ -179,14 +179,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addActivity = async (activity: Activity) => {
-    setActivities(prev => [...prev, activity]); // Optimistic
+    // 1. Optimistic Update (Visualmente rápido)
+    setActivities(prev => [...prev, activity]); 
     
-    // DB Logic (Simplificada para brevedad, asume mapeo inverso ya implementado en componentes o aqui)
-    // En producción usaríamos un mapper inverso Activity -> DB row
+    // 2. Mapeo a Estructura DB
     const dbRow = {
         id: activity.id,
         name: activity.name,
-        // ... mapeo completo
         category: activity.category,
         activity_type: activity.activityType,
         internal_code: activity.internalCode,
@@ -197,18 +196,31 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         hours: activity.hours,
         module_count: activity.moduleCount,
         evaluation_count: activity.evaluationCount,
-        start_date: activity.startDate,
-        end_date: activity.endDate,
+        // CORRECCIÓN CRÍTICA: Sanitizar fechas vacías a NULL para evitar error "invalid input syntax for type date"
+        start_date: activity.startDate && activity.startDate !== '' ? activity.startDate : null,
+        end_date: activity.endDate && activity.endDate !== '' ? activity.endDate : null,
         relator: activity.relator,
         link_resources: activity.linkResources,
         class_link: activity.classLink,
         evaluation_link: activity.evaluationLink, 
         is_public: activity.isPublic,
-        program_config: activity.programConfig
+        program_config: activity.programConfig || null // Enviar null si es undefined
     };
     
-    await supabase.from('activities').upsert(dbRow);
-    fetchData(); // Sync final
+    // 3. Intento de Guardado
+    const { error } = await supabase.from('activities').upsert(dbRow);
+    
+    // 4. Manejo de Error
+    if (error) {
+        console.error("Error crítico al guardar actividad:", error.message, error.details, error.hint);
+        // REVERTIR CAMBIO OPTIMISTA si falló la BD
+        setActivities(prev => prev.filter(a => a.id !== activity.id));
+        // Relanzar error para que la UI lo muestre
+        throw error;
+    }
+    
+    // 5. Sincronización Final (Si todo salió bien)
+    fetchData(); 
   };
 
   const deleteActivity = async (id: string) => {

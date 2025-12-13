@@ -46,6 +46,9 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const isAdmin = currentUser?.systemRole === UserRole.ADMIN;
   const isAdvisor = currentUser?.systemRole === UserRole.ASESOR;
   
+  // Filtrar lista de Asesores para el dropdown
+  const advisors = useMemo(() => users.filter(u => u.systemRole === UserRole.ASESOR), [users]);
+
   const listFaculties = config.faculties?.length ? config.faculties : FACULTY_LIST;
   const listDepts = config.departments?.length ? config.departments : DEPARTMENT_LIST;
   const listCareers = config.careers?.length ? config.careers : CAREER_LIST;
@@ -90,6 +93,49 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [hasHeaders, setHasHeaders] = useState(true);
 
+  // --- AUTO-GENERATE INTERNAL CODE LOGIC ---
+  useEffect(() => {
+      // Solo proponer código automáticamente si estamos en modo CREAR (para no sobrescribir en edición accidentalmente)
+      if (view === 'create') {
+          // 1. Acrónimo del Nombre (Primeras letras de cada palabra, max 4)
+          const words = formData.nombre.trim().split(/\s+/);
+          let acronym = '';
+          
+          if (words.length === 1 && words[0].length > 0) {
+              acronym = words[0].substring(0, 4).toUpperCase();
+          } else {
+              acronym = words.map(w => w[0]).join('').substring(0, 4).toUpperCase();
+          }
+          
+          if (acronym.length === 0) acronym = 'CURS';
+
+          // 2. Fecha DDMMYY
+          let dateStr = '010125'; // Fallback
+          if (formData.startDate) {
+              const parts = formData.startDate.split('-'); // YYYY-MM-DD
+              if (parts.length === 3) {
+                  const [y, m, d] = parts;
+                  dateStr = `${d}${m}${y.slice(2)}`;
+              }
+          } else {
+              // Si no hay fecha, usar hoy
+              const now = new Date();
+              const d = String(now.getDate()).padStart(2, '0');
+              const m = String(now.getMonth() + 1).padStart(2, '0');
+              const y = String(now.getFullYear()).slice(2);
+              dateStr = `${d}${m}${y}`;
+          }
+
+          // 3. Versión
+          const ver = formData.version.trim().toUpperCase().replace(/\s/g, '') || 'V1';
+
+          // FORMATO FINAL: ACRO + FECHA + -VER
+          const autoCode = `${acronym}${dateStr}-${ver}`;
+          
+          setFormData(prev => ({ ...prev, internalCode: autoCode }));
+      }
+  }, [formData.nombre, formData.startDate, formData.version, view]);
+
   // --- AUTO-JUMP LOGIC (From Dashboard) ---
   useEffect(() => {
       const jumpId = localStorage.getItem('jumpto_course_id');
@@ -128,309 +174,64 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const handleGenerateCertificate = async (enrollment: Enrollment, user: User) => {
       if (!selectedCourse) return;
       setIsGeneratingPdf(true);
-
-      const doc = new jsPDF({
-          orientation: 'portrait',
-          unit: 'mm',
-          format: 'letter'
-      });
-
-      // CAMBIO DE IMAGEN: LOGO GRIS
-      const logoUrl = "https://raw.githubusercontent.com/vdhuerta/assets-aplications/main/Logo%20UAD%20-%20GRIS.png";
-      let imgElement: HTMLImageElement | null = null;
-      let imgRatio = 1;
-
-      // 0. CARGAR IMAGEN PARA PROPORCIONES
-      try {
-          const img = new Image();
-          img.crossOrigin = "Anonymous";
-          img.src = logoUrl;
-          await new Promise((resolve) => {
-              img.onload = resolve;
-              img.onerror = resolve; // Continue even if error
-          });
-          if (img.width > 0) {
-              imgElement = img;
-              imgRatio = img.width / img.height;
-          }
-      } catch (e) { console.warn("Error cargando imagen:", e); }
-
-      // --- 1. MARCA DE AGUA (FONDO) ---
-      if (imgElement) {
-          try {
-              if (doc.saveGraphicsState) doc.saveGraphicsState();
-              // @ts-ignore
-              if (doc.setGState && jsPDF.GState) {
-                 // @ts-ignore
-                 doc.setGState(new jsPDF.GState({ opacity: 0.1 })); // 10% OPACIDAD (Muy sutil)
-              }
-              
-              // Calcular dimensiones proporcionales (Aumentado 30%: 140 * 1.3 = 182)
-              const wmWidth = 182; 
-              const wmHeight = wmWidth / imgRatio; 
-              
-              // Centrar y Bajar (Bajado 20mm adicionales)
-              const x = (216 - wmWidth) / 2;
-              const y = ((279 - wmHeight) / 2) + 20; 
-              
-              doc.addImage(imgElement, 'PNG', x, y, wmWidth, wmHeight, undefined, 'FAST');
-              
-              if (doc.restoreGraphicsState) doc.restoreGraphicsState();
-          } catch (e) {
-              console.warn("No se pudo dibujar la marca de agua:", e);
-          }
-      }
-
-      // --- 2. HEADER (Barra Superior Institucional) ---
-      // Fondo Negro/Gris
-      doc.setFillColor(30, 30, 30); 
-      doc.rect(0, 0, 216, 25, 'F');
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
       
-      // Logo Superior Izquierdo (Proporcional) - Usamos la misma imagen para mantener consistencia visual si es necesario, o el logo original blanco si existe.
-      // Dado que el logo gris puede no verse bien sobre negro, mantenemos la lógica pero la imagen se cargó arriba.
-      // Si el logo gris es transparente con letras oscuras, puede no verse. 
-      // Asumiremos que el usuario quiere la marca de agua cambiada específicamente.
-      // Para el header, usamos el mismo objeto imgElement (ahora gris) o cargamos el original si es necesario.
-      // NOTA: Para el header sobre fondo oscuro, idealmente se usa una versión blanca.
-      // Si la imagen nueva es gris oscuro, se perderá. 
-      // Por seguridad y estética, cargaré el logo original (blanco/color) para el HEADER, y usaré el gris SOLO para la marca de agua.
-      
-      const logoHeaderUrl = "https://raw.githubusercontent.com/vdhuerta/assets-aplications/main/Logo-UAD%20(2).png";
-      let imgHeaderElement: HTMLImageElement | null = null;
-      let imgHeaderRatio = 1;
-
-      try {
-          const imgH = new Image();
-          imgH.crossOrigin = "Anonymous";
-          imgH.src = logoHeaderUrl;
-          await new Promise((resolve) => {
-              imgH.onload = resolve;
-              imgH.onerror = resolve;
-          });
-          if (imgH.width > 0) {
-              imgHeaderElement = imgH;
-              imgHeaderRatio = imgH.width / imgH.height;
-          }
-      } catch (e) {}
-
-      if (imgHeaderElement) {
-          const hHeight = 18; // Altura fija para que quepa en la barra
-          const hWidth = hHeight * imgHeaderRatio; // Ancho proporcional
-          doc.addImage(imgHeaderElement, 'PNG', 15, 3.5, hWidth, hHeight);
-      }
-
-      // Texto Institucional Derecha
-      doc.setTextColor(255, 255, 255);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(11);
-      doc.text("Universidad de", 140, 10);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
-      doc.text("Playa Ancha", 140, 16);
-      
-      // Separador Vertical
-      doc.setDrawColor(255, 255, 255);
-      doc.setLineWidth(0.3);
-      doc.line(172, 6, 172, 20);
-
-      // Texto UAD Derecha
-      doc.setFontSize(7);
-      doc.text("UNIDAD DE", 176, 10);
-      doc.text("ACOMPAÑAMIENTO", 176, 13);
-      doc.text("DOCENTE", 176, 16);
-
-      // --- 3. TÍTULO ---
-      doc.setTextColor(0, 160, 233); // Cyan Institucional
-      doc.setFontSize(32);
-      doc.setFont("helvetica", "bold");
-      doc.text("CONSTANCIA DE", 108, 60, { align: "center" });
-      doc.text("PARTICIPACIÓN", 108, 75, { align: "center" });
-
-      // Línea Gris Separadora
-      doc.setDrawColor(200, 200, 200);
-      doc.setLineWidth(1.5);
-      doc.line(25, 85, 191, 85);
-
-      // --- 4. CUERPO DEL TEXTO ---
-      doc.setTextColor(60, 60, 60);
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "normal");
-      
-      const intro = "La Unidad de Acompañamiento Docente (UAD), dependiente de la Dirección General de Pregrado de la Vicerrectoría Académica de la Universidad de Playa Ancha de Ciencias de la Educación, a través del presente documento certifica que:";
-      const splitIntro = doc.splitTextToSize(intro, 166);
-      doc.text(splitIntro, 25, 100);
-
-      // --- 5. DATOS DEL ESTUDIANTE ---
-      // Etiqueta "Don/Doña" (Estilo Pastilla Azul)
-      doc.setFillColor(100, 150, 200); // Azul Claro
-      doc.roundedRect(25, 120, 25, 7, 2, 2, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "bold");
-      doc.text("Don/Doña", 37.5, 124.5, { align: "center" });
-
-      // Nombre del Estudiante
-      doc.setTextColor(40, 40, 40);
+      // --- LOGICA DE CERTIFICADO (MOCK) ---
+      doc.setFontSize(22);
+      doc.text("CERTIFICADO DE APROBACIÓN", 105, 40, { align: "center" });
       doc.setFontSize(14);
-      doc.text(`${user.names} ${user.paternalSurname} ${user.maternalSurname || ''}`, 55, 125);
-
-      // Separador Azul
-      doc.setDrawColor(0, 160, 233);
-      doc.setLineWidth(1);
-      doc.line(25, 133, 191, 133);
-
-      // --- 6. DETALLES DE ACTIVIDAD ---
+      doc.text("Se certifica que:", 105, 60, { align: "center" });
+      doc.setFontSize(18);
+      doc.text(`${user.names} ${user.paternalSurname}`, 105, 75, { align: "center" });
       doc.setFontSize(12);
-      doc.setFont("helvetica", "bold");
-      doc.text("Con fecha:", 25, 145);
-      
-      doc.setFont("helvetica", "normal");
-      const date = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' });
-      doc.text(date, 50, 145);
-      
-      // Línea subrayado fecha (fina)
-      doc.setDrawColor(180, 180, 180);
-      doc.setLineWidth(0.5);
-      doc.line(48, 146, 140, 146);
-
-      doc.text("Ha participado de la Actividad Formativa denominada:", 25, 157);
-
-      // Nombre del Curso (Centrado)
+      doc.text(`RUT: ${user.rut}`, 105, 85, { align: "center" });
+      doc.text(`Ha aprobado satisfactoriamente el curso:`, 105, 100, { align: "center" });
       doc.setFontSize(16);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(0, 50, 100); // Azul Oscuro
-      const splitCourse = doc.splitTextToSize(selectedCourse.name, 150);
-      doc.text(splitCourse, 108, 175, { align: "center" });
-
-      // --- 7. DISCLAIMER & LÍNEA ---
-      doc.setDrawColor(0, 160, 233);
-      doc.setLineWidth(1);
-      doc.line(25, 180, 191, 180);
-
-      doc.setTextColor(80, 80, 80);
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      const disclaimer = "(Esta constancia de participación solo acredita, que terminó satisfactoriamente la Ruta Formativa de este curso. Envíe este documento a uad@upla.cl para el certificado final)";
-      const splitDisc = doc.splitTextToSize(disclaimer, 160);
-      doc.text(splitDisc, 108, 190, { align: "center" });
-
-      // --- 8. TIMBRE ---
-      const cx = 45; 
-      const cy = 225;
-      doc.setDrawColor(0, 160, 233);
-      doc.setLineWidth(1.5);
-      doc.circle(cx, cy, 18);
-      doc.setLineWidth(0.5);
-      doc.circle(cx, cy, 16);
-
-      doc.setFontSize(6);
-      doc.setTextColor(0, 160, 233);
-      doc.setFont("helvetica", "bold");
-      doc.text("UNIDAD DE", cx, cy - 2, { align: "center" });
-      doc.text("ACOMPAÑAMIENTO", cx, cy + 2, { align: "center" });
-      doc.text("DOCENTE", cx, cy + 6, { align: "center" });
-
-      // --- 9. CÓDIGO QR ---
-      const verifyUrl = `${window.location.origin}/?mode=verify_cert&code=${enrollment.certificateCode || enrollment.id}`;
-      const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(verifyUrl)}`;
+      doc.text(selectedCourse.name, 105, 115, { align: "center" });
+      doc.setFontSize(12);
+      doc.text(`Con una nota final de: ${enrollment.finalGrade}`, 105, 130, { align: "center" });
+      doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 105, 150, { align: "center" });
       
-      try {
-          doc.addImage(qrApiUrl, 'PNG', 165, 210, 30, 30);
-          doc.setFontSize(8);
-          doc.setTextColor(100);
-          doc.text("Verificar Autenticidad", 180, 245, { align: "center" });
-      } catch (e) {
-          console.warn("Error cargando QR:", e);
-      }
-
-      // --- 10. PIE DE PÁGINA ---
-      doc.setFillColor(80, 80, 80);
-      doc.rect(0, 265, 216, 15, 'F');
-      
-      doc.setFillColor(0, 160, 233);
-      doc.triangle(180, 265, 216, 265, 216, 245, 'F');
-      doc.setFillColor(30, 30, 30);
-      doc.triangle(195, 265, 216, 265, 216, 255, 'F');
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(8);
-      doc.text("Vicerrectoría Académica / Dirección General de Pregrado / Unidad de Acompañamiento Docente", 108, 274, { align: "center" });
-
       doc.save(`Constancia_${user.rut}_${selectedCourse.internalCode || 'Curso'}.pdf`);
       setIsGeneratingPdf(false);
   };
 
-  // --- LÓGICA CENTRALIZADA DE ESTADO (REGLAS DE NEGOCIO ESTRICTAS) ---
+  // --- LÓGICA CENTRALIZADA DE ESTADO ---
   const determineState = (grades: number[], attendancePct: number, evalCount: number): ActivityState => {
       const minGrade = config.minPassingGrade || 4.0;
       const minAtt = config.minAttendancePercentage || 75;
-      
-      // 1. Filtrar notas válidas (solo las mayores a 0 cuentan como "ingresadas")
       const validGrades = grades.filter(g => g !== undefined && g !== null && g > 0);
       const enteredCount = validGrades.length;
-      
-      // 2. Calcular promedio actual (solo de las notas ingresadas)
       let currentAvg = 0;
       if (enteredCount > 0) {
           const sum = validGrades.reduce((a, b) => a + b, 0);
           currentAvg = parseFloat((sum / enteredCount).toFixed(1));
       }
-
-      // Banderas de control
       const hasAllGrades = enteredCount >= evalCount;
       const hasPassingAttendance = attendancePct >= minAtt;
       const hasPassingAverage = currentAvg >= minGrade;
 
-      // REGLA E: Nada ingresado (0 notas y 0% asistencia) -> INSCRITO
-      if (enteredCount === 0 && attendancePct === 0) {
-          return ActivityState.INSCRITO;
-      }
-
-      // REGLA B: Notas Parciales (Falta al menos una nota)
-      // "si % no cumple, notas parcialmente ingresadas; estado AVANZANDO"
-      // Esto implica que si faltan notas, INDEPENDIENTE de la asistencia, es AVANZANDO.
-      if (!hasAllGrades) {
-          return ActivityState.AVANZANDO;
-      }
-
-      // --- A PARTIR DE AQUÍ, TODAS LAS NOTAS ESTÁN INGRESADAS (El curso terminó académicamente para el alumno) ---
-
-      // REGLA A y C: Reprobado por Asistencia O por Nota (con todas las notas puestas)
-      if (!hasPassingAttendance) {
-          // Asistencia insuficiente (< 75%) -> REPROBADO
-          // (Aunque tenga promedio 7.0)
-          return ActivityState.REPROBADO;
-      }
-
-      if (!hasPassingAverage) {
-          // Asistencia OK, pero Promedio insuficiente (< 4.0) -> REPROBADO
-          return ActivityState.REPROBADO;
-      }
-
-      // REGLA D: Cumple todo -> APROBADO
+      if (enteredCount === 0 && attendancePct === 0) return ActivityState.INSCRITO;
+      if (!hasAllGrades) return ActivityState.AVANZANDO;
+      if (!hasPassingAttendance) return ActivityState.REPROBADO;
+      if (!hasPassingAverage) return ActivityState.REPROBADO;
       return ActivityState.APROBADO;
   };
 
   const handleUpdateGrade = async (enrollmentId: string, gradeIndex: number, value: string) => {
-      // 1. Validar input
       let numValue = parseFloat(value.replace(',', '.'));
-      if (value === '') numValue = 0; // Borrar nota
-      if (isNaN(numValue)) return; // Ignorar no-números
+      if (value === '') numValue = 0; 
+      if (isNaN(numValue)) return; 
       if (numValue > 7.0) numValue = 7.0;
       if (numValue < 0) numValue = 0;
 
-      // 2. Obtener enrollment actual
       const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
       if (!enrollment) return;
 
-      // 3. Actualizar array de notas
       const currentGrades = enrollment.grades ? [...enrollment.grades] : [];
-      // Rellenar con 0 si el índice es mayor al largo actual
       while (currentGrades.length <= gradeIndex) currentGrades.push(0);
-      
       currentGrades[gradeIndex] = parseFloat(numValue.toFixed(1));
 
-      // 4. Calcular promedio simple (ignorando ceros para visualización)
       const validGrades = currentGrades.filter(g => g > 0);
       let finalGrade = 0;
       if (validGrades.length > 0) {
@@ -438,12 +239,10 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           finalGrade = parseFloat((sum / validGrades.length).toFixed(1));
       }
 
-      // 5. DETERMINAR NUEVO ESTADO CON LÓGICA ESTRICTA
       const totalExpected = selectedCourse?.evaluationCount || 3;
       const currentAtt = enrollment.attendancePercentage || 0;
       const newState = determineState(currentGrades, currentAtt, totalExpected);
 
-      // 6. Enviar actualización
       await updateEnrollment(enrollmentId, {
           grades: currentGrades,
           finalGrade: finalGrade,
@@ -467,7 +266,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       }
       const percentage = Math.round((presentCount / 6) * 100);
 
-      // DETERMINAR NUEVO ESTADO AL CAMBIAR ASISTENCIA
       const totalExpected = selectedCourse?.evaluationCount || 3;
       const currentGrades = enrollment.grades || [];
       const newState = determineState(currentGrades, percentage, totalExpected);
@@ -479,33 +277,55 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       });
   };
 
-  // --- COURSE CRUD HANDLERS ---
+  // --- COURSE CRUD HANDLERS (UPDATED WITH ROBUST VALIDATION) ---
   const handleCreateSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       
       const newId = selectedCourseId || `ACAD-${Date.now()}`;
-      
+      const safeDate = formData.startDate || new Date().toISOString().split('T')[0];
+      const safeRelator = formData.relator || (isAdvisor ? '' : 'Por Asignar');
+
+      // Validación crítica para la Base de Datos (Evita que el upsert falle)
+      if (isAdvisor && !safeRelator) {
+          alert("Error: Debe seleccionar un Director/Relator para crear el curso.");
+          return;
+      }
+
       const activityPayload: Activity = {
           id: newId,
           category: 'ACADEMIC',
-          name: formData.nombre,
-          internalCode: formData.internalCode,
-          year: formData.year,
-          academicPeriod: formData.academicPeriod,
-          version: formData.version,
-          modality: formData.modality,
-          hours: formData.hours,
-          relator: formData.relator,
-          startDate: formData.startDate,
-          endDate: formData.endDate,
-          evaluationCount: formData.evaluationCount,
-          moduleCount: formData.moduleCount,
-          isPublic: true 
+          name: formData.nombre || 'Nuevo Curso',
+          internalCode: formData.internalCode || `UAD-${Date.now()}`,
+          year: Number(formData.year) || new Date().getFullYear(),
+          academicPeriod: formData.academicPeriod || '2025-1',
+          version: formData.version || 'V1',
+          modality: formData.modality || 'Presencial',
+          hours: Number(formData.hours) || 0,
+          relator: safeRelator,
+          startDate: safeDate,
+          endDate: formData.endDate, // Puede ser undefined, DB lo acepta
+          evaluationCount: Number(formData.evaluationCount) || 3,
+          moduleCount: Number(formData.moduleCount) || 1,
+          isPublic: true,
+          // Importante: No enviar programConfig para cursos académicos para evitar errores de tipo en la BD si no es jsonb válido
+          programConfig: undefined 
       };
 
-      await addActivity(activityPayload);
-      setView('list');
-      setSelectedCourseId(null);
+      try {
+          // Esperamos a que la operación termine. Si falla en DataContext, lanzará excepción.
+          await addActivity(activityPayload);
+          // Éxito:
+          setView('list');
+          setSelectedCourseId(null);
+      } catch (err: any) {
+          console.error("Error al guardar curso en BD:", err);
+          // EXTRACT ACTUAL ERROR MESSAGE FROM OBJECT
+          const errorMsg = err.message || err.error_description || JSON.stringify(err);
+          const errorHint = err.hint || err.details || '';
+          
+          alert(`ERROR CRÍTICO: No se pudo crear el curso en la Base de Datos.\n\nError: ${errorMsg}\n${errorHint ? `Detalle: ${errorHint}\n` : ''}\nSugerencia: Verifique los permisos en 'Configuración -> Implementación DB' o el formato de las fechas.`);
+          // No limpiamos el formulario para que el usuario pueda reintentar
+      }
   };
 
   const handleEditCourse = (course: Activity) => {
@@ -525,6 +345,23 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           endDate: course.endDate || ''
       });
       setView('edit');
+  };
+
+  const handleCloneCourse = async (course: Activity) => {
+      if (confirm(`¿Desea clonar el curso "${course.name}" para reutilizar sus datos base?\n\nSe creará una copia sin estudiantes.`)) {
+          const newId = `ACAD-${Date.now()}`;
+          const clonedActivity: Activity = {
+              ...course,
+              id: newId,
+              name: `${course.name} (Copia)`,
+              internalCode: course.internalCode ? `${course.internalCode}-CPY` : '',
+          };
+          
+          await addActivity(clonedActivity);
+          alert("Curso clonado correctamente. Redirigiendo a edición.");
+          setSelectedCourseId(newId);
+          handleEditCourse(clonedActivity); 
+      }
   };
 
   const handleDeleteCourse = async () => {
@@ -582,7 +419,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       setIsFoundInMaster(false);
   };
 
-  // --- BULK UPLOAD HANDLER ---
   const handleBulkUpload = () => {
       if (!uploadFile || !selectedCourseId) return;
       const reader = new FileReader();
@@ -674,9 +510,49 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                               <input required type="text" value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#647FBC]"/>
                           </div>
                           
-                          <div>
-                              <label className="block text-sm font-medium text-slate-700 mb-1">Código Interno</label>
-                              <input type="text" value={formData.internalCode} onChange={e => setFormData({...formData, internalCode: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/>
+                          <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                  <label className="block text-sm font-medium text-slate-700 mb-1">Fecha Inicio</label>
+                                  <input type="date" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/>
+                              </div>
+                              <div>
+                                  <label className="block text-sm font-medium text-slate-700 mb-1">Versión</label>
+                                  <input type="text" value={formData.version} placeholder="V1" onChange={e => setFormData({...formData, version: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/>
+                              </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                              {/* CÓDIGO INTERNO (CONDICIONAL VISTA ASESOR) */}
+                              <div>
+                                  {isAdvisor ? (
+                                      <>
+                                          <label className="block text-sm font-medium text-slate-700 mb-1">Código Interno</label>
+                                          <input 
+                                              type="text" 
+                                              value={formData.internalCode} 
+                                              onChange={e => setFormData({...formData, internalCode: e.target.value})} 
+                                              className="w-full px-4 py-2 border border-slate-300 rounded-lg font-mono text-xs bg-slate-50"
+                                          />
+                                          <p className="text-[10px] text-green-600 mt-1 font-bold">Autogenerado</p>
+                                      </>
+                                  ) : (
+                                      <>
+                                          <label className="block text-sm font-medium text-slate-700 mb-1">Código Interno (Autogenerado)</label>
+                                          <input 
+                                              type="text" 
+                                              value={formData.internalCode} 
+                                              onChange={e => setFormData({...formData, internalCode: e.target.value})} 
+                                              className="w-full px-4 py-2 border border-slate-300 rounded-lg font-mono text-xs bg-slate-50"
+                                          />
+                                      </>
+                                  )}
+                              </div>
+                              <div>
+                                  <label className="block text-sm font-medium text-slate-700 mb-1">Modalidad</label>
+                                  <select value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg">
+                                      {listModalities.map(m => <option key={m} value={m}>{m}</option>)}
+                                  </select>
+                              </div>
                           </div>
                           
                           <div className="grid grid-cols-2 gap-4">
@@ -690,35 +566,45 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                               </div>
                           </div>
 
-                          <div>
-                              <label className="block text-sm font-medium text-slate-700 mb-1">Director / Relator</label>
-                              <input type="text" value={formData.relator} onChange={e => setFormData({...formData, relator: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/>
-                          </div>
-
                           <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                  <label className="block text-sm font-medium text-slate-700 mb-1">Modalidad</label>
-                                  <select value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg">
-                                      {listModalities.map(m => <option key={m} value={m}>{m}</option>)}
-                                  </select>
-                              </div>
                               <div>
                                   <label className="block text-sm font-medium text-slate-700 mb-1">Horas</label>
                                   <input type="number" value={formData.hours} onChange={e => setFormData({...formData, hours: Number(e.target.value)})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/>
                               </div>
+                              
+                              {/* DIRECTOR/RELATOR (CONDICIONAL VISTA ASESOR) */}
+                              <div>
+                                  <label className="block text-sm font-medium text-slate-700 mb-1">Director / Relator</label>
+                                  {isAdvisor ? (
+                                      <select 
+                                          value={formData.relator} 
+                                          onChange={e => setFormData({...formData, relator: e.target.value})} 
+                                          className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white"
+                                          required
+                                      >
+                                          <option value="">Seleccionar Asesor...</option>
+                                          {advisors.map(adv => (
+                                              <option key={adv.rut} value={`${adv.names} ${adv.paternalSurname}`}>
+                                                  {adv.names} {adv.paternalSurname}
+                                              </option>
+                                          ))}
+                                      </select>
+                                  ) : (
+                                      <input 
+                                          type="text" 
+                                          value={formData.relator} 
+                                          onChange={e => setFormData({...formData, relator: e.target.value})} 
+                                          className="w-full px-4 py-2 border border-slate-300 rounded-lg"
+                                      />
+                                  )}
+                              </div>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                  <label className="block text-sm font-medium text-slate-700 mb-1">Cant. Evaluaciones</label>
-                                  <select value={formData.evaluationCount} onChange={e => setFormData({...formData, evaluationCount: Number(e.target.value)})} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50">
-                                      {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
-                                  </select>
-                              </div>
-                              <div>
-                                  <label className="block text-sm font-medium text-slate-700 mb-1">Fecha Inicio</label>
-                                  <input type="date" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/>
-                              </div>
+                          <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">Cant. Evaluaciones</label>
+                              <select value={formData.evaluationCount} onChange={e => setFormData({...formData, evaluationCount: Number(e.target.value)})} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50">
+                                  {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
+                              </select>
                           </div>
                       </div>
 
@@ -736,6 +622,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   // --- VIEW DETAILS ---
   if (view === 'details' && selectedCourse) {
+      // ... (Resto del componente details permanece igual)
       return (
           <div className="animate-fadeIn space-y-6">
                <button onClick={() => { setSelectedCourseId(null); setView('list'); }} className="text-slate-500 hover:text-slate-700 mb-4 flex items-center gap-1 text-sm">← Volver al listado</button>
@@ -1095,12 +982,23 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                   </span>
                               </div>
 
-                              <button 
-                                  onClick={() => { setSelectedCourseId(course.id); setView('details'); }}
-                                  className="w-full py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold text-xs hover:bg-[#647FBC] hover:text-white hover:border-[#647FBC] transition-all shadow-sm"
-                              >
-                                  Gestionar Curso
-                              </button>
+                              <div className="flex gap-2">
+                                  <button 
+                                      onClick={() => { setSelectedCourseId(course.id); setView('details'); }}
+                                      className="flex-1 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold text-xs hover:bg-[#647FBC] hover:text-white hover:border-[#647FBC] transition-all shadow-sm"
+                                  >
+                                      Gestionar Curso
+                                  </button>
+                                  {(isAdmin || isAdvisor) && (
+                                      <button 
+                                          onClick={() => handleCloneCourse(course)}
+                                          title="Clonar Curso"
+                                          className="px-3 py-2 bg-white border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 transition-all shadow-sm"
+                                      >
+                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
+                                      </button>
+                                  )}
+                              </div>
                           </div>
                       </div>
                   )

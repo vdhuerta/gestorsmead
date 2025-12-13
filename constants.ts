@@ -361,11 +361,13 @@ export const FULL_JSON_MODEL = {
 
 export const SUPABASE_SQL_SCRIPT = `
 -- ====================================================================
--- SCRIPT DE REPARACIÓN TOTAL Y PERMISOS - SMEAD V4
--- Ejecuta este script en el SQL Editor de Supabase para corregir problemas de guardado.
+-- SCRIPT DE REPARACIÓN TOTAL Y PERMISOS - GESTOR SMEAD
+-- Ejecuta esto para solucionar el error de "Curso desaparece al crear"
 -- ====================================================================
 
--- 1. ASEGURAR COLUMNAS PARA POSTÍTULOS Y ASESORÍAS
+-- 1. ASEGURAR QUE LAS TABLAS TENGAN LAS COLUMNAS NECESARIAS
+-- (Evita errores si la columna ya existe)
+
 ALTER TABLE public.activities 
 ADD COLUMN IF NOT EXISTS program_config jsonb;
 
@@ -378,34 +380,37 @@ ADD COLUMN IF NOT EXISTS session_logs jsonb DEFAULT '[]'::jsonb;
 ALTER TABLE public.enrollments 
 ADD COLUMN IF NOT EXISTS certificate_code text;
 
--- 2. REINICIAR POLÍTICAS DE SEGURIDAD (RLS)
--- Esto corrige el error "infinite recursion" y problemas de permisos de escritura.
+-- 2. CORREGIR PERMISOS (RLS - Row Level Security)
+-- Esto es lo que causa que los datos no se guarden.
 
--- Deshabilitar RLS temporalmente para limpiar
-ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.activities DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.enrollments DISABLE ROW LEVEL SECURITY;
+-- Primero, habilitamos RLS por seguridad estandar
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
 
--- Borrar políticas antiguas conflictivas
+-- Borramos políticas antiguas que podrían estar bloqueando o causando conflictos
 DROP POLICY IF EXISTS "Permitir Todo Users" ON public.users;
 DROP POLICY IF EXISTS "Permitir Todo Activities" ON public.activities;
 DROP POLICY IF EXISTS "Permitir Todo Enrollments" ON public.enrollments;
 DROP POLICY IF EXISTS "Enable read access for all users" ON public.users;
 DROP POLICY IF EXISTS "Enable insert for authenticated users only" ON public.users;
+DROP POLICY IF EXISTS "Public Access" ON public.users;
+DROP POLICY IF EXISTS "Public Access" ON public.activities;
+DROP POLICY IF EXISTS "Public Access" ON public.enrollments;
 
--- Habilitar RLS nuevamente
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
+-- 3. CREAR POLÍTICAS PERMISIVAS
+-- Esto permite LEER (SELECT) y ESCRIBIR (INSERT/UPDATE/DELETE) a la aplicación
 
--- Crear políticas PERMISIVAS (Públicas/Anon para evitar bloqueos en esta etapa)
--- NOTA: En producción real, esto debería restringirse por auth.uid()
-CREATE POLICY "Permitir Todo Users" ON public.users FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Permitir Todo Activities" ON public.activities FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Permitir Todo Enrollments" ON public.enrollments FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir Todo Users" ON public.users 
+FOR ALL USING (true) WITH CHECK (true);
 
--- 3. REFRESCAR CACHÉ DE API
--- Obliga a PostgREST a reconocer las nuevas columnas (program_config, session_logs)
+CREATE POLICY "Permitir Todo Activities" ON public.activities 
+FOR ALL USING (true) WITH CHECK (true);
+
+CREATE POLICY "Permitir Todo Enrollments" ON public.enrollments 
+FOR ALL USING (true) WITH CHECK (true);
+
+-- 4. RECARGAR LA CONFIGURACIÓN DE SUPABASE
 NOTIFY pgrst, 'reload config';
 `;
 
