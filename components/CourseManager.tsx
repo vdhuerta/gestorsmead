@@ -8,6 +8,7 @@ import { SmartSelect } from './SmartSelect';
 import { read, utils } from 'xlsx';
 // @ts-ignore
 import { jsPDF } from 'jspdf';
+import { useReloadDirective } from '../hooks/useReloadDirective';
 
 // --- Utility Functions ---
 const cleanRutFormat = (rut: string): string => {
@@ -43,6 +44,8 @@ interface CourseManagerProps {
 
 export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => {
   const { activities, addActivity, deleteActivity, users, enrollments, upsertUsers, enrollUser, bulkEnroll, updateEnrollment, getUser, config, refreshData } = useData();
+  const { isSyncing, executeReload } = useReloadDirective(); // DIRECTIVA_RECARGA
+
   const isAdmin = currentUser?.systemRole === UserRole.ADMIN;
   const isAdvisor = currentUser?.systemRole === UserRole.ASESOR;
   
@@ -63,8 +66,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('enrollment');
   
-  // States for Sync & Loading
-  const [isSyncing, setIsSyncing] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   // Form States
@@ -166,9 +167,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   // --- HANDLERS ---
 
   const handleRefresh = async () => {
-      setIsSyncing(true);
-      await refreshData();
-      setTimeout(() => setIsSyncing(false), 800);
+      await executeReload(); // DIRECTIVA_RECARGA
   };
 
   const handleGenerateCertificate = async (enrollment: Enrollment, user: User) => {
@@ -248,6 +247,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           finalGrade: finalGrade,
           state: newState
       });
+      await executeReload(); // DIRECTIVA_RECARGA
   };
 
   const handleToggleAttendance = async (enrollmentId: string, sessionIndex: number) => {
@@ -275,6 +275,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           attendancePercentage: percentage,
           state: newState
       });
+      await executeReload(); // DIRECTIVA_RECARGA
   };
 
   // --- COURSE CRUD HANDLERS (UPDATED WITH ROBUST VALIDATION) ---
@@ -314,6 +315,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       try {
           // Esperamos a que la operación termine. Si falla en DataContext, lanzará excepción.
           await addActivity(activityPayload);
+          await executeReload(); // DIRECTIVA_RECARGA
           // Éxito:
           setView('list');
           setSelectedCourseId(null);
@@ -358,6 +360,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           };
           
           await addActivity(clonedActivity);
+          await executeReload(); // DIRECTIVA_RECARGA
           alert("Curso clonado correctamente. Redirigiendo a edición.");
           setSelectedCourseId(newId);
           handleEditCourse(clonedActivity); 
@@ -368,6 +371,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       if (!selectedCourseId) return;
       if (confirm("¿Está seguro de eliminar este curso y todos sus datos asociados?")) {
           await deleteActivity(selectedCourseId);
+          await executeReload(); // DIRECTIVA_RECARGA
           setView('list');
           setSelectedCourseId(null);
       }
@@ -414,6 +418,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
       await upsertUsers([userToUpsert]);
       await enrollUser(formattedRut, selectedCourseId);
+      await executeReload(); // DIRECTIVA_RECARGA
+
       setEnrollMsg({ type: 'success', text: 'Matriculado correctamente.' });
       setManualForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
       setIsFoundInMaster(false);
@@ -476,6 +482,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
           if (usersToUpsert.length > 0) { await upsertUsers(usersToUpsert); }
           const result = await bulkEnroll(rutsToEnroll, selectedCourseId);
+          await executeReload(); // DIRECTIVA_RECARGA
           setEnrollMsg({ type: 'success', text: `Carga Masiva: ${result.success} nuevos inscritos, ${result.skipped} ya existentes.` });
           setUploadFile(null);
       };
@@ -609,7 +616,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                       </div>
 
                       <div className="pt-6 border-t border-slate-100 flex justify-end">
-                          <button type="submit" className="bg-[#647FBC] hover:bg-blue-800 text-white px-8 py-3 rounded-lg font-bold shadow-lg transition-colors flex items-center gap-2">
+                          <button type="submit" disabled={isSyncing} className={`bg-[#647FBC] hover:bg-blue-800 text-white px-8 py-3 rounded-lg font-bold shadow-lg transition-colors flex items-center gap-2 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>
                               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                               {view === 'create' ? 'Crear Curso' : 'Guardar Cambios'}
                           </button>
@@ -726,7 +733,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                           </div>
                                       </div>
                                       
-                                      <button type="submit" className="w-full bg-[#647FBC] text-white px-4 py-3 rounded-lg text-sm font-bold shadow hover:bg-blue-800 transition-colors mt-4">
+                                      <button type="submit" disabled={isSyncing} className={`w-full bg-[#647FBC] text-white px-4 py-3 rounded-lg text-sm font-bold shadow hover:bg-blue-800 transition-colors mt-4 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>
                                           Matricular Estudiante
                                       </button>
                                       {enrollMsg && <p className={`text-xs text-center ${enrollMsg.type === 'success' ? 'text-green-600 font-bold' : 'text-red-600'}`}>{enrollMsg.text}</p>}
@@ -804,7 +811,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                   <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                                       <h3 className="font-bold text-slate-700">Sábana de Notas y Asistencia</h3>
                                       <div className="flex items-center gap-2">
-                                          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                          <span className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-amber-400' : 'bg-green-500'} animate-pulse`}></span>
                                           <span className="text-xs text-slate-500 italic">Guardado automático activo</span>
                                       </div>
                                   </div>

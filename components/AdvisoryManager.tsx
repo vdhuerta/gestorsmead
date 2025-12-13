@@ -5,6 +5,7 @@ import { Enrollment, User, UserRole, Activity, SessionLog } from '../types';
 import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST } from '../constants';
 import { SmartSelect } from './SmartSelect';
 import { supabase } from '../services/supabaseClient';
+import { useReloadDirective } from '../hooks/useReloadDirective';
 
 // ID Constante para la actividad contenedora de todas las asesorías del año
 const ADVISORY_ACTIVITY_ID = `ADVISORY-GENERAL-${new Date().getFullYear()}`;
@@ -131,7 +132,8 @@ export const PublicVerification: React.FC<{ code: string }> = ({ code }) => {
 interface AdvisoryManagerProps { currentUser?: User; }
 
 export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser }) => {
-    const { enrollments, users, addActivity, activities, upsertUsers, enrollUser, updateEnrollment, deleteEnrollment, getUser, config, refreshData } = useData();
+    const { enrollments, users, addActivity, activities, upsertUsers, enrollUser, updateEnrollment, deleteEnrollment, getUser, config } = useData();
+    const { isSyncing, executeReload } = useReloadDirective(); // DIRECTIVA_RECARGA
     
     // Lists & Config
     const listFaculties = config.faculties?.length ? config.faculties : FACULTY_LIST;
@@ -145,7 +147,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const [view, setView] = useState<'list' | 'manage'>('list');
     const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string | null>(null);
     const [realtimeLogs, setRealtimeLogs] = useState<SessionLog[] | null>(null);
-    const [isSyncing, setIsSyncing] = useState(false);
 
     // Search
     const [searchRut, setSearchRut] = useState('');
@@ -198,14 +199,12 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         return { students: advisoryEnrollments.length, sessions: totalSessions, hours: totalHours.toFixed(1) };
     }, [advisoryEnrollments]);
 
-    // --- Realtime Sync ---
+    // --- Realtime Sync Logic (Local) ---
     useEffect(() => { setRealtimeLogs(null); }, [selectedEnrollmentId]);
 
     const fetchLatestLogs = async (id: string) => {
-        setIsSyncing(true);
         const { data } = await supabase.from('enrollments').select('session_logs').eq('id', id).single();
         if (data && data.session_logs) setRealtimeLogs(data.session_logs as SessionLog[]);
-        setTimeout(() => setIsSyncing(false), 500);
     };
 
     useEffect(() => {
@@ -219,9 +218,8 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     }, [view, selectedEnrollmentId]);
 
     const handleManualRefresh = async () => {
-        setIsSyncing(true); await refreshData();
+        await executeReload(); // APPLY DIRECTIVE
         if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId);
-        setTimeout(() => setIsSyncing(false), 800);
     };
 
     // --- Search & Enroll Handlers ---
@@ -271,6 +269,9 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         try {
             await upsertUsers([{ ...enrollForm, rut: cleanRut, systemRole: enrollForm.systemRole as UserRole }]);
             await enrollUser(cleanRut, ADVISORY_ACTIVITY_ID);
+            
+            await executeReload(); // DIRECTIVA_RECARGA
+
             setEnrollMsg({ type: 'success', text: 'Expediente creado correctamente.' });
             setTimeout(() => { setShowEnrollModal(false); setIsProcessing(false); }, 1500);
         } catch (err: any) { setEnrollMsg({ type: 'error', text: `Error: ${err.message || 'No se pudo guardar'}` }); setIsProcessing(false); }
@@ -278,7 +279,12 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
 
     const handleManageStudent = (enrollmentId: string) => { setSelectedEnrollmentId(enrollmentId); setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [] }); setTagInput(''); setSignatureStep('form'); setManageTab('management'); setEditingLogId(null); setEditingLogIndex(null); setView('manage'); };
 
-    const handleDeleteBitacora = async (id: string, name: string) => { if(window.confirm(`ADVERTENCIA: ¿Está seguro que desea eliminar la bitácora completa de ${name}?`)) await deleteEnrollment(id); };
+    const handleDeleteBitacora = async (id: string, name: string) => { 
+        if(window.confirm(`ADVERTENCIA: ¿Está seguro que desea eliminar la bitácora completa de ${name}?`)) {
+            await deleteEnrollment(id);
+            await executeReload(); // DIRECTIVA_RECARGA
+        }
+    };
 
     // --- Session Handlers ---
     const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -300,7 +306,10 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         const sessionId = `SES-${Date.now()}`; setCurrentSessionId(sessionId);
         const newLog: any = { id: sessionId, date: sessionForm.date, duration: sessionForm.duration, observation: sessionForm.observation, advisorName: currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : 'Asesor', verified: false, signedAt: undefined, location: sessionForm.location, modality: sessionForm.modality, tags: sessionForm.tags };
         const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
+        
         await updateEnrollment(selectedEnrollmentId, { sessionLogs: [...(enrollment?.sessionLogs || []), newLog] });
+        await executeReload(); // DIRECTIVA_RECARGA
+        
         setSignatureStep('qr-wait');
     };
 
@@ -321,7 +330,10 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             return log;
         });
         await updateEnrollment(selectedEnrollmentId, { sessionLogs: updatedLogs });
-        await fetchLatestLogs(selectedEnrollmentId);
+        
+        await executeReload(); // DIRECTIVA_RECARGA
+        if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId); // Refresh local logs specific
+
         setEditingLogId(null); setEditingLogIndex(null); setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [] }); setSignatureStep('form'); alert("Registro actualizado.");
     };
 
@@ -353,8 +365,10 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             // 3. Persist in DB
             try {
                 await updateEnrollment(selectedEnrollmentId, { sessionLogs: updatedLogs });
-                // 4. Force Sync
-                await fetchLatestLogs(selectedEnrollmentId);
+                // 4. Force Sync via Directive
+                await executeReload(); 
+                // 5. Force specific sync for this manager
+                if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId);
             } catch (err) {
                 alert("Error al eliminar. Verifique su conexión.");
                 // Revert optimistic update if needed
@@ -377,6 +391,9 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                     if (logs.find(l => l.id === currentSessionId && l.verified)) {
                         clearInterval(interval);
                         await updateEnrollment(selectedEnrollmentId, { sessionLogs: logs });
+                        
+                        await executeReload(); // DIRECTIVA_RECARGA
+
                         setSignatureStep('success');
                         setTimeout(() => { setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [] }); setSignatureStep('form'); }, 3000);
                     }

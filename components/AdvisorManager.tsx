@@ -4,6 +4,7 @@ import { useData } from '../context/DataContext';
 import { User, UserRole } from '../types';
 import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST } from '../constants';
 import { SmartSelect } from './SmartSelect';
+import { useReloadDirective } from '../hooks/useReloadDirective';
 
 interface AdvisorManagerProps {
     currentUser?: User;
@@ -11,6 +12,8 @@ interface AdvisorManagerProps {
 
 export const AdvisorManager: React.FC<AdvisorManagerProps> = ({ currentUser }) => {
   const { users, upsertUsers, deleteUser, activities, config } = useData();
+  const { isSyncing, executeReload } = useReloadDirective(); // DIRECTIVA_RECARGA
+  
   const advisors = users.filter(u => u.systemRole === UserRole.ASESOR);
 
   // Listas para los dropdowns
@@ -112,6 +115,7 @@ export const AdvisorManager: React.FC<AdvisorManagerProps> = ({ currentUser }) =
       
       if (password === currentUser?.password) {
           await deleteUser(form.rut);
+          await executeReload(); // DIRECTIVA_RECARGA
           setMessage({ type: 'success', text: 'Asesor eliminado correctamente.' });
           resetForm();
       } else if (password !== null) {
@@ -152,6 +156,8 @@ export const AdvisorManager: React.FC<AdvisorManagerProps> = ({ currentUser }) =
       };
 
       await upsertUsers([advisorPayload]);
+      await executeReload(); // DIRECTIVA_RECARGA
+
       setMessage({ type: 'success', text: isEditing ? 'Perfil de Asesor actualizado.' : 'Nuevo Asesor registrado exitosamente.' });
       
       resetForm();
@@ -167,9 +173,18 @@ export const AdvisorManager: React.FC<AdvisorManagerProps> = ({ currentUser }) =
                  <h2 className="text-2xl font-bold text-[#647FBC]">Gestión de Asesores</h2>
                  <p className="text-slate-600">Administración de perfiles con privilegios de gestión académica.</p>
              </div>
-             <div className="bg-white px-6 py-3 rounded-lg shadow-sm border border-slate-200 text-center">
-                 <span className="block text-3xl font-bold text-[#647FBC]">{advisors.length}</span>
-                 <span className="text-xs text-slate-500 font-bold uppercase tracking-wide">Asesores Activos</span>
+             
+             <div className="flex items-center gap-4">
+                 {/* Visual Feedback for Directive */}
+                 <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
+                    <div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-green-500'}`}></div>
+                    <span className="text-[10px] font-bold uppercase text-slate-500">{isSyncing ? 'Sincronizando...' : 'Sistema Conectado'}</span>
+                 </div>
+
+                 <div className="bg-white px-6 py-3 rounded-lg shadow-sm border border-slate-200 text-center">
+                     <span className="block text-3xl font-bold text-[#647FBC]">{advisors.length}</span>
+                     <span className="text-xs text-slate-500 font-bold uppercase tracking-wide">Asesores Activos</span>
+                 </div>
              </div>
         </div>
 
@@ -280,7 +295,7 @@ export const AdvisorManager: React.FC<AdvisorManagerProps> = ({ currentUser }) =
 
                     {/* Actions */}
                     <div className="pt-4 flex flex-col gap-2">
-                        <button type="submit" className={`w-full text-white py-2.5 rounded-lg font-bold shadow-md transition-all flex justify-center items-center gap-2 ${isEditing ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#647FBC] hover:bg-blue-800'}`}>
+                        <button type="submit" disabled={isSyncing} className={`w-full text-white py-2.5 rounded-lg font-bold shadow-md transition-all flex justify-center items-center gap-2 ${isEditing ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#647FBC] hover:bg-blue-800'} ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>
                             {isEditing ? (
                                 <>
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
