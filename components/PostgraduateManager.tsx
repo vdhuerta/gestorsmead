@@ -6,6 +6,7 @@ import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TY
 import { SmartSelect } from './SmartSelect'; 
 // @ts-ignore
 import { read, utils } from 'xlsx';
+import { useReloadDirective } from '../hooks/useReloadDirective';
 
 // --- Utility Functions ---
 const cleanRutFormat = (rut: string): string => {
@@ -40,7 +41,9 @@ interface PostgraduateManagerProps {
 }
 
 export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ currentUser }) => {
-  const { activities, addActivity, deleteActivity, users, enrollments, upsertUsers, enrollUser, bulkEnroll, updateEnrollment, getUser, config, refreshData } = useData();
+  const { activities, addActivity, deleteActivity, users, enrollments, upsertUsers, enrollUser, bulkEnroll, updateEnrollment, deleteEnrollment, getUser, config, refreshData } = useData();
+  const { isSyncing, executeReload } = useReloadDirective(); // DIRECTIVA_RECARGA
+  
   const isAdmin = currentUser?.systemRole === UserRole.ADMIN;
   
   // Dynamic lists from config
@@ -59,9 +62,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('enrollment');
   
-  // States for Sync
-  const [isSyncing, setIsSyncing] = useState(false);
-
   // Main Form State
   const [formData, setFormData] = useState({
     internalCode: '',
@@ -201,7 +201,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   };
 
   // Main Submit Handler (Create/Update General)
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = formData.internalCode.trim().toUpperCase().replace(/\s+/g, '-');
     const academicPeriodText = `${formData.year}-${formData.semester}`;
@@ -232,7 +232,9 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
         programConfig: programConfig 
     };
     
-    addActivity(newActivity);
+    await addActivity(newActivity);
+    await executeReload(); // DIRECTIVA_RECARGA
+
     if (view === 'edit') { setView('details'); } else {
         setFormData({ internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '' });
         setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75 });
@@ -251,6 +253,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
       try {
           await addActivity(updatedActivity);
+          await executeReload(); // DIRECTIVA_RECARGA
           alert("Configuración Académica guardada exitosamente en Supabase.");
       } catch (err) {
           alert("Error al guardar configuración. Revise su conexión.");
@@ -288,13 +291,19 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const handleDeleteActivity = async () => {
       if (!selectedCourseId || !selectedCourse) return;
       const password = prompt(`ADVERTENCIA: ¿Eliminar "${selectedCourse.name}"? Contraseña ADMIN:`);
-      if (password === currentUser?.password) { await deleteActivity(selectedCourseId); alert("Eliminado."); setView('list'); setSelectedCourseId(null); } else if (password !== null) { alert("Incorrecto."); }
+      if (password === currentUser?.password) { 
+          await deleteActivity(selectedCourseId); 
+          await executeReload(); // DIRECTIVA_RECARGA
+          alert("Eliminado."); 
+          setView('list'); 
+          setSelectedCourseId(null); 
+      } else if (password !== null) { 
+          alert("Incorrecto."); 
+      }
   };
 
   const handleRefresh = async () => {
-      setIsSyncing(true);
-      await refreshData();
-      setTimeout(() => setIsSyncing(false), 800);
+      await executeReload(); // DIRECTIVA_RECARGA
   };
 
   // --- ENROLLMENT LOGIC (UPDATED TO 13 FIELDS) ---
@@ -344,6 +353,9 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
           if (showSuggestions) setShowSuggestions(false);
           if(!manualForm.rut) return;
           const formatted = cleanRutFormat(manualForm.rut);
+          const exists = courseEnrollments.some(e => e.rut === formatted);
+          setIsAlreadyEnrolled(exists);
+
           if (!isFoundInMaster) {
             const user = getUser(formatted);
             if(user) {
@@ -397,6 +409,8 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
           // CRITICAL: Await user creation first to prevent FK constraint error
           await upsertUsers([userToUpsert]);
           await enrollUser(formattedRut, selectedCourseId);
+          await executeReload(); // DIRECTIVA_RECARGA
+
           setEnrollMsg({ type: 'success', text: 'Matriculado correctamente.' });
           
           // Reset to empty
@@ -409,6 +423,27 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       } catch (error: any) {
           console.error("Error en matrícula:", error);
           setEnrollMsg({ type: 'error', text: `Error al matricular: ${error.message || 'Verifique conexión'}` });
+      }
+  };
+
+  const handleUnenroll = async () => {
+      if (!selectedCourseId || !manualForm.rut) return;
+      
+      if (confirm(`¿Confirma eliminar la matrícula del estudiante ${manualForm.rut} del programa?`)) {
+          const enrollment = courseEnrollments.find(e => e.rut === manualForm.rut);
+          if (enrollment) {
+              await deleteEnrollment(enrollment.id);
+              await executeReload(); // DIRECTIVA_RECARGA
+              
+              setEnrollMsg({ type: 'success', text: 'Matrícula eliminada correctamente.' });
+              setManualForm({ 
+                  rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', 
+                  academicRole: '', faculty: '', department: '', career: '', contractType: '', 
+                  teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE 
+              });
+              setIsAlreadyEnrolled(false);
+              setIsFoundInMaster(false);
+          }
       }
   };
 
@@ -470,6 +505,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
           
           if (usersToUpsert.length > 0) { await upsertUsers(usersToUpsert); }
           const result = await bulkEnroll(rutsToEnroll, selectedCourseId);
+          await executeReload(); // DIRECTIVA_RECARGA
           setEnrollMsg({ type: 'success', text: `Carga Masiva: ${result.success} nuevos inscritos, ${result.skipped} ya existentes.` }); 
           setUploadFile(null);
       };
@@ -534,7 +570,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       return (totalWeightedScore).toFixed(1);
   };
 
-  const handleUpdateGrade = (enrollmentId: string, moduleIndex: number, noteIndex: number, value: string) => {
+  const handleUpdateGrade = async (enrollmentId: string, moduleIndex: number, noteIndex: number, value: string) => {
       const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
       if (!enrollment) return;
 
@@ -559,14 +595,15 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       const finalGrade = finalGradeStr !== "-" ? parseFloat(finalGradeStr) : 0;
 
       // Update State (Optimistic) & DB
-      updateEnrollment(enrollmentId, { 
+      await updateEnrollment(enrollmentId, { 
           grades: currentGrades, 
           finalGrade: finalGrade,
           state: finalGrade >= (config.minPassingGrade || 4.0) ? ActivityState.APROBADO : ActivityState.EN_PROCESO
       });
+      await executeReload(); // DIRECTIVA_RECARGA
   };
 
-  const handleToggleAttendance = (enrollmentId: string, sessionIndex: number) => {
+  const handleToggleAttendance = async (enrollmentId: string, sessionIndex: number) => {
       const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
       if (!enrollment) return;
 
@@ -592,7 +629,8 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       const percentage = Math.round((presentCount / totalSessions) * 100);
       updates.attendancePercentage = percentage;
 
-      updateEnrollment(enrollmentId, updates);
+      await updateEnrollment(enrollmentId, updates);
+      await executeReload(); // DIRECTIVA_RECARGA
   };
 
   // List View
@@ -721,7 +759,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                       {/* ACTIONS */}
                       <div className="flex justify-between pt-6 border-t border-slate-100">
                           {isEditMode && <button type="button" onClick={handleDeleteActivity} className="text-red-600 font-bold text-sm">Eliminar Programa</button>}
-                          <button type="submit" className="bg-purple-600 text-white px-8 py-3 rounded-lg font-bold shadow-md hover:bg-purple-700 transition-colors ml-auto">
+                          <button type="submit" disabled={isSyncing} className={`bg-purple-600 text-white px-8 py-3 rounded-lg font-bold shadow-md hover:bg-purple-700 transition-colors ml-auto ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>
                               {isEditMode ? 'Guardar Cambios' : 'Crear Programa'}
                           </button>
                       </div>
@@ -781,13 +819,22 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                       {activeDetailTab === 'enrollment' && (
                           <div className="space-y-8">
                               {/* Manual Enrollment Form (Full Width) */}
-                              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                                  <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-slate-800 text-lg">Matrícula Individual</h3>{isFoundInMaster && (<span className="text-xs px-2 py-1 rounded border bg-green-50 text-green-700 border-green-200">Datos de Base Maestra</span>)}</div>
+                              <div className={`bg-white rounded-xl shadow-sm border p-6 transition-colors ${isAlreadyEnrolled ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}>
+                                  <div className="flex justify-between items-center mb-6">
+                                      <h3 className={`font-bold text-lg flex items-center gap-2 ${isAlreadyEnrolled ? 'text-red-700' : 'text-slate-800'}`}>
+                                          {isAlreadyEnrolled ? (
+                                              <><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg> Gestión de Matrícula Existente</>
+                                          ) : (
+                                              "Matrícula Individual"
+                                          )}
+                                      </h3>
+                                      {isFoundInMaster && !isAlreadyEnrolled && (<span className="text-xs px-2 py-1 rounded border bg-green-50 text-green-700 border-green-200">Datos de Base Maestra</span>)}
+                                  </div>
                                   <form onSubmit={handleManualEnroll} className="space-y-8">
                                           <div className="space-y-4">
-                                              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Identificación Personal</h3>
+                                              <h3 className={`text-sm font-bold uppercase tracking-wide border-b pb-2 ${isAlreadyEnrolled ? 'text-red-400 border-red-100' : 'text-slate-500 border-slate-100'}`}>Identificación Personal</h3>
                                               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                                <div className="md:col-span-1 relative"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><div className="relative"><input type="text" name="rut" placeholder="12345678-9" autoComplete="off" value={manualForm.rut} onChange={handleManualFormChange} onBlur={handleRutBlur} className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : 'bg-white border-slate-300'} ${isAlreadyEnrolled ? 'border-red-500 bg-red-50 text-red-800' : ''}`} />{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div></div>
+                                                <div className="md:col-span-1 relative"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><div className="relative"><input type="text" name="rut" placeholder="12345678-9" autoComplete="off" value={manualForm.rut} onChange={handleManualFormChange} onBlur={handleRutBlur} className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : 'bg-white border-slate-300'} ${isAlreadyEnrolled ? 'border-red-500 bg-white text-red-800' : ''}`} />{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div></div>
                                                 <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" name="names" value={manualForm.names} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
                                                 <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label><input type="text" name="paternalSurname" value={manualForm.paternalSurname} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
                                                 <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={manualForm.maternalSurname} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
@@ -817,7 +864,16 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                                   <div><SmartSelect label="Rol / Cargo Académico" name="academicRole" value={manualForm.academicRole} options={listRoles} onChange={handleManualFormChange} /></div>
                                               </div>
                                           </div>
-                                          <button type="submit" disabled={isAlreadyEnrolled} className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all ${isAlreadyEnrolled ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-purple-600 text-white hover:bg-purple-700'}`}>{isAlreadyEnrolled ? 'Usuario Ya Matriculado' : 'Matricular Usuario'}</button>
+                                          
+                                          <button 
+                                              type={isAlreadyEnrolled ? "button" : "submit"}
+                                              onClick={isAlreadyEnrolled ? handleUnenroll : undefined} 
+                                              disabled={isSyncing} 
+                                              className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all ${isAlreadyEnrolled ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-purple-600 text-white hover:bg-purple-700'} ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}
+                                          >
+                                              {isAlreadyEnrolled ? 'Eliminar Matrícula Actual' : 'Matricular Usuario'}
+                                          </button>
+                                          
                                           {enrollMsg && (<div className={`text-xs p-3 rounded-lg text-center font-medium ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{enrollMsg.text}</div>)}
                                   </form>
                               </div>

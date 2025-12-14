@@ -43,7 +43,7 @@ interface CourseManagerProps {
 }
 
 export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => {
-  const { activities, addActivity, deleteActivity, users, enrollments, upsertUsers, enrollUser, bulkEnroll, updateEnrollment, getUser, config, refreshData } = useData();
+  const { activities, addActivity, deleteActivity, users, enrollments, upsertUsers, enrollUser, bulkEnroll, updateEnrollment, deleteEnrollment, getUser, config, refreshData } = useData();
   const { isSyncing, executeReload } = useReloadDirective(); // DIRECTIVA_RECARGA
 
   const isAdmin = currentUser?.systemRole === UserRole.ADMIN;
@@ -86,8 +86,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [suggestions, setSuggestions] = useState<User[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionsRef = useRef<HTMLDivElement>(null);
-  const suggestionClickedRef = useRef(false);
   const [isFoundInMaster, setIsFoundInMaster] = useState(false);
+  const [isAlreadyEnrolled, setIsAlreadyEnrolled] = useState(false); // NEW STATE
   const [enrollMsg, setEnrollMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
   
   // Bulk Upload State
@@ -383,6 +383,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       setManualForm(prev => ({ ...prev, [name]: value }));
       if (name === 'rut') {
           setIsFoundInMaster(false);
+          setIsAlreadyEnrolled(false);
           setEnrollMsg(null);
           const rawInput = value.replace(/[^0-9kK]/g, '').toLowerCase();
           if (rawInput.length >= 2) { 
@@ -400,8 +401,45 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       setManualForm({
           rut: user.rut, names: user.names, paternalSurname: user.paternalSurname, maternalSurname: user.maternalSurname || '', email: user.email || '', phone: user.phone || '', academicRole: user.academicRole || '', faculty: user.faculty || '', department: user.department || '', career: user.career || '', contractType: user.contractType || '', teachingSemester: user.teachingSemester || '', campus: user.campus || '', systemRole: user.systemRole
       });
-      setIsFoundInMaster(true); setShowSuggestions(false); setSuggestions([]);
-      setEnrollMsg({ type: 'success', text: 'Datos cargados desde Base Maestra.' });
+      
+      const enrolled = courseEnrollments.some(e => e.rut === user.rut);
+      setIsAlreadyEnrolled(enrolled);
+      setIsFoundInMaster(true); 
+      setShowSuggestions(false); 
+      setSuggestions([]);
+      
+      if(enrolled) {
+          setEnrollMsg({ type: 'error', text: 'El estudiante ya está matriculado en este curso.' });
+      } else {
+          setEnrollMsg({ type: 'success', text: 'Datos cargados desde Base Maestra.' });
+      }
+  };
+
+  const handleRutBlur = () => {
+      if (!manualForm.rut) return;
+      const formatted = cleanRutFormat(manualForm.rut);
+      setManualForm(prev => ({ ...prev, rut: formatted }));
+      
+      // 1. Check if user exists in master base
+      const user = getUser(formatted);
+      if (user) {
+          // Use the selection logic which checks enrollment and fills form
+          handleSelectSuggestion(user);
+      } else {
+          // If user doesn't exist in master, they might still be enrolled (legacy)
+          // Or it's a new user.
+          
+          // Check enrollment directly
+          const isEnrolled = courseEnrollments.some(e => e.rut === formatted);
+          setIsAlreadyEnrolled(isEnrolled);
+          
+          if (isEnrolled) {
+               setEnrollMsg({ type: 'error', text: 'Estudiante ya matriculado (No encontrado en Base Maestra).' });
+          } else {
+               // Reset 'found' state if manually typing a new rut
+               setIsFoundInMaster(false);
+          }
+      }
   };
 
   const handleEnrollSubmit = async (e: React.FormEvent) => {
@@ -423,6 +461,25 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       setEnrollMsg({ type: 'success', text: 'Matriculado correctamente.' });
       setManualForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
       setIsFoundInMaster(false);
+      setIsAlreadyEnrolled(false);
+  };
+
+  const handleUnenroll = async () => {
+      if (!selectedCourseId || !manualForm.rut) return;
+      
+      if (confirm(`¿Confirma eliminar la matrícula del estudiante ${manualForm.rut}?`)) {
+          const enrollment = courseEnrollments.find(e => e.rut === manualForm.rut);
+          if (enrollment) {
+              await deleteEnrollment(enrollment.id);
+              await executeReload(); // DIRECTIVA_RECARGA
+              
+              setEnrollMsg({ type: 'success', text: 'Matrícula eliminada correctamente.' });
+              // Reset form
+              setManualForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
+              setIsAlreadyEnrolled(false);
+              setIsFoundInMaster(false);
+          }
+      }
   };
 
   const handleBulkUpload = () => {
@@ -680,10 +737,10 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                           <div className="space-y-12 animate-fadeIn w-full">
                               
                               {/* 1. Formulario Manual (13 Campos) */}
-                              <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
-                                  <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 border-b border-slate-200 pb-2">
-                                      <svg className="w-5 h-5 text-[#647FBC]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
-                                      Inscripción Manual (Registro Completo)
+                              <div className={`bg-slate-50 border rounded-xl p-6 transition-colors ${isAlreadyEnrolled ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}>
+                                  <h3 className={`font-bold mb-4 flex items-center gap-2 border-b pb-2 ${isAlreadyEnrolled ? 'text-red-700 border-red-200' : 'text-slate-700 border-slate-200'}`}>
+                                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+                                      {isAlreadyEnrolled ? 'Gestión de Matrícula Existente' : 'Inscripción Manual (Registro Completo)'}
                                   </h3>
                                   <form onSubmit={handleEnrollSubmit} className="space-y-6">
                                       {/* Identificación */}
@@ -692,7 +749,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                               <div className="relative md:col-span-1">
                                                   <label className="block text-xs font-bold mb-1">RUT (Buscar)</label>
-                                                  <input type="text" name="rut" value={manualForm.rut} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-[#647FBC]" placeholder="12345678-9"/>
+                                                  <input type="text" name="rut" value={manualForm.rut} onChange={handleEnrollChange} onBlur={handleRutBlur} className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-[#647FBC] ${isAlreadyEnrolled ? 'border-red-300 bg-white text-red-700 font-bold' : ''}`} placeholder="12345678-9"/>
                                                   {showSuggestions && suggestions.length > 0 && (
                                                       <div className="absolute z-10 w-full bg-white border mt-1 rounded shadow-xl max-h-48 overflow-y-auto">
                                                           {suggestions.map(s => (
@@ -733,10 +790,20 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                           </div>
                                       </div>
                                       
-                                      <button type="submit" disabled={isSyncing} className={`w-full bg-[#647FBC] text-white px-4 py-3 rounded-lg text-sm font-bold shadow hover:bg-blue-800 transition-colors mt-4 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>
-                                          Matricular Estudiante
+                                      <button 
+                                          type={isAlreadyEnrolled ? "button" : "submit"}
+                                          onClick={isAlreadyEnrolled ? handleUnenroll : undefined}
+                                          disabled={isSyncing} 
+                                          className={`w-full ${isAlreadyEnrolled ? 'bg-red-600 hover:bg-red-700' : 'bg-[#647FBC] hover:bg-blue-800'} text-white px-4 py-3 rounded-lg text-sm font-bold shadow transition-colors mt-4 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}
+                                      >
+                                          {isAlreadyEnrolled ? (
+                                              <span className="flex items-center justify-center gap-2">
+                                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                  Eliminar Matrícula Actual
+                                              </span>
+                                          ) : 'Matricular Estudiante'}
                                       </button>
-                                      {enrollMsg && <p className={`text-xs text-center ${enrollMsg.type === 'success' ? 'text-green-600 font-bold' : 'text-red-600'}`}>{enrollMsg.text}</p>}
+                                      {enrollMsg && <p className={`text-xs text-center font-bold ${enrollMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{enrollMsg.text}</p>}
                                   </form>
                               </div>
 
