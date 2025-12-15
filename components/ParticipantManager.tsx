@@ -6,6 +6,7 @@ import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TY
 import { SmartSelect } from './SmartSelect'; 
 // @ts-ignore
 import { read, utils } from 'xlsx';
+import { useReloadDirective } from '../hooks/useReloadDirective';
 
 // Utility para formatear RUT
 const cleanRutFormat = (rut: string): string => {
@@ -14,6 +15,11 @@ const cleanRutFormat = (rut: string): string => {
     const body = clean.slice(0, -1);
     const dv = clean.slice(-1).toUpperCase();
     return `${body}-${dv}`;
+};
+
+const normalizeRut = (rut: string): string => {
+    if (!rut) return '';
+    return rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '').toLowerCase();
 };
 
 // --- Helper de Normalización ---
@@ -28,6 +34,8 @@ const normalizeValue = (val: string, masterList: string[]): string => {
 
 export const ParticipantManager: React.FC = () => {
   const { upsertUsers, getUser, deleteUser, users, config } = useData(); 
+  const { isSyncing, executeReload } = useReloadDirective(); // DIRECTIVA_RECARGA
+
   const [activeTab, setActiveTab] = useState<'manual' | 'upload'>('manual');
   
   // DYNAMIC LISTS
@@ -43,13 +51,17 @@ export const ParticipantManager: React.FC = () => {
 
   const [isEditing, setIsEditing] = useState(false);
   const [searchTriggered, setSearchTriggered] = useState(false);
-  const originalUserRef = useRef<User | null>(null);
+  
+  // Search States
+  const [suggestions, setSuggestions] = useState<User[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [activeSearchField, setActiveSearchField] = useState<'rut' | 'paternalSurname' | null>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   // --- Audit States ---
   const [filterMode, setFilterMode] = useState<'inconsistent' | 'incomplete' | null>(null);
 
   const totalStudents = studentsOnly.length;
-  const uniqueFaculties = new Set(studentsOnly.map(u => u.faculty).filter(f => f && f !== '')).size;
 
   // --- Audit Logic ---
   const checkInconsistency = (u: User) => {
@@ -68,12 +80,17 @@ export const ParticipantManager: React.FC = () => {
   const inconsistentUsers = useMemo(() => studentsOnly.filter(checkInconsistency), [studentsOnly, listFaculties]);
   const incompleteUsers = useMemo(() => studentsOnly.filter(checkIncomplete), [studentsOnly]);
 
-  const filteredUsers = useMemo(() => {
-      if (filterMode === 'inconsistent') return inconsistentUsers;
-      if (filterMode === 'incomplete') return incompleteUsers;
-      return [];
-  }, [filterMode, inconsistentUsers, incompleteUsers]);
-
+  // Click outside suggestions
+  useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+          if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
+              setShowSuggestions(false);
+              setActiveSearchField(null);
+          }
+      };
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Manual Form State
   const [manualForm, setManualForm] = useState({
@@ -92,52 +109,90 @@ export const ParticipantManager: React.FC = () => {
   const [fileReport, setFileReport] = useState<{ total: number, success: number, updated: number, existing: number, errors: any[] } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const handleRutBlur = () => {
-      if (!manualForm.rut) return;
-      const formatted = cleanRutFormat(manualForm.rut);
-      setManualForm(prev => ({ ...prev, rut: formatted }));
-      loadUserIntoForm(formatted);
-  };
-
-  const loadUserIntoForm = (rut: string) => {
-      const existingUser = getUser(rut);
-      setSearchTriggered(true);
-
-      if (existingUser) {
-          setIsEditing(true);
-          originalUserRef.current = { ...existingUser };
-          
-          setManualForm({
-              rut: existingUser.rut,
-              names: existingUser.names || '',
-              paternalSurname: existingUser.paternalSurname || '',
-              maternalSurname: existingUser.maternalSurname || '',
-              email: existingUser.email || '',
-              phone: existingUser.phone || '',
-              faculty: existingUser.faculty || '',
-              department: existingUser.department || '',
-              career: existingUser.career || '',
-              contractType: existingUser.contractType || '',
-              teachingSemester: existingUser.teachingSemester || '',
-              campus: existingUser.campus || '',
-              academicRole: existingUser.academicRole || '',
-              systemRole: existingUser.systemRole || UserRole.ESTUDIANTE
-          });
-          setManualStatus('idle');
-          setStatusMsg('');
-      } else {
-          setIsEditing(false);
-          originalUserRef.current = null;
-      }
-  };
-
+  // --- SEARCH LOGIC (DUAL) ---
   const handleManualChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setManualForm(prev => ({ ...prev, [name]: value }));
-    if (name === 'rut') { setRutError(null); setSearchTriggered(false); }
+    if (name === 'rut') setRutError(null);
+
+    // Lógica de Búsqueda Dual
+    if (name === 'rut' || name === 'paternalSurname') {
+        let matches: User[] = [];
+        
+        if (name === 'rut') {
+            const rawInput = normalizeRut(value);
+            if (rawInput.length >= 2) {
+                setActiveSearchField('rut');
+                matches = users.filter(u => normalizeRut(u.rut).includes(rawInput));
+            } else {
+                setActiveSearchField(null);
+            }
+        } else if (name === 'paternalSurname') {
+            const rawInput = value.toLowerCase();
+            if (rawInput.length >= 2) {
+                setActiveSearchField('paternalSurname');
+                matches = users.filter(u => u.paternalSurname.toLowerCase().includes(rawInput));
+            } else {
+                setActiveSearchField(null);
+            }
+        }
+
+        if (matches.length > 0) {
+            setSuggestions(matches.slice(0, 5));
+            setShowSuggestions(true);
+        } else {
+            setSuggestions([]);
+            setShowSuggestions(false);
+        }
+    }
   };
 
-  const handleManualSubmit = (e: React.FormEvent) => {
+  const handleSelectSuggestion = (user: User) => {
+      setManualForm({
+          rut: user.rut,
+          names: user.names,
+          paternalSurname: user.paternalSurname,
+          maternalSurname: user.maternalSurname || '',
+          email: user.email || '',
+          phone: user.phone || '',
+          faculty: user.faculty || '',
+          department: user.department || '',
+          career: user.career || '',
+          contractType: user.contractType || '',
+          teachingSemester: user.teachingSemester || '',
+          campus: user.campus || '',
+          academicRole: user.academicRole || '',
+          systemRole: user.systemRole || UserRole.ESTUDIANTE
+      });
+      setIsEditing(true);
+      setShowSuggestions(false);
+      setSuggestions([]);
+      setActiveSearchField(null);
+      setManualStatus('idle');
+      setStatusMsg('Usuario cargado. Puede modificar o eliminar.');
+  };
+
+  const handleRutBlur = () => {
+      // Delay to allow click on suggestion
+      setTimeout(() => {
+          if (showSuggestions && activeSearchField === 'rut') setShowSuggestions(false);
+          if (!manualForm.rut) return;
+          
+          const formatted = cleanRutFormat(manualForm.rut);
+          const rawSearch = normalizeRut(formatted);
+          setManualForm(prev => ({ ...prev, rut: formatted }));
+          
+          const existingUser = users.find(u => normalizeRut(u.rut) === rawSearch);
+          
+          if (existingUser) {
+              handleSelectSuggestion(existingUser);
+          } else {
+              setIsEditing(false); // New User
+          }
+      }, 200);
+  };
+
+  const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualForm.rut || !manualForm.names || !manualForm.paternalSurname) {
         setManualStatus('error');
@@ -168,27 +223,43 @@ export const ParticipantManager: React.FC = () => {
         photoUrl: existing?.photoUrl  // Preserve photo
     };
 
-    upsertUsers([newUser]);
-    setManualStatus('success');
-    setStatusMsg(isEditing ? 'Usuario actualizado.' : 'Usuario creado.');
+    try {
+        await upsertUsers([newUser]);
+        await executeReload(); // DIRECTIVA_RECARGA
 
-    setTimeout(() => {
-        setManualStatus('idle');
-        setStatusMsg('');
+        setManualStatus('success');
+        setStatusMsg(isEditing ? 'Usuario actualizado correctamente.' : 'Usuario creado correctamente.');
+
+        // Reset form ONLY if creating new
         if (!isEditing) {
-            setManualForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', academicRole: '', systemRole: UserRole.ESTUDIANTE });
-            setSearchTriggered(false);
+            setTimeout(() => {
+                setManualStatus('idle');
+                setStatusMsg('');
+                setManualForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', academicRole: '', systemRole: UserRole.ESTUDIANTE });
+            }, 2000);
         }
-    }, 2000);
+    } catch (error) {
+        console.error(error);
+        setManualStatus('error');
+        setStatusMsg('Error al guardar en base de datos.');
+    }
   };
 
-  const handleDelete = () => {
-      if (confirm(`¿Está seguro de eliminar al estudiante ${manualForm.rut}?`)) {
-          deleteUser(manualForm.rut);
-          setManualStatus('deleted');
-          setStatusMsg('Estudiante eliminado.');
-          setIsEditing(false);
-          setManualForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', academicRole: '', systemRole: UserRole.ESTUDIANTE });
+  const handleDelete = async () => {
+      if (confirm(`ADVERTENCIA: ¿Está seguro de eliminar al estudiante ${manualForm.rut}?\n\nEsta acción borrará al usuario de la Base Maestra y todas sus matrículas asociadas.`)) {
+          try {
+              await deleteUser(manualForm.rut);
+              await executeReload(); // DIRECTIVA_RECARGA
+              
+              setManualStatus('deleted');
+              setStatusMsg('Estudiante eliminado.');
+              setIsEditing(false);
+              setManualForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', academicRole: '', systemRole: UserRole.ESTUDIANTE });
+          } catch (error) {
+              console.error(error);
+              setManualStatus('error');
+              setStatusMsg('Error al eliminar usuario.');
+          }
       }
   };
 
@@ -266,6 +337,7 @@ export const ParticipantManager: React.FC = () => {
       }
 
       const result = await upsertUsers(validUsers);
+      await executeReload(); // DIRECTIVA_RECARGA
       setFileReport({ total: validUsers.length, success: result.added, updated: result.updated, existing: 0, errors: [] });
       setIsProcessing(false);
       setFile(null); 
@@ -283,6 +355,12 @@ export const ParticipantManager: React.FC = () => {
           </div>
           
           <div className="flex flex-wrap gap-4 mt-4 md:mt-0">
+               {/* Sync Status */}
+               <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
+                    <div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-green-500'}`}></div>
+                    <span className="text-[10px] font-bold uppercase text-slate-500">{isSyncing ? 'Sincronizando...' : 'Conectado'}</span>
+               </div>
+
                <button onClick={() => setFilterMode(prev => prev === 'inconsistent' ? null : 'inconsistent')} className="px-4 py-2 rounded-lg border bg-white border-slate-200 text-slate-600 hover:border-red-300 hover:text-red-700 text-xs font-bold uppercase">
                    Inconsistencias: {inconsistentUsers.length}
                </button>
@@ -313,12 +391,53 @@ export const ParticipantManager: React.FC = () => {
                     <div className="space-y-3">
                         <h4 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-1">Identificación</h4>
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div className="md:col-span-1">
-                                <label className="block text-xs font-bold text-slate-700 mb-1">RUT *</label>
-                                <input type="text" name="rut" placeholder="12345678-9" value={manualForm.rut} onChange={handleManualChange} onBlur={handleRutBlur} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-[#647FBC] font-bold"/>
+                            <div className="md:col-span-1 relative">
+                                <label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label>
+                                <input 
+                                    type="text" 
+                                    name="rut" 
+                                    placeholder="12345678-9" 
+                                    value={manualForm.rut} 
+                                    onChange={handleManualChange} 
+                                    onBlur={handleRutBlur} 
+                                    autoComplete="off"
+                                    className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-[#647FBC] font-bold"
+                                />
+                                {showSuggestions && activeSearchField === 'rut' && suggestions.length > 0 && (
+                                    <div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                                        <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por RUT</div>
+                                        {suggestions.map((s) => (
+                                            <div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0">
+                                                <span className="font-bold block text-slate-800">{s.rut}</span>
+                                                <span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                             <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" name="names" value={manualForm.names} onChange={handleManualChange} className="w-full px-3 py-2 border rounded"/></div>
-                            <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label><input type="text" name="paternalSurname" value={manualForm.paternalSurname} onChange={handleManualChange} className="w-full px-3 py-2 border rounded"/></div>
+                            <div className="md:col-span-1 relative">
+                                <label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label>
+                                <input 
+                                    type="text" 
+                                    name="paternalSurname" 
+                                    value={manualForm.paternalSurname} 
+                                    onChange={handleManualChange} 
+                                    autoComplete="off"
+                                    className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-[#647FBC]"
+                                />
+                                {showSuggestions && activeSearchField === 'paternalSurname' && suggestions.length > 0 && (
+                                    <div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                                        <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por Apellido</div>
+                                        {suggestions.map((s) => (
+                                            <div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0">
+                                                <span className="font-bold block text-slate-800">{s.paternalSurname} {s.maternalSurname}</span>
+                                                <span className="text-xs text-slate-500">{s.names} ({s.rut})</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                             <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={manualForm.maternalSurname} onChange={handleManualChange} className="w-full px-3 py-2 border rounded"/></div>
                         </div>
                     </div>
@@ -357,12 +476,44 @@ export const ParticipantManager: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="pt-6 flex justify-between items-center">
-                        {isEditing && <button type="button" onClick={handleDelete} className="text-red-600 hover:text-red-800 text-sm font-bold">Eliminar Estudiante</button>}
-                        <div className="flex-1 flex justify-end gap-3 items-center">
-                             {manualStatus === 'success' && <span className="text-green-600 font-bold">{statusMsg}</span>}
-                             <button type="submit" className="px-8 py-2.5 bg-[#647FBC] text-white rounded-lg font-bold">{isEditing ? 'Actualizar' : 'Crear Estudiante'}</button>
-                        </div>
+                    {/* ACTION BUTTONS */}
+                    <div className="pt-6 flex justify-between items-center gap-4">
+                        {isEditing ? (
+                            <>
+                                <button 
+                                    type="button" 
+                                    onClick={handleDelete} 
+                                    disabled={isSyncing}
+                                    className="bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-800 border border-red-200 px-6 py-2.5 rounded-lg font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    Eliminar Estudiante
+                                </button>
+                                <div className="flex-1 flex justify-end gap-3 items-center">
+                                     {manualStatus === 'success' && <span className="text-green-600 font-bold text-sm animate-pulse">{statusMsg}</span>}
+                                     <button 
+                                        type="submit" 
+                                        disabled={isSyncing}
+                                        className="px-8 py-2.5 bg-amber-500 text-white hover:bg-amber-600 rounded-lg font-bold shadow-md transition-colors flex items-center gap-2 disabled:opacity-70 cursor-pointer"
+                                     >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                        Guardar / Actualizar
+                                     </button>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="flex-1 flex justify-end gap-3 items-center">
+                                 {manualStatus === 'success' && <span className="text-green-600 font-bold text-sm animate-pulse">{statusMsg}</span>}
+                                 <button 
+                                    type="submit" 
+                                    disabled={isSyncing}
+                                    className="px-8 py-2.5 bg-[#647FBC] text-white hover:bg-blue-800 rounded-lg font-bold shadow-md transition-colors flex items-center gap-2 disabled:opacity-70"
+                                 >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                    Crear Estudiante
+                                 </button>
+                            </div>
+                        )}
                     </div>
                  </form>
               </div>

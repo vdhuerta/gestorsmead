@@ -9,9 +9,21 @@ import { read, utils } from 'xlsx';
 import { useReloadDirective } from '../hooks/useReloadDirective';
 
 // --- Utility Functions ---
+
+// Normaliza para comparación lógica (quita puntos, guiones, espacios y CEROS a la izquierda)
+const normalizeRut = (rut: string): string => {
+    if (!rut) return '';
+    // Elimina todo lo que no sea número o K, pasa a minúsculas, y quita ceros al inicio
+    return rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '').toLowerCase();
+};
+
+// Formatea para visualización (X-DV)
 const cleanRutFormat = (rut: string): string => {
-    let clean = rut.replace(/[^0-9kK]/g, '');
+    // 1. Limpieza base y quitar ceros a la izquierda para estandarizar visualmente
+    let clean = rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '');
+    
     if (clean.length < 2) return rut; 
+    
     const body = clean.slice(0, -1);
     const dv = clean.slice(-1).toUpperCase();
     return `${body}-${dv}`;
@@ -109,6 +121,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
   const [suggestions, setSuggestions] = useState<User[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [activeSearchField, setActiveSearchField] = useState<'rut' | 'paternalSurname' | null>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const suggestionClickedRef = useRef(false);
 
@@ -122,15 +135,19 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
   const courseEnrollments = enrollments.filter(e => e.activityId === selectedCourseId);
 
-  // Sorting
+  // Sorting - Using Normalized RUT for robust comparison
   const sortedEnrollments = useMemo(() => {
       return [...courseEnrollments].sort((a, b) => {
-          const userA = users.find(u => u.rut === a.rut);
-          const userB = users.find(u => u.rut === b.rut);
+          // Buscamos usuario normalizando RUT para evitar mismatch por ceros a la izquierda
+          const userA = users.find(u => normalizeRut(u.rut) === normalizeRut(a.rut));
+          const userB = users.find(u => normalizeRut(u.rut) === normalizeRut(b.rut));
+          
           const surnameA = userA?.paternalSurname || '';
           const surnameB = userB?.paternalSurname || '';
+          
           const compareSurname = surnameA.localeCompare(surnameB, 'es', { sensitivity: 'base' });
           if (compareSurname !== 0) return compareSurname;
+          
           const nameA = userA?.names || '';
           const nameB = userB?.names || '';
           return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
@@ -142,13 +159,14 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       const handleClickOutside = (event: MouseEvent) => {
           if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
               setShowSuggestions(false);
+              setActiveSearchField(null);
           }
       };
       document.addEventListener("mousedown", handleClickOutside);
       return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Handlers for Academic Configuration
+  // Handlers for Academic Configuration (Modules, Dates, etc)
   const handleAddModule = () => {
       const newModule: ProgramModule = {
           id: `MOD-${Date.now()}`,
@@ -306,18 +324,45 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       await executeReload(); // DIRECTIVA_RECARGA
   };
 
-  // --- ENROLLMENT LOGIC (UPDATED TO 13 FIELDS) ---
+  // --- ENROLLMENT LOGIC (UPDATED WITH ROBUST RUT & SURNAME SEARCH) ---
   
   const handleManualFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       const { name, value } = e.target;
       setManualForm(prev => ({ ...prev, [name]: value }));
-      if (name === 'rut') {
-          setIsFoundInMaster(false); setIsAlreadyEnrolled(false); setEnrollMsg(null);
-          const rawInput = value.replace(/[^0-9kK]/g, '').toLowerCase();
-          if (rawInput.length >= 2) { 
-              const matches = users.filter(u => u.rut.replace(/[^0-9kK]/g, '').toLowerCase().includes(rawInput));
-              setSuggestions(matches.slice(0, 5)); setShowSuggestions(matches.length > 0);
-          } else { setSuggestions([]); setShowSuggestions(false); }
+      
+      // Lógica de Búsqueda Dual: RUT o Apellido Paterno
+      if (name === 'rut' || name === 'paternalSurname') {
+          setIsFoundInMaster(false); 
+          setIsAlreadyEnrolled(false); 
+          setEnrollMsg(null);
+          
+          let matches: User[] = [];
+          
+          if (name === 'rut') {
+              const rawInput = normalizeRut(value);
+              if (rawInput.length >= 2) {
+                  setActiveSearchField('rut');
+                  matches = users.filter(u => normalizeRut(u.rut).includes(rawInput));
+              } else {
+                  setActiveSearchField(null);
+              }
+          } else if (name === 'paternalSurname') {
+              const rawInput = value.toLowerCase();
+              if (rawInput.length >= 2) {
+                  setActiveSearchField('paternalSurname');
+                  matches = users.filter(u => u.paternalSurname.toLowerCase().includes(rawInput));
+              } else {
+                  setActiveSearchField(null);
+              }
+          }
+
+          if (matches.length > 0) {
+              setSuggestions(matches.slice(0, 5));
+              setShowSuggestions(true);
+          } else {
+              setSuggestions([]);
+              setShowSuggestions(false);
+          }
       }
   };
 
@@ -339,29 +384,44 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
           campus: user.campus || '', 
           systemRole: user.systemRole
       });
-      setIsFoundInMaster(true); setShowSuggestions(false); setSuggestions([]); 
-      const exists = courseEnrollments.some(e => e.rut === user.rut);
+      setIsFoundInMaster(true); 
+      setShowSuggestions(false); 
+      setSuggestions([]); 
+      setActiveSearchField(null);
+      
+      // Chequeo de matricula usando normalización
+      const exists = courseEnrollments.some(e => normalizeRut(e.rut) === normalizeRut(user.rut));
       setIsAlreadyEnrolled(exists);
+      
       if(!exists) setEnrollMsg({ type: 'success', text: 'Datos cargados desde Base Maestra.' });
       else setEnrollMsg({ type: 'error', text: 'Usuario ya inscrito en este programa.' });
+      
       setTimeout(() => { suggestionClickedRef.current = false; }, 300);
   };
 
   const handleRutBlur = () => {
       setTimeout(() => {
           if (suggestionClickedRef.current) return;
-          if (showSuggestions) setShowSuggestions(false);
+          if (showSuggestions && activeSearchField === 'rut') setShowSuggestions(false); // Only hide if searching by RUT
           if(!manualForm.rut) return;
+          
+          // 1. Formateo visual (quita ceros a la izquierda)
           const formatted = cleanRutFormat(manualForm.rut);
-          const exists = courseEnrollments.some(e => e.rut === formatted);
+          // 2. Valor normalizado para búsqueda lógica
+          const rawSearch = normalizeRut(formatted);
+
+          // Verificar existencia en matrículas usando RUT normalizado
+          const exists = courseEnrollments.some(e => normalizeRut(e.rut) === rawSearch);
           setIsAlreadyEnrolled(exists);
 
           if (!isFoundInMaster) {
-            const user = getUser(formatted);
+            // Búsqueda en Base Maestra usando normalización (para encontrar "07..." si escribí "7...")
+            const user = users.find(u => normalizeRut(u.rut) === rawSearch);
+            
             if(user) {
                 setManualForm(prev => ({ 
                     ...prev, 
-                    rut: user.rut, 
+                    rut: user.rut, // Usamos el RUT original de la BD para consistencia
                     names: user.names, 
                     paternalSurname: user.paternalSurname, 
                     maternalSurname: user.maternalSurname || '', 
@@ -377,9 +437,73 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                     systemRole: user.systemRole 
                 }));
                 setIsFoundInMaster(true);
-            } else { setManualForm(prev => ({ ...prev, rut: formatted })); }
+            } else { 
+                // Si no existe, solo formateamos el input visualmente
+                setManualForm(prev => ({ ...prev, rut: formatted })); 
+            }
           }
       }, 200);
+  };
+
+  // --- ACTIONS: UPDATE MASTER DATA ---
+  const handleUpdateMasterData = async () => {
+      if (!manualForm.rut || !manualForm.names || !manualForm.paternalSurname) {
+          alert("Datos incompletos para actualizar.");
+          return;
+      }
+      const userToUpsert: User = {
+          rut: manualForm.rut, // Use raw form rut (usually correct from DB)
+          names: manualForm.names, 
+          paternalSurname: manualForm.paternalSurname, 
+          maternalSurname: manualForm.maternalSurname, 
+          email: manualForm.email, 
+          phone: manualForm.phone, 
+          academicRole: manualForm.academicRole, 
+          faculty: manualForm.faculty, 
+          department: manualForm.department, 
+          career: manualForm.career, 
+          contractType: manualForm.contractType, 
+          teachingSemester: manualForm.teachingSemester, 
+          campus: manualForm.campus, 
+          systemRole: manualForm.systemRole as UserRole
+      };
+
+      try {
+          await upsertUsers([userToUpsert]);
+          await executeReload(); // DIRECTIVA_RECARGA
+          setEnrollMsg({ type: 'success', text: 'Datos de Estudiante actualizados en Base Maestra.' });
+      } catch (e: any) {
+          console.error(e);
+          setEnrollMsg({ type: 'error', text: 'Error al actualizar usuario.' });
+      }
+  };
+
+  // --- ACTION: DELETE ENROLLMENT (UNENROLL FROM COURSE) ---
+  const handleUnenroll = async () => {
+      if (!selectedCourseId || !manualForm.rut) return;
+      
+      // Corrección: Eliminamos de la lista del curso, NO de la Base Maestra
+      if (confirm(`¿Confirma eliminar la matrícula del estudiante ${manualForm.rut} de este curso?\n\nEl estudiante permanecerá en la Base Maestra.`)) {
+          const rawSearch = normalizeRut(manualForm.rut);
+          // Buscar enrollment usando RUT normalizado para mayor seguridad
+          const enrollment = courseEnrollments.find(e => normalizeRut(e.rut) === rawSearch);
+          
+          if (enrollment) {
+              await deleteEnrollment(enrollment.id);
+              await executeReload(); // DIRECTIVA_RECARGA
+              
+              setEnrollMsg({ type: 'success', text: 'Matrícula eliminada correctamente.' });
+              setManualForm({ 
+                  rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', 
+                  academicRole: '', faculty: '', department: '', career: '', contractType: '', 
+                  teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE 
+              });
+              setIsAlreadyEnrolled(false);
+              setIsFoundInMaster(false);
+          } else {
+              setEnrollMsg({ type: 'error', text: 'No se encontró la matrícula para eliminar.' });
+          }
+      }
   };
 
   const handleManualEnroll = async (e: React.FormEvent) => {
@@ -387,7 +511,9 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       if (!selectedCourseId || isAlreadyEnrolled) return;
       if (!manualForm.rut || !manualForm.names || !manualForm.paternalSurname) return;
       
+      // Aseguramos guardar con formato limpio
       const formattedRut = cleanRutFormat(manualForm.rut);
+      
       const userToUpsert: User = {
           rut: formattedRut, 
           names: manualForm.names, 
@@ -423,27 +549,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       } catch (error: any) {
           console.error("Error en matrícula:", error);
           setEnrollMsg({ type: 'error', text: `Error al matricular: ${error.message || 'Verifique conexión'}` });
-      }
-  };
-
-  const handleUnenroll = async () => {
-      if (!selectedCourseId || !manualForm.rut) return;
-      
-      if (confirm(`¿Confirma eliminar la matrícula del estudiante ${manualForm.rut} del programa?`)) {
-          const enrollment = courseEnrollments.find(e => e.rut === manualForm.rut);
-          if (enrollment) {
-              await deleteEnrollment(enrollment.id);
-              await executeReload(); // DIRECTIVA_RECARGA
-              
-              setEnrollMsg({ type: 'success', text: 'Matrícula eliminada correctamente.' });
-              setManualForm({ 
-                  rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', 
-                  academicRole: '', faculty: '', department: '', career: '', contractType: '', 
-                  teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE 
-              });
-              setIsAlreadyEnrolled(false);
-              setIsFoundInMaster(false);
-          }
       }
   };
 
@@ -834,9 +939,55 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                           <div className="space-y-4">
                                               <h3 className={`text-sm font-bold uppercase tracking-wide border-b pb-2 ${isAlreadyEnrolled ? 'text-red-400 border-red-100' : 'text-slate-500 border-slate-100'}`}>Identificación Personal</h3>
                                               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                                <div className="md:col-span-1 relative"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><div className="relative"><input type="text" name="rut" placeholder="12345678-9" autoComplete="off" value={manualForm.rut} onChange={handleManualFormChange} onBlur={handleRutBlur} className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : 'bg-white border-slate-300'} ${isAlreadyEnrolled ? 'border-red-500 bg-white text-red-800' : ''}`} />{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div></div>
+                                                <div className="md:col-span-1 relative">
+                                                    <label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label>
+                                                    <div className="relative">
+                                                        <input 
+                                                            type="text" 
+                                                            name="rut" 
+                                                            placeholder="12345678-9" 
+                                                            autoComplete="off" 
+                                                            value={manualForm.rut} 
+                                                            onChange={handleManualFormChange} 
+                                                            onBlur={handleRutBlur} 
+                                                            className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : 'bg-white border-slate-300'} ${isAlreadyEnrolled ? 'border-red-500 bg-white text-red-800' : ''}`} 
+                                                        />
+                                                        {showSuggestions && activeSearchField === 'rut' && suggestions.length > 0 && (
+                                                            <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
+                                                                <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por RUT</div>
+                                                                {suggestions.map((s) => (
+                                                                    <div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0">
+                                                                        <span className="font-bold block text-slate-800">{s.rut}</span>
+                                                                        <span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
                                                 <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" name="names" value={manualForm.names} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
-                                                <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label><input type="text" name="paternalSurname" value={manualForm.paternalSurname} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
+                                                <div className="md:col-span-1 relative">
+                                                    <label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label>
+                                                    <input 
+                                                        type="text" 
+                                                        name="paternalSurname" 
+                                                        value={manualForm.paternalSurname} 
+                                                        onChange={handleManualFormChange} 
+                                                        autoComplete="off"
+                                                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                                                    />
+                                                    {showSuggestions && activeSearchField === 'paternalSurname' && suggestions.length > 0 && (
+                                                        <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
+                                                            <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por Apellido</div>
+                                                            {suggestions.map((s) => (
+                                                                <div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0">
+                                                                    <span className="font-bold block text-slate-800">{s.paternalSurname} {s.maternalSurname}</span>
+                                                                    <span className="text-xs text-slate-500">{s.names} ({s.rut})</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
                                                 <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={manualForm.maternalSurname} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
                                               </div>
                                           </div>
@@ -865,14 +1016,41 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                               </div>
                                           </div>
                                           
-                                          <button 
-                                              type={isAlreadyEnrolled ? "button" : "submit"}
-                                              onClick={isAlreadyEnrolled ? handleUnenroll : undefined} 
-                                              disabled={isSyncing} 
-                                              className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all ${isAlreadyEnrolled ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-purple-600 text-white hover:bg-purple-700'} ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}
-                                          >
-                                              {isAlreadyEnrolled ? 'Eliminar Matrícula Actual' : 'Matricular Usuario'}
-                                          </button>
+                                          {isFoundInMaster && (
+                                              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
+                                                  <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Acciones de Base Maestra (Usuario Existente)</h4>
+                                                  <div className="flex gap-2">
+                                                      <button 
+                                                          type="button" 
+                                                          onClick={handleUpdateMasterData} 
+                                                          disabled={isSyncing}
+                                                          className="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 px-3 rounded shadow-sm flex items-center justify-center gap-1 transition-colors"
+                                                      >
+                                                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                                          Guardar Cambios (Datos Personales)
+                                                      </button>
+                                                  </div>
+                                              </div>
+                                          )}
+
+                                          {isAlreadyEnrolled ? (
+                                              <button 
+                                                  type="button"
+                                                  onClick={handleUnenroll} 
+                                                  disabled={isSyncing} 
+                                                  className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all bg-red-600 hover:bg-red-700 text-white ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}
+                                              >
+                                                  Eliminar Matrícula del Curso
+                                              </button>
+                                          ) : (
+                                              <button 
+                                                  type="submit"
+                                                  disabled={isSyncing} 
+                                                  className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all bg-purple-600 text-white hover:bg-purple-700 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}
+                                              >
+                                                  Matricular Usuario
+                                              </button>
+                                          )}
                                           
                                           {enrollMsg && (<div className={`text-xs p-3 rounded-lg text-center font-medium ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{enrollMsg.text}</div>)}
                                   </form>
@@ -924,7 +1102,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                       <thead className="bg-slate-50 text-slate-700"><tr><th className="px-6 py-3">RUT</th><th className="px-6 py-3">Nombre</th><th className="px-6 py-3">Estado</th></tr></thead>
                                       <tbody>
                                           {sortedEnrollments.map(enr => {
-                                              const u = users.find(user => user.rut === enr.rut);
+                                              const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut));
                                               return <tr key={enr.id} className="border-t border-slate-100"><td className="px-6 py-3 font-mono">{enr.rut}</td><td className="px-6 py-3">{u?.names} {u?.paternalSurname}</td><td className="px-6 py-3">{enr.state}</td></tr>;
                                           })}
                                       </tbody>
@@ -1206,7 +1384,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                               </thead>
                                               <tbody className="divide-y divide-slate-100">
                                                   {sortedEnrollments.map((enr) => {
-                                                      const student = users.find(u => u.rut === enr.rut);
+                                                      const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut));
                                                       const finalGrade = calculateFinalProgramGrade(enr.grades || []);
                                                       
                                                       // Calculate dates again for row mapping

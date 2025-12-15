@@ -19,6 +19,11 @@ const cleanRutFormat = (rut: string): string => {
     return `${body}-${dv}`;
 };
 
+const normalizeRut = (rut: string): string => {
+    if (!rut) return '';
+    return rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '').toLowerCase();
+};
+
 const formatDateCL = (dateStr: string | undefined): string => {
     if (!dateStr) return 'Pendiente';
     const parts = dateStr.split('-');
@@ -85,6 +90,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   
   const [suggestions, setSuggestions] = useState<User[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [activeSearchField, setActiveSearchField] = useState<'rut' | 'paternalSurname' | null>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const [isFoundInMaster, setIsFoundInMaster] = useState(false);
   const [isAlreadyEnrolled, setIsAlreadyEnrolled] = useState(false); // NEW STATE
@@ -152,6 +158,18 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           localStorage.removeItem('jumpto_tab_course');
       }
   }, [academicActivities]);
+
+  // Click outside suggestions
+  useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+          if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
+              setShowSuggestions(false);
+              setActiveSearchField(null);
+          }
+      };
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const selectedCourse = academicActivities.find(a => a.id === selectedCourseId);
   const courseEnrollments = enrollments.filter(e => e.activityId === selectedCourseId);
@@ -377,22 +395,43 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       }
   };
 
-  // --- MANUAL ENROLLMENT HANDLERS ---
+  // --- MANUAL ENROLLMENT HANDLERS (UPDATED WITH DUAL SEARCH) ---
   const handleEnrollChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       const { name, value } = e.target;
       setManualForm(prev => ({ ...prev, [name]: value }));
-      if (name === 'rut') {
+      
+      // Lógica de Búsqueda Dual: RUT o Apellido Paterno
+      if (name === 'rut' || name === 'paternalSurname') {
           setIsFoundInMaster(false);
           setIsAlreadyEnrolled(false);
           setEnrollMsg(null);
-          const rawInput = value.replace(/[^0-9kK]/g, '').toLowerCase();
-          if (rawInput.length >= 2) { 
-              const matches = users.filter(u => u.rut.replace(/[^0-9kK]/g, '').toLowerCase().includes(rawInput));
-              setSuggestions(matches.slice(0, 5)); 
-              setShowSuggestions(matches.length > 0);
-          } else { 
-              setSuggestions([]); 
-              setShowSuggestions(false); 
+          
+          let matches: User[] = [];
+          
+          if (name === 'rut') {
+              const rawInput = normalizeRut(value);
+              if (rawInput.length >= 2) {
+                  setActiveSearchField('rut');
+                  matches = users.filter(u => normalizeRut(u.rut).includes(rawInput));
+              } else {
+                  setActiveSearchField(null);
+              }
+          } else if (name === 'paternalSurname') {
+              const rawInput = value.toLowerCase();
+              if (rawInput.length >= 2) {
+                  setActiveSearchField('paternalSurname');
+                  matches = users.filter(u => u.paternalSurname.toLowerCase().includes(rawInput));
+              } else {
+                  setActiveSearchField(null);
+              }
+          }
+
+          if (matches.length > 0) {
+              setSuggestions(matches.slice(0, 5));
+              setShowSuggestions(true);
+          } else {
+              setSuggestions([]);
+              setShowSuggestions(false);
           }
       }
   };
@@ -407,6 +446,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       setIsFoundInMaster(true); 
       setShowSuggestions(false); 
       setSuggestions([]);
+      setActiveSearchField(null);
       
       if(enrolled) {
           setEnrollMsg({ type: 'error', text: 'El estudiante ya está matriculado en este curso.' });
@@ -416,30 +456,31 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   };
 
   const handleRutBlur = () => {
-      if (!manualForm.rut) return;
-      const formatted = cleanRutFormat(manualForm.rut);
-      setManualForm(prev => ({ ...prev, rut: formatted }));
-      
-      // 1. Check if user exists in master base
-      const user = getUser(formatted);
-      if (user) {
-          // Use the selection logic which checks enrollment and fills form
-          handleSelectSuggestion(user);
-      } else {
-          // If user doesn't exist in master, they might still be enrolled (legacy)
-          // Or it's a new user.
+      setTimeout(() => {
+          if (showSuggestions && activeSearchField === 'rut') setShowSuggestions(false);
+          if (!manualForm.rut) return;
           
-          // Check enrollment directly
-          const isEnrolled = courseEnrollments.some(e => e.rut === formatted);
-          setIsAlreadyEnrolled(isEnrolled);
+          const formatted = cleanRutFormat(manualForm.rut);
+          const rawSearch = normalizeRut(formatted);
+          setManualForm(prev => ({ ...prev, rut: formatted }));
           
-          if (isEnrolled) {
-               setEnrollMsg({ type: 'error', text: 'Estudiante ya matriculado (No encontrado en Base Maestra).' });
+          // 1. Check if user exists in master base
+          const user = users.find(u => normalizeRut(u.rut) === rawSearch);
+          
+          if (user) {
+              handleSelectSuggestion(user);
           } else {
-               // Reset 'found' state if manually typing a new rut
-               setIsFoundInMaster(false);
+              // If not in master, check if enrolled (legacy)
+              const isEnrolled = courseEnrollments.some(e => normalizeRut(e.rut) === rawSearch);
+              setIsAlreadyEnrolled(isEnrolled);
+              
+              if (isEnrolled) {
+                   setEnrollMsg({ type: 'error', text: 'Estudiante ya matriculado (No encontrado en Base Maestra).' });
+              } else {
+                   setIsFoundInMaster(false);
+              }
           }
-      }
+      }, 200);
   };
 
   const handleEnrollSubmit = async (e: React.FormEvent) => {
@@ -464,31 +505,12 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       setIsAlreadyEnrolled(false);
   };
 
-  const handleUnenroll = async () => {
-      if (!selectedCourseId || !manualForm.rut) return;
-      
-      if (confirm(`¿Confirma eliminar la matrícula del estudiante ${manualForm.rut}?`)) {
-          const enrollment = courseEnrollments.find(e => e.rut === manualForm.rut);
-          if (enrollment) {
-              await deleteEnrollment(enrollment.id);
-              await executeReload(); // DIRECTIVA_RECARGA
-              
-              setEnrollMsg({ type: 'success', text: 'Matrícula eliminada correctamente.' });
-              // Reset form
-              setManualForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
-              setIsAlreadyEnrolled(false);
-              setIsFoundInMaster(false);
-          }
-      }
-  };
-
+  // --- ACTIONS: UPDATE MASTER DATA ---
   const handleUpdateMasterData = async () => {
-      if (!selectedCourseId || !manualForm.rut) return;
-      if (!manualForm.names || !manualForm.paternalSurname) {
-          alert("Nombres y Apellidos son obligatorios para actualizar.");
+      if (!manualForm.rut || !manualForm.names || !manualForm.paternalSurname) {
+          alert("Datos incompletos para actualizar.");
           return;
       }
-
       const formattedRut = cleanRutFormat(manualForm.rut);
       const userToUpsert: User = {
           ...manualForm,
@@ -499,10 +521,32 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       try {
           await upsertUsers([userToUpsert]);
           await executeReload(); // DIRECTIVA_RECARGA
-          setEnrollMsg({ type: 'success', text: 'Datos de Base Maestra actualizados correctamente.' });
-      } catch (err: any) {
-          console.error(err);
-          setEnrollMsg({ type: 'error', text: 'Error al actualizar datos.' });
+          setEnrollMsg({ type: 'success', text: 'Datos de Estudiante actualizados en Base Maestra.' });
+      } catch (e: any) {
+          console.error(e);
+          setEnrollMsg({ type: 'error', text: 'Error al actualizar usuario.' });
+      }
+  };
+
+  const handleUnenroll = async () => {
+      if (!selectedCourseId || !manualForm.rut) return;
+      
+      // Corrección: Solo elimina del curso, NO de la Base Maestra
+      if (confirm(`¿Confirma eliminar la matrícula del estudiante ${manualForm.rut} de este curso?\n\nEl estudiante permanecerá en la Base Maestra.`)) {
+          const rawSearch = normalizeRut(manualForm.rut);
+          const enrollment = courseEnrollments.find(e => normalizeRut(e.rut) === rawSearch);
+          
+          if (enrollment) {
+              await deleteEnrollment(enrollment.id);
+              await executeReload(); // DIRECTIVA_RECARGA
+              
+              setEnrollMsg({ type: 'success', text: 'Matrícula eliminada correctamente.' });
+              setManualForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
+              setIsAlreadyEnrolled(false);
+              setIsFoundInMaster(false);
+          } else {
+              setEnrollMsg({ type: 'error', text: 'No se encontró la matrícula para eliminar.' });
+          }
       }
   };
 
@@ -572,6 +616,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   // --- CREATE / EDIT VIEW ---
   if (view === 'create' || view === 'edit') {
+      // ... (Content unchanged for Create/Edit view)
       return (
           <div className="animate-fadeIn max-w-4xl mx-auto">
               <button onClick={() => setView('list')} className="text-slate-500 hover:text-slate-700 mb-6 flex items-center gap-1 text-sm font-bold">
@@ -762,22 +807,36 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                               
                               {/* 1. Formulario Manual (13 Campos) */}
                               <div className={`bg-slate-50 border rounded-xl p-6 transition-colors ${isAlreadyEnrolled ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}>
-                                  <h3 className={`font-bold mb-4 flex items-center gap-2 border-b pb-2 ${isAlreadyEnrolled ? 'text-red-700 border-red-200' : 'text-slate-700 border-slate-200'}`}>
-                                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
-                                      {isAlreadyEnrolled ? 'Gestión de Matrícula Existente' : 'Inscripción Manual (Registro Completo)'}
-                                  </h3>
+                                  <div className="flex justify-between items-center mb-6">
+                                      <h3 className={`font-bold text-lg flex items-center gap-2 ${isAlreadyEnrolled ? 'text-red-700' : 'text-slate-700'}`}>
+                                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+                                          {isAlreadyEnrolled ? 'Gestión de Matrícula Existente' : 'Inscripción Manual (Registro Completo)'}
+                                      </h3>
+                                      {isFoundInMaster && !isAlreadyEnrolled && (<span className="text-xs px-2 py-1 rounded border bg-green-50 text-green-700 border-green-200">Datos de Base Maestra</span>)}
+                                  </div>
+                                  
                                   <form onSubmit={handleEnrollSubmit} className="space-y-6">
                                       {/* Identificación */}
                                       <div className="space-y-2">
                                           <h4 className="text-xs font-bold text-slate-400 uppercase">Identificación</h4>
                                           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                               <div className="relative md:col-span-1">
-                                                  <label className="block text-xs font-bold mb-1">RUT (Buscar)</label>
-                                                  <input type="text" name="rut" value={manualForm.rut} onChange={handleEnrollChange} onBlur={handleRutBlur} className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-[#647FBC] ${isAlreadyEnrolled ? 'border-red-300 bg-white text-red-700 font-bold' : ''}`} placeholder="12345678-9"/>
-                                                  {showSuggestions && suggestions.length > 0 && (
-                                                      <div className="absolute z-10 w-full bg-white border mt-1 rounded shadow-xl max-h-48 overflow-y-auto">
+                                                  <label className="block text-xs font-bold mb-1">RUT (Buscar) *</label>
+                                                  <input 
+                                                      type="text" 
+                                                      name="rut" 
+                                                      value={manualForm.rut} 
+                                                      onChange={handleEnrollChange} 
+                                                      onBlur={handleRutBlur} 
+                                                      className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-[#647FBC] ${isAlreadyEnrolled ? 'border-red-300 bg-white text-red-700 font-bold' : ''}`} 
+                                                      placeholder="12345678-9"
+                                                      autoComplete="off"
+                                                  />
+                                                  {showSuggestions && activeSearchField === 'rut' && suggestions.length > 0 && (
+                                                      <div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                                                          <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por RUT</div>
                                                           {suggestions.map(s => (
-                                                              <div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-xs border-b border-slate-50">
+                                                              <div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-xs border-b border-slate-50 last:border-0">
                                                                   <span className="font-bold block text-slate-800">{s.rut}</span>
                                                                   <span className="text-slate-500">{s.names} {s.paternalSurname}</span>
                                                               </div>
@@ -785,8 +844,29 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                       </div>
                                                   )}
                                               </div>
-                                              <div className="md:col-span-1"><label className="block text-xs font-bold mb-1">Nombres</label><input type="text" name="names" value={manualForm.names} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded"/></div>
-                                              <div className="md:col-span-1"><label className="block text-xs font-bold mb-1">Ap. Paterno</label><input type="text" name="paternalSurname" value={manualForm.paternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded"/></div>
+                                              <div className="md:col-span-1"><label className="block text-xs font-bold mb-1">Nombres *</label><input type="text" name="names" value={manualForm.names} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded"/></div>
+                                              <div className="md:col-span-1 relative">
+                                                  <label className="block text-xs font-bold mb-1">Ap. Paterno *</label>
+                                                  <input 
+                                                      type="text" 
+                                                      name="paternalSurname" 
+                                                      value={manualForm.paternalSurname} 
+                                                      onChange={handleEnrollChange} 
+                                                      className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-[#647FBC]"
+                                                      autoComplete="off"
+                                                  />
+                                                  {showSuggestions && activeSearchField === 'paternalSurname' && suggestions.length > 0 && (
+                                                      <div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                                                          <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por Apellido</div>
+                                                          {suggestions.map(s => (
+                                                              <div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-xs border-b border-slate-50 last:border-0">
+                                                                  <span className="font-bold block text-slate-800">{s.paternalSurname} {s.maternalSurname}</span>
+                                                                  <span className="text-slate-500">{s.names} ({s.rut})</span>
+                                                              </div>
+                                                          ))}
+                                                      </div>
+                                                  )}
+                                              </div>
                                               <div className="md:col-span-1"><label className="block text-xs font-bold mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={manualForm.maternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded"/></div>
                                           </div>
                                       </div>
@@ -814,27 +894,32 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                           </div>
                                       </div>
                                       
-                                      {isAlreadyEnrolled ? (
-                                          <div className="flex gap-2 mt-4">
-                                              <button
-                                                  type="button"
-                                                  onClick={handleUpdateMasterData}
+                                      {/* --- ACTION BUTTONS --- */}
+                                      {isFoundInMaster && (
+                                          <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mt-2">
+                                              <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Acciones de Base Maestra (Usuario Existente)</h4>
+                                              <button 
+                                                  type="button" 
+                                                  onClick={handleUpdateMasterData} 
                                                   disabled={isSyncing}
-                                                  className={`flex-1 bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-lg font-bold shadow transition-colors flex items-center justify-center gap-2 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}
+                                                  className="w-full bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 px-3 rounded shadow-sm flex items-center justify-center gap-1 transition-colors"
                                               >
-                                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                                  Modificar Datos Maestra
-                                              </button>
-                                              <button
-                                                  type="button"
-                                                  onClick={handleUnenroll}
-                                                  disabled={isSyncing}
-                                                  className={`flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-bold shadow transition-colors flex items-center justify-center gap-2 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}
-                                              >
-                                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                  Eliminar Matrícula
+                                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                                  Guardar Cambios (Datos Personales)
                                               </button>
                                           </div>
+                                      )}
+
+                                      {isAlreadyEnrolled ? (
+                                          <button
+                                              type="button"
+                                              onClick={handleUnenroll}
+                                              disabled={isSyncing}
+                                              className={`w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-bold shadow transition-colors flex items-center justify-center gap-2 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}
+                                          >
+                                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                              Eliminar Matrícula del Curso
+                                          </button>
                                       ) : (
                                           <button 
                                               type="submit" 
@@ -845,7 +930,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                           </button>
                                       )}
                                       
-                                      {enrollMsg && <p className={`text-xs text-center font-bold ${enrollMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{enrollMsg.text}</p>}
+                                      {enrollMsg && <p className={`text-xs text-center font-bold p-2 rounded ${enrollMsg.type === 'success' ? 'text-green-800 bg-green-100' : 'text-red-800 bg-red-100'}`}>{enrollMsg.text}</p>}
                                   </form>
                               </div>
 
@@ -876,7 +961,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                       
                                       <div className="flex items-center gap-2 justify-center">
                                           <input type="checkbox" checked={hasHeaders} onChange={e => setHasHeaders(e.target.checked)} className="rounded text-[#647FBC] focus:ring-[#647FBC]"/>
-                                          <span className="text-xs text-slate-500">Ignorar encabezados</span>
+                                          <span className="text-xs text-slate-500">Ignorar encabezados (fila 1)</span>
                                       </div>
 
                                       <button 
