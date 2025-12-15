@@ -270,6 +270,24 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             await upsertUsers([{ ...enrollForm, rut: cleanRut, systemRole: enrollForm.systemRole as UserRole }]);
             await enrollUser(cleanRut, ADVISORY_ACTIVITY_ID);
             
+            // --- NUEVO: ASIGNAR RESPONSABLE AUTOMÁTICAMENTE ---
+            if (currentUser) {
+                // Buscamos la matrícula recién creada para obtener su ID y actualizarla
+                const { data: enrData } = await supabase
+                    .from('enrollments')
+                    .select('id')
+                    .eq('user_rut', cleanRut)
+                    .eq('activity_id', ADVISORY_ACTIVITY_ID)
+                    .maybeSingle();
+                
+                if (enrData) {
+                    await updateEnrollment(enrData.id, { 
+                        responsible: `${currentUser.names} ${currentUser.paternalSurname}` 
+                    });
+                }
+            }
+            // --------------------------------------------------
+
             await executeReload(); // DIRECTIVA_RECARGA
 
             setEnrollMsg({ type: 'success', text: 'Expediente creado correctamente.' });
@@ -623,23 +641,36 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
 
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200"><tr><th className="px-6 py-4">Docente Asesorado</th><th className="px-6 py-4">Unidad Académica</th><th className="px-6 py-4 text-center">Sesiones</th><th className="px-6 py-4 text-center">Última Atención</th><th className="px-6 py-4 text-center">Acciones</th></tr></thead>
+                    <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                        <tr>
+                            <th className="px-6 py-4">Docente Asesorado</th>
+                            <th className="px-6 py-4">Unidad Académica</th>
+                            <th className="px-6 py-4">Asesor Responsable</th>
+                            <th className="px-6 py-4 text-center">Sesiones</th>
+                            <th className="px-6 py-4 text-center">Última Atención</th>
+                            <th className="px-6 py-4 text-center">Acciones</th>
+                        </tr>
+                    </thead>
                     <tbody className="divide-y divide-slate-100">
                         {advisoryEnrollments.map(enr => {
                             const user = users.find(u => u.rut === enr.rut);
                             const lastSession = enr.sessionLogs && enr.sessionLogs.length > 0 ? enr.sessionLogs[enr.sessionLogs.length - 1].date : '-';
                             const sessionCount = enr.sessionLogs?.length || 0;
+                            // Display logic: Responsible Field -> First Session Advisor -> 'Sin Asignar'
+                            const advisorDisplay = enr.responsible || (enr.sessionLogs && enr.sessionLogs.length > 0 ? enr.sessionLogs[0].advisorName : 'Sin Asignar');
+
                             return (
                                 <tr key={enr.id} className="hover:bg-indigo-50/20 transition-colors">
                                     <td className="px-6 py-4"><div className="font-bold text-slate-800">{user?.names} {user?.paternalSurname}</div><div className="text-xs text-slate-500 font-mono">{enr.rut}</div></td>
                                     <td className="px-6 py-4 text-xs text-slate-600"><div className="font-bold">{user?.faculty || 'Sin Facultad'}</div><div>{user?.department}</div></td>
+                                    <td className="px-6 py-4 text-xs font-bold text-indigo-700">{advisorDisplay}</td>
                                     <td className="px-6 py-4 text-center"><span className={`px-3 py-1 rounded-full text-xs font-bold ${sessionCount > 0 ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>{sessionCount}</span></td>
                                     <td className="px-6 py-4 text-center text-slate-600 font-mono text-xs">{lastSession}</td>
                                     <td className="px-6 py-4 text-center"><div className="flex items-center justify-center gap-2"><button onClick={() => handleManageStudent(enr.id)} className="text-indigo-600 hover:text-white hover:bg-indigo-600 border border-indigo-200 bg-indigo-50 font-bold px-3 py-1.5 rounded-lg text-xs transition-colors">Gestionar Bitácora</button><button onClick={() => handleDeleteBitacora(enr.id, `${user?.names} ${user?.paternalSurname}`)} className="text-red-500 hover:text-white hover:bg-red-500 border border-red-200 bg-red-50 font-bold px-3 py-1.5 rounded-lg text-xs transition-colors" title="Eliminar Expediente Completo"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button></div></td>
                                 </tr>
                             );
                         })}
-                        {advisoryEnrollments.length === 0 && (<tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">No hay expedientes de asesoría abiertos. Cree uno nuevo para comenzar.</td></tr>)}
+                        {advisoryEnrollments.length === 0 && (<tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400 italic">No hay expedientes de asesoría abiertos. Cree uno nuevo para comenzar.</td></tr>)}
                     </tbody>
                 </table>
             </div>
