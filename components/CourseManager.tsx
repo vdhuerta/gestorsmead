@@ -21,6 +21,7 @@ const cleanRutFormat = (rut: string): string => {
 
 const normalizeRut = (rut: string): string => {
     if (!rut) return '';
+    // Elimina todo lo que no sea número o K, pasa a minúsculas, y quita ceros al inicio
     return rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '').toLowerCase();
 };
 
@@ -93,7 +94,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [activeSearchField, setActiveSearchField] = useState<'rut' | 'paternalSurname' | null>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const [isFoundInMaster, setIsFoundInMaster] = useState(false);
-  const [isAlreadyEnrolled, setIsAlreadyEnrolled] = useState(false); // NEW STATE
+  const [isAlreadyEnrolled, setIsAlreadyEnrolled] = useState(false); 
   const [enrollMsg, setEnrollMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
   
   // Bulk Upload State
@@ -174,10 +175,11 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const selectedCourse = academicActivities.find(a => a.id === selectedCourseId);
   const courseEnrollments = enrollments.filter(e => e.activityId === selectedCourseId);
 
+  // CORRECCIÓN: Uso de normalizeRut para el ordenamiento
   const sortedEnrollments = useMemo(() => {
       return [...courseEnrollments].sort((a, b) => {
-          const userA = users.find(u => u.rut === a.rut);
-          const userB = users.find(u => u.rut === b.rut);
+          const userA = users.find(u => normalizeRut(u.rut) === normalizeRut(a.rut));
+          const userB = users.find(u => normalizeRut(u.rut) === normalizeRut(b.rut));
           return (userA?.paternalSurname || '').localeCompare(userB?.paternalSurname || '');
       });
   }, [courseEnrollments, users]);
@@ -441,7 +443,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           rut: user.rut, names: user.names, paternalSurname: user.paternalSurname, maternalSurname: user.maternalSurname || '', email: user.email || '', phone: user.phone || '', academicRole: user.academicRole || '', faculty: user.faculty || '', department: user.department || '', career: user.career || '', contractType: user.contractType || '', teachingSemester: user.teachingSemester || '', campus: user.campus || '', systemRole: user.systemRole
       });
       
-      const enrolled = courseEnrollments.some(e => e.rut === user.rut);
+      const enrolled = courseEnrollments.some(e => normalizeRut(e.rut) === normalizeRut(user.rut));
       setIsAlreadyEnrolled(enrolled);
       setIsFoundInMaster(true); 
       setShowSuggestions(false); 
@@ -464,7 +466,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           const rawSearch = normalizeRut(formatted);
           setManualForm(prev => ({ ...prev, rut: formatted }));
           
-          // 1. Check if user exists in master base
+          // 1. Check if user exists in master base using normalization
           const user = users.find(u => normalizeRut(u.rut) === rawSearch);
           
           if (user) {
@@ -531,7 +533,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const handleUnenroll = async () => {
       if (!selectedCourseId || !manualForm.rut) return;
       
-      // Corrección: Solo elimina del curso, NO de la Base Maestra
       if (confirm(`¿Confirma eliminar la matrícula del estudiante ${manualForm.rut} de este curso?\n\nEl estudiante permanecerá en la Base Maestra.`)) {
           const rawSearch = normalizeRut(manualForm.rut);
           const enrollment = courseEnrollments.find(e => normalizeRut(e.rut) === rawSearch);
@@ -982,7 +983,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                       </thead>
                                       <tbody className="divide-y divide-slate-100">
                                           {sortedEnrollments.map(enr => {
-                                              const u = users.find(user => user.rut === enr.rut);
+                                              // CORRECCIÓN: Uso de normalizeRut
+                                              const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut));
                                               return (
                                                   <tr key={enr.id} className="hover:bg-slate-50">
                                                       <td className="px-6 py-3 font-mono text-xs">{enr.rut}</td>
@@ -1037,7 +1039,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                           </thead>
                                           <tbody className="divide-y divide-slate-100">
                                               {sortedEnrollments.map(enr => {
-                                                  const student = users.find(u => u.rut === enr.rut);
+                                                  // CORRECCIÓN: Uso de normalizeRut
+                                                  const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut));
                                                   return (
                                                       <tr key={enr.id} className="hover:bg-slate-50 group">
                                                           {/* 1. Estudiante */}

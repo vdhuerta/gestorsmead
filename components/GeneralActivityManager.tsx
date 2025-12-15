@@ -34,13 +34,19 @@ const formatDateCL = (dateStr: string | undefined): string => {
     return `${d}-${m}-${y}`;
 };
 
-// Utility para limpiar RUT
+// Utility para limpiar RUT (Formato Visual)
 const cleanRutFormat = (rut: string): string => {
     let clean = rut.replace(/[^0-9kK]/g, '');
     if (clean.length < 2) return rut;
     const body = clean.slice(0, -1);
     const dv = clean.slice(-1).toUpperCase();
     return `${body}-${dv}`;
+};
+
+// Utility para normalizar RUT (Lógica de Comparación)
+const normalizeRut = (rut: string): string => {
+    if (!rut) return '';
+    return rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '').toLowerCase();
 };
 
 // Utility para normalizar valores de Excel
@@ -182,9 +188,9 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         if (name === 'rut') {
             setIsFoundInMaster(false);
             setEnrollMsg(null);
-            const rawInput = value.replace(/[^0-9kK]/g, '').toLowerCase();
+            const rawInput = normalizeRut(value);
             if (rawInput.length >= 2) { 
-                const matches = users.filter(u => u.rut.replace(/[^0-9kK]/g, '').toLowerCase().includes(rawInput));
+                const matches = users.filter(u => normalizeRut(u.rut).includes(rawInput));
                 setSuggestions(matches.slice(0, 5)); 
                 setShowSuggestions(matches.length > 0);
             } else { 
@@ -709,7 +715,8 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
                                         {activityEnrollments.map(enr => {
-                                            const u = users.find(user => user.rut === enr.rut);
+                                            // CORRECCIÓN: Uso de normalizeRut para encontrar al usuario
+                                            const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut));
                                             return (
                                                 <tr key={enr.id} className="hover:bg-slate-50">
                                                     <td className="px-6 py-3 font-medium text-slate-700">
