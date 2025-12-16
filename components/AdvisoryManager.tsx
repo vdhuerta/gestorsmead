@@ -19,6 +19,15 @@ const cleanRutFormat = (rut: string): string => {
     return `${body}-${dv}`;
 };
 
+// Utility para formatear Fecha (YYYY-MM-DD -> DD-MM-YYYY)
+const formatDateCL = (dateStr: string): string => {
+    if (!dateStr) return '-';
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return dateStr;
+    const [y, m, d] = parts;
+    return `${d}-${m}-${y}`;
+};
+
 // Utility para colores pastel aleatorios basados en texto
 const getTagColor = (text: string) => {
     const colors = [
@@ -657,7 +666,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                     <tbody className="divide-y divide-slate-100">
                         {advisoryEnrollments.map(enr => {
                             const user = users.find(u => u.rut === enr.rut);
-                            const lastSession = enr.sessionLogs && enr.sessionLogs.length > 0 ? enr.sessionLogs[enr.sessionLogs.length - 1].date : '-';
+                            const lastSession = enr.sessionLogs && enr.sessionLogs.length > 0 ? formatDateCL(enr.sessionLogs[enr.sessionLogs.length - 1].date) : '-';
                             const sessionCount = enr.sessionLogs?.length || 0;
                             // Display logic: Responsible Field -> First Session Advisor -> 'Sin Asignar'
                             const advisorDisplay = enr.responsible || (enr.sessionLogs && enr.sessionLogs.length > 0 ? enr.sessionLogs[0].advisorName : 'Sin Asignar');
