@@ -18,7 +18,8 @@ import { AdvisorManager } from './components/AdvisorManager';
 import { PostgraduateManager } from './components/PostgraduateManager'; 
 import { AdvisoryManager, PublicVerification } from './components/AdvisoryManager';
 import { StudentSignature } from './components/StudentSignature'; 
-import { CertificateVerification } from './components/CertificateVerification'; // Import New Component
+import { CertificateVerification } from './components/CertificateVerification'; 
+import { ReportManager } from './components/ReportManager'; // New Import
 import { DataProvider, useData } from './context/DataContext';
 import { checkConnection, supabase } from './services/supabaseClient'; 
 
@@ -42,7 +43,7 @@ const MainContent: React.FC = () => {
   // --- ROUTING LOGIC FOR SIGNATURE & VERIFICATION ---
   const [signatureParams, setSignatureParams] = useState<{eid: string, sid: string} | null>(null);
   const [verificationCode, setVerificationCode] = useState<string | null>(null);
-  const [certVerificationCode, setCertVerificationCode] = useState<string | null>(null); // New State
+  const [certVerificationCode, setCertVerificationCode] = useState<string | null>(null); 
 
   // --- REALTIME PRESENCE STATE (ASESORES) ---
   const [onlinePeers, setOnlinePeers] = useState<{rut: string, names: string, photoUrl: string}[]>([]);
@@ -71,7 +72,7 @@ const MainContent: React.FC = () => {
       } else if (mode === 'verify') {
           const code = params.get('code');
           if (code) setVerificationCode(code);
-      } else if (mode === 'verify_cert') { // New Mode
+      } else if (mode === 'verify_cert') { 
           const code = params.get('code');
           if (code) setCertVerificationCode(code);
       }
@@ -98,12 +99,9 @@ const MainContent: React.FC = () => {
               const newState = channel.presenceState();
               const peers: any[] = [];
               
-              // Flatten presence state
               for (let key in newState) {
-                  // newState[key] es un array de objetos de sesión para ese usuario
                   if (newState[key].length > 0) {
-                      const peerData = newState[key][0]; // Tomamos la primera sesión
-                      // Filtramos para no mostrarnos a nosotros mismos en la lista "otros"
+                      const peerData = newState[key][0]; 
                       if (peerData.rut !== user.rut) {
                           peers.push(peerData);
                       }
@@ -128,7 +126,6 @@ const MainContent: React.FC = () => {
   }, [user]);
 
 
-  // --- SPECIAL RENDER FOR PUBLIC VIEWS (NO LOGIN REQUIRED) ---
   if (signatureParams) {
       return <StudentSignature enrollmentId={signatureParams.eid} sessionId={signatureParams.sid} />;
   }
@@ -146,9 +143,7 @@ const MainContent: React.FC = () => {
     setActiveTab('dashboard');
   };
 
-  // --- CRITICAL DATABASE ERROR SCREEN (Recursion) ---
   if (error && (error.includes("infinite recursion") || error.includes("42P17"))) {
-      // ... (Keep existing error screen logic)
       return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-50 p-6 animate-fadeIn">
               <div className="bg-white rounded-xl shadow-2xl border-l-8 border-red-600 max-w-4xl w-full overflow-hidden flex flex-col max-h-[90vh]">
@@ -191,11 +186,9 @@ const MainContent: React.FC = () => {
       );
   }
 
-  // 1. Si no hay usuario, mostrar Login
   if (!user) {
     return (
         <>
-            {/* CONNECTION STATUS BAR */}
             {connectionStatus === 'error' && (
                 <div className="bg-red-600 text-white text-xs py-2 px-4 text-center font-bold relative z-50">
                     ⚠️ Error de Conexión a Supabase: {connectionMsg}. Revisa services/supabaseClient.ts
@@ -211,7 +204,6 @@ const MainContent: React.FC = () => {
     );
   }
 
-  // 2. Renderizado condicional del contenido principal
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -235,6 +227,9 @@ const MainContent: React.FC = () => {
       case 'advisors':
         return <AdvisorManager currentUser={user} />;
       
+      case 'reports':
+        return <ReportManager />;
+
       case 'config':
         return <ConfigEditor />;
 
@@ -243,7 +238,6 @@ const MainContent: React.FC = () => {
 
       case 'erd':
       case 'json':
-        // ERD View Logic reuse
         return (
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 animate-fadeIn">
                 <div className="xl:col-span-2 space-y-6">
@@ -274,7 +268,6 @@ const MainContent: React.FC = () => {
                     )}
                 </div>
 
-                {/* Sidebar */}
                 <div className="xl:col-span-1 space-y-6">
                     <AiAssistant />
                 </div>
@@ -289,7 +282,6 @@ const MainContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#F9F8F6] text-slate-900 font-sans pb-10">
       
-      {/* CONNECTION ERROR BANNER */}
       {connectionStatus === 'error' && (
           <div className="bg-red-600 text-white px-4 py-2 text-center text-sm font-bold shadow-md relative z-50">
               ⚠️ Alerta: No se pudo conectar a la Base de Datos. Los cambios NO se guardarán. 
@@ -307,10 +299,8 @@ const MainContent: React.FC = () => {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
         {renderContent()}
 
-        {/* FLOATING USER AVATAR & PRESENCE */}
         <div className="fixed bottom-6 left-6 z-50 flex items-end gap-3 animate-fadeIn">
             
-            {/* 1. USUARIO ACTUAL (SIEMPRE VISIBLE) */}
             <div className="relative group">
                 <div className={`absolute -inset-1 rounded-full border-4 ${connectionStatus === 'error' ? 'border-red-500/60' : 'border-green-500/60'} animate-pulse`}></div>
                 <div className={`absolute inset-0 rounded-full border-4 ${connectionStatus === 'error' ? 'border-red-500' : 'border-green-500'}`}></div>
@@ -323,13 +313,11 @@ const MainContent: React.FC = () => {
                         </div>
                     )}
                 </div>
-                {/* Tooltip nombre propio */}
                 <div className="absolute left-full ml-2 bottom-2 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                     Tú ({user.names})
                 </div>
             </div>
 
-            {/* 2. OTROS ASESORES CONECTADOS (SOLO VISTA ASESOR) */}
             {user.systemRole === UserRole.ASESOR && onlinePeers.length > 0 && (
                 <div className="flex -space-x-3 items-center pb-1">
                     {onlinePeers.map((peer) => (
@@ -345,7 +333,6 @@ const MainContent: React.FC = () => {
                             </div>
                             <div className="absolute w-3 h-3 bg-green-500 border-2 border-white rounded-full bottom-0 right-0 z-20"></div>
                             
-                            {/* Tooltip para colegas */}
                             <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover/peer:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-30">
                                 {peer.names} (Conectado)
                             </div>
@@ -359,7 +346,6 @@ const MainContent: React.FC = () => {
 
         </div>
 
-        {/* Debug / Reset Button */}
         <div className="fixed bottom-4 right-4">
              <button onClick={resetData} className="bg-[#91ADC8] hover:bg-slate-600 text-white text-xs px-3 py-1 rounded-full shadow-lg border border-white transition-colors opacity-70 hover:opacity-100">
                 Reiniciar Datos (Debug)
