@@ -273,6 +273,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                 
                 const usersToUpsert: User[] = []; 
                 const rutsToEnroll: string[] = []; 
+                const processedInBatch = new Set<string>(); // Evita duplicados en el mismo archivo
                 let startRow = hasHeaders ? 1 : 0;
                 
                 for (let i = startRow; i < rows.length; i++) {
@@ -285,9 +286,13 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                     
                     const cleanRut = cleanRutFormat(rawRut);
                     const normRut = normalizeRut(cleanRut);
+
+                    // Evitamos procesar la misma fila del archivo dos veces
+                    if (processedInBatch.has(normRut)) continue;
+                    processedInBatch.add(normRut);
+
                     rutsToEnroll.push(cleanRut);
                     
-                    // Verificamos si existe en Base Maestra. Si no existe o trae datos, preparamos Upsert
                     const masterUser = users.find(u => normalizeRut(u.rut) === normRut);
                     const hasNameInFile = rowStrings[1] && rowStrings[1].length > 1;
 
@@ -306,7 +311,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                             contractType: normalizeValue(rowStrings[10] || masterUser?.contractType || '', listContracts), 
                             teachingSemester: normalizeValue(rowStrings[11] || masterUser?.teachingSemester || '', listSemesters), 
                             campus: rowStrings[12] || masterUser?.campus || '', 
-                            systemRole: UserRole.ESTUDIANTE 
+                            systemRole: masterUser?.systemRole || UserRole.ESTUDIANTE 
                         });
                     }
                 }
@@ -317,7 +322,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                     return;
                 }
 
-                // 1. Asegurar que los usuarios existan (o se creen como minimal) para evitar error de FK
+                // 1. Asegurar que los usuarios existan
                 if (usersToUpsert.length > 0) { 
                     await upsertUsers(usersToUpsert); 
                 }
