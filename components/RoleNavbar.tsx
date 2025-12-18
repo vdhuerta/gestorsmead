@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { UserRole, User } from '../types';
 import { useData } from '../context/DataContext';
@@ -46,7 +45,7 @@ const NAV_ITEMS: NavItem[] = [
   { 
     id: 'erd', 
     label: 'Modelo ER', 
-    allowedRoles: [UserRole.ASESOR], 
+    allowedRoles: [], // Se elimina UserRole.ASESOR ya que no trabajan con esta sección
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <title>Modelo Entidad-Relación</title>

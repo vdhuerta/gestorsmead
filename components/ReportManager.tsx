@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { User, Enrollment, Activity, ActivityState } from '../types';
@@ -8,9 +7,17 @@ type DetailFilter = {
     category?: 'ACADEMIC' | 'POSTGRADUATE' | 'GENERAL' | 'ADVISORY' | 'TOTAL';
 };
 
+const CATEGORY_NAMES: Record<string, string> = {
+    'ACADEMIC': 'Curso',
+    'POSTGRADUATE': 'Postítulo',
+    'GENERAL': 'Extensión',
+    'ADVISORY': 'Asesoría',
+    'TOTAL': 'Todas'
+};
+
 export const ReportManager: React.FC = () => {
     const { enrollments, activities, users } = useData();
-    const [activeReport, setActiveReport] = useState<'consolidated' | 'effectiveness' | 'preferences' | 'advisoryImpact' | null>(null);
+    const [activeReport, setActiveReport] = useState<'consolidated' | 'effectiveness' | 'preferences' | 'advisoryImpact' | 'frequentTeachers' | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedFaculty, setSelectedFaculty] = useState<string | null>(null);
     const [detailFilter, setDetailFilter] = useState<DetailFilter | null>(null);
@@ -131,6 +138,42 @@ export const ReportManager: React.FC = () => {
         })).sort((a, b) => b.sessions - a.sessions);
     }, [enrollments, activities, users]);
 
+    // --- LÓGICA DOCENTES FRECUENTES (FIDELIZACIÓN) ---
+    const frequentTeachersData = useMemo(() => {
+        const userApprovedCount: Record<string, number> = {};
+        
+        // Contar actividades de interés para fidelización
+        enrollments.forEach(enr => {
+            const act = activities.find(a => a.id === enr.activityId);
+            if (!act) return;
+            
+            // Criterio: Aprobados (Cursos) o registrados (Extensión/Asesoría)
+            const isApproved = enr.state === ActivityState.APROBADO;
+            const isExtensionOrAdvisory = act.category === 'GENERAL' || act.category === 'ADVISORY';
+            
+            if (isApproved || isExtensionOrAdvisory) {
+                userApprovedCount[enr.rut] = (userApprovedCount[enr.rut] || 0) + 1;
+            }
+        });
+
+        const stats: Record<string, { frequentCount: number, teacherRuts: string[] }> = {};
+        
+        Object.entries(userApprovedCount).forEach(([rut, count]) => {
+            if (count >= 2) {
+                const user = users.find(u => u.rut === rut);
+                const faculty = user?.faculty || 'Sin Facultad / Externo';
+                if (!stats[faculty]) stats[faculty] = { frequentCount: 0, teacherRuts: [] };
+                stats[faculty].frequentCount += 1;
+                stats[faculty].teacherRuts.push(rut);
+            }
+        });
+
+        return Object.entries(stats).map(([faculty, data]) => ({
+            faculty,
+            ...data
+        })).sort((a, b) => b.frequentCount - a.frequentCount);
+    }, [enrollments, users, activities]);
+
     const filteredDrillDown = useMemo(() => {
         if (!detailFilter) return [];
         return enrollments.filter(enr => {
@@ -148,6 +191,115 @@ export const ReportManager: React.FC = () => {
             activity: activities.find(a => a.id === enr.activityId)
         }));
     }, [detailFilter, enrollments, activities, users]);
+
+    // --- EXPORTAR INFORME FIDELIZACION FACULTAD HTML ---
+    const handleExportFacultyHTML = () => {
+        if (!selectedFaculty) return;
+        
+        const facultyData = frequentTeachersData.find(f => f.faculty === selectedFaculty);
+        if (!facultyData) return;
+
+        let rowsHTML = '';
+        facultyData.teacherRuts.forEach(rut => {
+            const u = users.find(user => user.rut === rut);
+            const teacherEnrollments = enrollments.filter(e => {
+                const act = activities.find(a => a.id === e.activityId);
+                if (!act) return false;
+                const isApproved = e.state === ActivityState.APROBADO;
+                const isExtensionOrAdvisory = act.category === 'GENERAL' || act.category === 'ADVISORY';
+                return e.rut === rut && (isApproved || isExtensionOrAdvisory);
+            });
+
+            teacherEnrollments.forEach(enr => {
+                const act = activities.find(a => a.id === enr.activityId);
+                const isManualCert = act?.category === 'GENERAL' || act?.category === 'ADVISORY';
+                const certValue = isManualCert ? 'PARTICIPACIÓN' : (enr.finalGrade || '-');
+                
+                rowsHTML += `
+                    <tr>
+                        <td>${u?.names} ${u?.paternalSurname} ${u?.maternalSurname || ''}</td>
+                        <td>${u?.rut}</td>
+                        <td>${u?.department || 'S/D'}</td>
+                        <td>${act?.name || 'N/A'}</td>
+                        <td style="text-align: center;">${act?.hours || '0'}</td>
+                        <td style="text-align: center;">${enr.attendancePercentage || 0}%</td>
+                        <td style="text-align: center; font-weight: bold;">${certValue}</td>
+                    </tr>
+                `;
+            });
+        });
+
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <meta charset="UTF-8">
+                <title>Informe de Fidelización - ${selectedFaculty}</title>
+                <style>
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #334155; line-height: 1.6; background-color: #f8fafc; }
+                    .container { max-width: 1100px; margin: auto; background: white; padding: 40px; border-radius: 12px; shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); border: 1px solid #e2e8f0; }
+                    .header { border-bottom: 3px solid #6366f1; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: flex-end; }
+                    h1 { margin: 0; color: #1e293b; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
+                    .faculty-name { color: #6366f1; font-weight: 800; font-size: 28px; display: block; margin-top: 5px; }
+                    .timestamp { font-size: 12px; color: #94a3b8; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+                    th { background-color: #f1f5f9; color: #475569; text-align: left; padding: 12px 10px; border-bottom: 2px solid #e2e8f0; text-transform: uppercase; font-size: 11px; }
+                    td { padding: 12px 10px; border-bottom: 1px solid #f1f5f9; }
+                    tr:nth-child(even) { background-color: #fcfcfc; }
+                    tr:hover { background-color: #f5f3ff; }
+                    .footer { margin-top: 40px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; pt: 20px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <div>
+                            <h1>Informe de Fidelización Docente</h1>
+                            <span class="faculty-name">${selectedFaculty}</span>
+                        </div>
+                        <div class="timestamp">Generado el: ${new Date().toLocaleString()}</div>
+                    </div>
+                    
+                    <p style="font-size: 14px; margin-bottom: 20px;">
+                        Este documento contiene el listado de docentes que han participado activamente en el ciclo de formación continua institucional, 
+                        cumpliendo con el criterio de fidelización (2 o más actividades).
+                    </p>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nombres y Apellido</th>
+                                <th>RUT</th>
+                                <th>Departamento</th>
+                                <th>Actividad o Participación</th>
+                                <th style="text-align: center;">Horas</th>
+                                <th style="text-align: center;">Asistencia</th>
+                                <th style="text-align: center;">Nota / Certificación</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rowsHTML}
+                        </tbody>
+                    </table>
+
+                    <div class="footer">
+                        © ${new Date().getFullYear()} GestorSMEAD - Unidad de Acompañamiento Docente (UAD) <br>
+                        Documento generado automáticamente para fines de gestión académica interna.
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `INFORME_FIDELIDAD_${selectedFaculty.replace(/\s+/g, '_').toUpperCase()}_${new Date().toISOString().split('T')[0]}.html`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     const handleExportCSV = () => {
         const headers = [
@@ -233,6 +385,19 @@ export const ReportManager: React.FC = () => {
                     <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
                         <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Ver Mapa de Impacto</span>
                         <svg className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                    </div>
+                </div>
+
+                {/* ÍNDICE DE DOCENTES FRECUENTES */}
+                <div onClick={() => setActiveReport('frequentTeachers')} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:border-purple-400 hover:shadow-md transition-all cursor-pointer group">
+                    <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-lg flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-7.714 2.143L11 21l-2.286-6.857L1 12l7.714-2.143L11 3z" /></svg>
+                    </div>
+                    <h3 className="font-bold text-slate-800 text-lg">Docentes Frecuentes</h3>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Índice de fidelización: Docentes que han aprobado 2 o más actividades en el ciclo.</p>
+                    <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
+                        <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider">Ver Fidelización</span>
+                        <svg className="w-4 h-4 text-slate-300 group-hover:text-purple-500 transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
                     </div>
                 </div>
 
@@ -359,7 +524,7 @@ export const ReportManager: React.FC = () => {
                                             <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-1 block">Participantes Detallados</span>
                                             <h4 className="text-lg font-bold text-slate-800 leading-tight">{detailFilter.faculty}</h4>
                                             <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-700 font-bold mt-1 inline-block">
-                                                Categoría: {detailFilter.category === 'TOTAL' ? 'Todas' : detailFilter.category}
+                                                Categoría: {CATEGORY_NAMES[detailFilter.category || 'TOTAL']}
                                             </span>
                                         </div>
                                         <button onClick={() => setDetailFilter(null)} className="text-slate-400 hover:text-slate-600 font-bold text-xl">&times;</button>
@@ -376,7 +541,7 @@ export const ReportManager: React.FC = () => {
                                                                 item.activity?.category === 'POSTGRADUATE' ? 'bg-purple-50 text-purple-700 border-purple-100' :
                                                                 'bg-teal-50 text-teal-700 border-teal-100'
                                                             }`}>
-                                                                {item.activity?.category}
+                                                                {CATEGORY_NAMES[item.activity?.category || '']}
                                                             </span>
                                                         </div>
                                                         <div className="text-xs text-slate-500 font-medium mb-1">{item.activity?.name}</div>
@@ -470,7 +635,7 @@ export const ReportManager: React.FC = () => {
                                                     const act = activities.find(a => a.id === enr.activityId);
                                                     return f === selectedFaculty && act?.category === 'ADVISORY';
                                                 }).map((enr, i) => {
-                                                    const u = users.find(user => user.rut === enr.rut);
+                                                    const u = users.find(user => user.rut === user.rut);
                                                     const sessionCount = enr.sessionLogs?.length || 0;
                                                     
                                                     return (
@@ -509,6 +674,178 @@ export const ReportManager: React.FC = () => {
                         <div className="p-4 bg-indigo-50 border-t border-indigo-200 text-center">
                              <p className="text-[10px] text-indigo-800/60 font-bold uppercase tracking-widest italic">
                                 Informe exclusivo para gestión de Asesorías Pedagógicas Individuales
+                             </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL ÍNDICE DE DOCENTES FRECUENTES */}
+            {activeReport === 'frequentTeachers' && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden border border-purple-300">
+                        <div className="p-6 bg-purple-50 border-b border-purple-200 flex justify-between items-center">
+                            <div>
+                                <h3 className="text-xl font-bold text-purple-900">Índice de Docentes Frecuentes (Fidelización)</h3>
+                                <p className="text-xs text-purple-700 mt-1">Identificación de docentes con 2 o más actividades aprobadas por unidad académica.</p>
+                            </div>
+                            <button onClick={() => { setActiveReport(null); setSelectedFaculty(null); }} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button>
+                        </div>
+
+                        <div className="flex-1 flex overflow-hidden">
+                            {/* RANKING DE FACULTADES POR FIDELIDAD */}
+                            <div className={`w-full md:w-1/2 flex flex-col border-r border-slate-100 ${selectedFaculty ? 'hidden md:flex' : 'flex'}`}>
+                                <div className="p-4 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center">
+                                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Unidades con Alta Cultura Participativa</h4>
+                                    <span className="text-[10px] font-bold text-purple-600 px-2 py-0.5 rounded-full bg-purple-50 border border-purple-100">Docentes Fidelizados</span>
+                                </div>
+                                <div className="flex-1 overflow-auto custom-scrollbar p-4 space-y-3">
+                                    {frequentTeachersData.map((item, idx) => (
+                                        <div 
+                                            key={idx}
+                                            onClick={() => setSelectedFaculty(item.faculty)}
+                                            className={`p-5 rounded-xl border transition-all cursor-pointer flex items-center justify-between group ${
+                                                selectedFaculty === item.faculty 
+                                                ? 'bg-purple-600 border-purple-700 text-white shadow-xl scale-[1.02]' 
+                                                : 'bg-white border-slate-100 hover:border-purple-300 hover:bg-purple-50/30'
+                                            }`}
+                                        >
+                                            <div className="flex-1 pr-4">
+                                                <h5 className={`font-bold text-sm ${selectedFaculty === item.faculty ? 'text-white' : 'text-slate-800'}`}>{item.faculty}</h5>
+                                                <div className="flex items-center gap-3 mt-2">
+                                                    <div className={`text-[10px] flex items-center gap-1 font-bold ${selectedFaculty === item.faculty ? 'text-purple-100' : 'text-slate-400'}`}>
+                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                                                        {item.frequentCount} Docentes con 2+ logros
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className={`text-2xl font-black ${selectedFaculty === item.faculty ? 'text-white' : 'text-purple-600'}`}>{item.frequentCount}</div>
+                                                <div className={`text-[9px] font-bold uppercase tracking-tighter ${selectedFaculty === item.faculty ? 'text-purple-200' : 'text-slate-400'}`}>Índice</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {frequentTeachersData.length === 0 && (
+                                        <div className="py-20 text-center text-slate-400 italic text-sm">
+                                            No hay datos suficientes para calcular el índice de fidelización.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* DETALLE DE DOCENTES POR FACULTAD SELECCIONADA */}
+                            <div className={`flex-1 flex flex-col bg-slate-50/50 ${selectedFaculty ? 'flex' : 'hidden md:flex items-center justify-center'}`}>
+                                {selectedFaculty ? (
+                                    <div className="flex flex-col h-full animate-fadeIn">
+                                        <div className="p-6 bg-white border-b border-slate-100 flex justify-between items-start shadow-sm relative z-10">
+                                            <div>
+                                                <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider mb-1 block">Ranking de Participación</span>
+                                                <h4 className="text-lg font-bold text-slate-800 leading-tight">{selectedFaculty}</h4>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button 
+                                                    onClick={handleExportFacultyHTML}
+                                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-2 transition-colors"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                    Exportar HTML
+                                                </button>
+                                                <button onClick={() => setSelectedFaculty(null)} className="md:hidden text-xs font-bold text-slate-500 border border-slate-200 px-3 py-1.5 rounded-lg bg-white shadow-sm">Volver</button>
+                                            </div>
+                                        </div>
+                                        <div className="flex-1 overflow-auto custom-scrollbar p-6">
+                                            <div className="space-y-4">
+                                                {(() => {
+                                                    const facultyData = frequentTeachersData.find(f => f.faculty === selectedFaculty);
+                                                    if (!facultyData) return null;
+                                                    
+                                                    const getPrefix = (cat?: string) => {
+                                                        if (cat === 'ACADEMIC' || cat === 'POSTGRADUATE') return 'CUR';
+                                                        if (cat === 'GENERAL') return 'EXT';
+                                                        if (cat === 'ADVISORY') return 'ASE';
+                                                        return 'OTR';
+                                                    };
+
+                                                    return facultyData.teacherRuts.map(rut => {
+                                                        const u = users.find(user => user.rut === rut);
+                                                        const teacherEnrollments = enrollments.filter(e => {
+                                                            const act = activities.find(a => a.id === e.activityId);
+                                                            if (!act) return false;
+                                                            const isApproved = e.state === ActivityState.APROBADO;
+                                                            const isExtensionOrAdvisory = act.category === 'GENERAL' || act.category === 'ADVISORY';
+                                                            return e.rut === rut && (isApproved || isExtensionOrAdvisory);
+                                                        });
+                                                        
+                                                        return (
+                                                            <div key={rut} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm group hover:border-purple-300 transition-all">
+                                                                <div className="flex items-center justify-between mb-3">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center font-bold text-sm">
+                                                                            {u?.names.charAt(0)}
+                                                                        </div>
+                                                                        <div>
+                                                                            <div className="font-bold text-slate-800 text-sm group-hover:text-purple-700 transition-colors">{u?.names} {u?.paternalSurname}</div>
+                                                                            <div className="text-[10px] text-slate-400 font-mono">
+                                                                                {u?.rut} {u?.department && <span className="ml-2 text-slate-500 font-sans font-bold">• {u.department}</span>}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-right">
+                                                                        <div className="text-lg font-black text-purple-600">{teacherEnrollments.length}</div>
+                                                                        <div className="text-[9px] font-bold text-slate-400 uppercase">Logros</div>
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                <div className="space-y-2 mt-4">
+                                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-1">Historial Detallado:</p>
+                                                                    {teacherEnrollments.map((enr, i) => {
+                                                                        const act = activities.find(a => a.id === enr.activityId);
+                                                                        const prefix = getPrefix(act?.category);
+                                                                        
+                                                                        return (
+                                                                            <div key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50/50 p-2 rounded-lg border border-slate-100">
+                                                                                <svg className="w-3 h-3 text-emerald-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                                                                                <div className="flex-1 min-w-0">
+                                                                                    <div className="flex items-center gap-1">
+                                                                                        <span className="font-black text-[9px] text-indigo-500">[{prefix}]</span>
+                                                                                        <span className="truncate font-medium">{act?.name}</span>
+                                                                                        <span className="text-[9px] font-mono text-slate-400 ml-auto">{act?.hours}h • {act?.year}</span>
+                                                                                    </div>
+                                                                                    <div className="flex gap-3 text-[9px] text-slate-400 mt-0.5">
+                                                                                        {enr.finalGrade !== undefined && enr.finalGrade > 0 && act?.category !== 'GENERAL' && act?.category !== 'ADVISORY' ? (
+                                                                                            <span>Nota: <span className="font-bold text-slate-600">{enr.finalGrade}</span></span>
+                                                                                        ) : (
+                                                                                            <span className="bg-emerald-50 text-emerald-700 px-1 rounded font-bold">PARTICIPACIÓN</span>
+                                                                                        )}
+                                                                                        <span>Asistencia: <span className="font-bold text-slate-600">{enr.attendancePercentage || 0}%</span></span>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    });
+                                                })()}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="text-center p-12">
+                                        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
+                                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>
+                                        </div>
+                                        <h4 className="font-bold text-slate-400">Análisis de Fidelización</h4>
+                                        <p className="text-xs text-slate-400 mt-1 max-w-[250px] mx-auto">Seleccione una unidad académica para listar a sus docentes más comprometidos con la formación continua.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-purple-50 border-t border-purple-200 text-center">
+                             <p className="text-[10px] text-purple-800/60 font-bold uppercase tracking-widest italic">
+                                Informe basado en la participación histórica acumulada de actividades aprobadas
                              </p>
                         </div>
                     </div>

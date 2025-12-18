@@ -93,6 +93,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSearchField, setActiveSearchField] = useState<'rut' | 'paternalSurname' | null>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+  const [isEditing, setIsEditing] = useState(false);
   const [isFoundInMaster, setIsFoundInMaster] = useState(false);
   const [isAlreadyEnrolled, setIsAlreadyEnrolled] = useState(false); 
   const [enrollMsg, setEnrollMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
@@ -1080,7 +1081,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                                       step="0.1"
                                                                       min="1"
                                                                       max="7"
-                                                                      className={`w-16 text-center border rounded py-1 text-sm font-bold focus:ring-2 focus:ring-[#647FBC] focus:outline-none transition-all ${enr.grades?.[idx] && enr.grades[idx] < 4 ? 'text-red-600 border-red-200 bg-red-50' : 'text-slate-700 border-slate-200'}`}
+                                                                      className={`w-16 text-center border rounded py-1 text-sm font-bold focus:ring-2 focus:ring-[#647FBC] focus:outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${enr.grades?.[idx] && enr.grades[idx] < 4 ? 'text-red-600 border-red-200 bg-red-50' : 'text-slate-700 border-slate-200'}`}
                                                                       value={enr.grades?.[idx] || ''}
                                                                       onChange={(e) => handleUpdateGrade(enr.id, idx, e.target.value)}
                                                                       disabled={isSyncing}
