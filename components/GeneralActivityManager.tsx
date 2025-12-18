@@ -6,6 +6,7 @@ import { GENERAL_ACTIVITY_TYPES, ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, 
 import { SmartSelect } from './SmartSelect';
 // @ts-ignore
 import { read, utils } from 'xlsx';
+import { useReloadDirective } from '../hooks/useReloadDirective';
 
 interface GeneralActivityManagerProps {
     currentUser: User;
@@ -60,6 +61,7 @@ const normalizeValue = (val: string, masterList: string[]): string => {
 
 export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ currentUser }) => {
     const { activities, addActivity, deleteActivity, enrollments, users, getUser, upsertUsers, enrollUser, bulkEnroll, config } = useData();
+    const { isSyncing, executeReload } = useReloadDirective();
     
     // Lists needed for enrollment form
     const listFaculties = config.faculties?.length ? config.faculties : FACULTY_LIST;
@@ -109,6 +111,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
     // Bulk Upload States
     const [uploadFile, setUploadFile] = useState<File | null>(null);
     const [hasHeaders, setHasHeaders] = useState(true);
+    const [isProcessing, setIsProcessing] = useState(false);
 
     const isAdmin = currentUser.systemRole === UserRole.ADMIN;
     const isAdvisor = currentUser.systemRole === UserRole.ASESOR;
@@ -212,7 +215,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         setTimeout(() => { suggestionClickedRef.current = false; }, 300);
     };
 
-    const handleEnrollSubmit = (e: React.FormEvent) => {
+    const handleEnrollSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedActivity) return;
         
@@ -221,84 +224,115 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
             return;
         }
 
+        setIsProcessing(true);
         const formattedRut = cleanRutFormat(enrollForm.rut);
         const userToUpsert: User = {
             rut: formattedRut, names: enrollForm.names, paternalSurname: enrollForm.paternalSurname, maternalSurname: enrollForm.maternalSurname, email: enrollForm.email, phone: enrollForm.phone, academicRole: enrollForm.academicRole, faculty: enrollForm.faculty, department: enrollForm.department, career: enrollForm.career, contractType: enrollForm.contractType, teachingSemester: enrollForm.teachingSemester, campus: enrollForm.campus, systemRole: enrollForm.systemRole as UserRole
         };
 
-        upsertUsers([userToUpsert]);
-        enrollUser(formattedRut, selectedActivity.id);
-        
-        setEnrollMsg({ type: 'success', text: 'Participante registrado exitosamente.' });
-        setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE, responsible: '' });
-        setIsFoundInMaster(false);
+        try {
+            await upsertUsers([userToUpsert]);
+            await enrollUser(formattedRut, selectedActivity.id);
+            await executeReload();
+            setEnrollMsg({ type: 'success', text: 'Participante registrado exitosamente.' });
+            setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
+            setIsFoundInMaster(false);
+        } catch (error) {
+            setEnrollMsg({ type: 'error', text: 'Error al registrar participante.' });
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     const handleBulkUpload = () => {
         if (!uploadFile || !selectedActivity) return;
+        setIsProcessing(true);
+        setEnrollMsg(null);
+
         const reader = new FileReader(); 
         const isExcel = uploadFile.name.endsWith('.xlsx') || uploadFile.name.endsWith('.xls');
         
         reader.onload = async (e) => {
-            let rows: any[][] = [];
-            if (isExcel) { 
-                const data = e.target?.result; 
-                const workbook = read(data, { type: 'array' }); 
-                rows = utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 }); 
-            } else { 
-                const text = e.target?.result as string; 
-                const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== ''); 
-                if (lines.length > 0) { 
-                    const delimiter = lines[0].includes(';') ? ';' : ','; 
-                    rows = lines.map(line => line.split(delimiter)); 
-                } 
-            }
-            
-            if (rows.length < 1) return;
-            
-            const usersToUpsert: User[] = []; 
-            const rutsToEnroll: string[] = []; 
-            let startRow = hasHeaders ? 1 : 0;
-            
-            for (let i = startRow; i < rows.length; i++) {
-                const row = rows[i]; 
-                const rowStrings = row.map(cell => cell !== undefined && cell !== null ? String(cell).trim() : '');
-                if (rowStrings.length < 1 || !rowStrings[0]) continue;
-                
-                const cleanRut = cleanRutFormat(rowStrings[0]); 
-                rutsToEnroll.push(cleanRut);
-                
-                const hasName = rowStrings[1] && rowStrings[1].length > 1;
-                if (hasName) {
-                    usersToUpsert.push({ 
-                        rut: cleanRut, 
-                        names: rowStrings[1] || '', 
-                        paternalSurname: rowStrings[2] || '', 
-                        maternalSurname: rowStrings[3] || '', 
-                        email: rowStrings[4] || '', 
-                        phone: rowStrings[5] || '', 
-                        academicRole: normalizeValue(rowStrings[6], listRoles), 
-                        faculty: normalizeValue(rowStrings[7], listFaculties), 
-                        department: normalizeValue(rowStrings[8], listDepts), 
-                        career: normalizeValue(rowStrings[9], listCareers), 
-                        contractType: normalizeValue(rowStrings[10], listContracts), 
-                        teachingSemester: normalizeValue(rowStrings[11], listSemesters), 
-                        campus: rowStrings[12] || '', 
-                        systemRole: UserRole.ESTUDIANTE 
-                    });
+            try {
+                let rows: any[][] = [];
+                if (isExcel) { 
+                    const data = e.target?.result; 
+                    const workbook = read(data, { type: 'array' }); 
+                    rows = utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 }); 
+                } else { 
+                    const text = e.target?.result as string; 
+                    const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== ''); 
+                    if (lines.length > 0) { 
+                        const delimiter = lines[0].includes(';') ? ';' : ','; 
+                        rows = lines.map(line => line.split(delimiter)); 
+                    } 
                 }
+                
+                if (rows.length < 1) {
+                    setIsProcessing(false);
+                    return;
+                }
+                
+                const usersToUpsert: User[] = []; 
+                const rutsToEnroll: string[] = []; 
+                let startRow = hasHeaders ? 1 : 0;
+                
+                for (let i = startRow; i < rows.length; i++) {
+                    const row = rows[i]; 
+                    const rowStrings = row.map(cell => cell !== undefined && cell !== null ? String(cell).trim() : '');
+                    if (rowStrings.length < 1 || !rowStrings[0]) continue;
+                    
+                    const cleanRut = cleanRutFormat(rowStrings[0]); 
+                    rutsToEnroll.push(cleanRut);
+                    
+                    const hasName = rowStrings[1] && rowStrings[1].length > 1;
+                    if (hasName) {
+                        usersToUpsert.push({ 
+                            rut: cleanRut, 
+                            names: rowStrings[1] || '', 
+                            paternalSurname: rowStrings[2] || '', 
+                            maternalSurname: rowStrings[3] || '', 
+                            email: rowStrings[4] || '', 
+                            phone: rowStrings[5] || '', 
+                            academicRole: normalizeValue(rowStrings[6], listRoles), 
+                            faculty: normalizeValue(rowStrings[7], listFaculties), 
+                            department: normalizeValue(rowStrings[8], listDepts), 
+                            career: normalizeValue(rowStrings[9], listCareers), 
+                            contractType: normalizeValue(rowStrings[10], listContracts), 
+                            teachingSemester: normalizeValue(rowStrings[11], listSemesters), 
+                            campus: rowStrings[12] || '', 
+                            systemRole: UserRole.ESTUDIANTE 
+                        });
+                    }
+                }
+                
+                if (usersToUpsert.length > 0) { await upsertUsers(usersToUpsert); }
+                const result = await bulkEnroll(rutsToEnroll, selectedActivity.id);
+                await executeReload();
+                setEnrollMsg({ type: 'success', text: `Carga Masiva: ${result.success} nuevos inscritos, ${result.skipped} ya existentes.` }); 
+                setUploadFile(null);
+            } catch (err) {
+                console.error("Bulk Upload Error:", err);
+                setEnrollMsg({ type: 'error', text: 'Error procesando el archivo masivo.' });
+            } finally {
+                setIsProcessing(false);
             }
-            
-            if (usersToUpsert.length > 0) { await upsertUsers(usersToUpsert); }
-            const result = await bulkEnroll(rutsToEnroll, selectedActivity.id);
-            setEnrollMsg({ type: 'success', text: `Carga Masiva: ${result.success} nuevos inscritos, ${result.skipped} ya existentes.` }); 
-            setUploadFile(null);
         };
-        isExcel ? reader.readAsArrayBuffer(uploadFile) : reader.readAsText(uploadFile);
+
+        reader.onerror = () => {
+            setEnrollMsg({ type: 'error', text: 'Error al leer el archivo.' });
+            setIsProcessing(false);
+        };
+
+        if (isExcel) {
+            reader.readAsArrayBuffer(uploadFile);
+        } else {
+            reader.readAsText(uploadFile);
+        }
     };
 
     // --- SUBMIT MAIN FORM ---
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         
         const finalType = formData.activityType === 'Otro' ? formData.otherType : formData.activityType;
@@ -323,7 +357,8 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
             isPublic: formData.isPublic
         };
         
-        addActivity(activityToSave); 
+        await addActivity(activityToSave); 
+        await executeReload();
         setView('list');
         setSelectedActivity(null);
     };
@@ -333,6 +368,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         const password = prompt(`ADVERTENCIA: Eliminar "${selectedActivity.name}"? Contraseña ADMIN:`);
         if (password === currentUser.password) {
             await deleteActivity(selectedActivity.id);
+            await executeReload();
             alert("Eliminado.");
             setView('list');
             setSelectedActivity(null);
@@ -643,8 +679,8 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                         <SmartSelect className="text-xs col-span-2" label="Semestre Docencia" name="teachingSemester" value={enrollForm.teachingSemester} options={listSemesters} onChange={handleEnrollChange} />
                                     </div>
 
-                                    <button type="submit" className="w-full bg-teal-600 hover:bg-teal-700 text-white py-2 rounded-lg font-bold shadow-sm transition-colors text-sm mt-4">
-                                        Registrar Participante
+                                    <button type="submit" disabled={isSyncing || isProcessing} className={`w-full bg-teal-600 hover:bg-teal-700 text-white py-2 rounded-lg font-bold shadow-sm transition-colors text-sm mt-4 ${(isSyncing || isProcessing) ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                        {isProcessing ? 'Procesando...' : 'Registrar Participante'}
                                     </button>
                                     
                                     {enrollMsg && (
@@ -686,11 +722,17 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                     </div>
 
                                     <button 
+                                        type="button"
                                         onClick={handleBulkUpload} 
-                                        disabled={!uploadFile}
-                                        className="w-full bg-slate-800 text-white py-2 rounded-lg font-bold text-sm hover:bg-slate-900 disabled:opacity-50 transition-colors"
+                                        disabled={!uploadFile || isProcessing || isSyncing}
+                                        className={`w-full bg-slate-800 text-white py-2 rounded-lg font-bold text-sm hover:bg-slate-900 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 ${isProcessing ? 'cursor-wait' : ''}`}
                                     >
-                                        Procesar Archivo
+                                        {(isProcessing || isSyncing) ? (
+                                            <>
+                                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                                Procesando...
+                                            </>
+                                        ) : 'Procesar Archivo'}
                                     </button>
                                 </div>
                             </div>
