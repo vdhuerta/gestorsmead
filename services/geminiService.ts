@@ -1,8 +1,6 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { SCHEMA_TABLES } from '../constants';
-
-// Initialize the API client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
 // Prepare a system prompt that understands the schema
 const schemaContext = JSON.stringify(SCHEMA_TABLES, null, 2);
@@ -20,13 +18,18 @@ RESPONDE SIEMPRE EN ESPAÑOL.
 `;
 
 export const askAiAboutModel = async (userQuestion: string): Promise<string> => {
+  // Always obtain the API key exclusively from process.env.API_KEY
   if (!process.env.API_KEY) {
     return "Modo Demo: Falta la API Key. Por favor configura la variable de entorno para habilitar las funciones de IA.";
   }
 
+  // FIX: Initialize GoogleGenAI with a named parameter as per guidelines
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
   try {
+    // FIX: Using recommended model 'gemini-3-flash-preview' for basic text tasks/Q&A
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: userQuestion,
       config: {
         systemInstruction: systemInstruction,
@@ -34,6 +37,7 @@ export const askAiAboutModel = async (userQuestion: string): Promise<string> => 
       }
     });
 
+    // FIX: Access .text property directly (not a method) from GenerateContentResponse
     return response.text || "No se generó respuesta.";
   } catch (error) {
     console.error("Gemini API Error:", error);

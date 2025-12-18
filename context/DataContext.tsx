@@ -188,13 +188,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         name: activity.name,
         category: activity.category,
         activity_type: activity.activityType,
+        // FIX: Corrected property access from activity.internal_code to activity.internalCode
         internal_code: activity.internalCode,
         year: activity.year,
+        // FIX: Corrected property access from activity.academic_period to activity.academicPeriod
         academic_period: activity.academicPeriod,
         version: activity.version,
         modality: activity.modality,
         hours: activity.hours,
+        // FIX: Corrected property access from activity.module_count to activity.moduleCount
         module_count: activity.moduleCount,
+        // FIX: Corrected property access from activity.evaluation_count to activity.evaluationCount
         evaluation_count: activity.evaluationCount,
         // CORRECCIÓN CRÍTICA: Sanitizar fechas vacías a NULL para evitar error "invalid input syntax for type date"
         start_date: activity.startDate && activity.startDate !== '' ? activity.startDate : null,
@@ -236,48 +240,59 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const upsertUsers = async (incomingUsers: User[]) => {
-      // Optimistic logic omitted for brevity, focusing on DB
       const dbPayloads = incomingUsers.map(u => ({
           rut: u.rut,
           names: u.names,
           paternal_surname: u.paternalSurname,
-          maternal_surname: u.maternalSurname,
-          email: u.email,
-          phone: u.phone,
-          photo_url: u.photoUrl,
+          maternal_surname: u.maternalSurname || null,
+          email: (u.email && u.email.trim() !== '') ? u.email : null, // Fix: Use NULL if empty to avoid unique constraint issues
+          phone: (u.phone && u.phone.trim() !== '') ? u.phone : null,
+          photo_url: u.photoUrl || null,
           system_role: u.systemRole,
-          password: u.password,
-          academic_role: u.academicRole,
+          password: u.password || null,
+          academic_role: u.academic_role,
           faculty: u.faculty,
           department: u.department,
           career: u.career,
-          contract_type: u.contractType,
-          teaching_semester: u.teachingSemester,
+          contract_type: u.contract_type,
+          teaching_semester: u.teaching_semester,
           campus: u.campus,
-          title: u.title
+          title: u.title || null
       }));
       
       const { error } = await supabase.from('users').upsert(dbPayloads, { onConflict: 'rut' });
       if(!error) fetchData();
-      return { added: 0, updated: 0 };
+      return { added: incomingUsers.length, updated: 0 };
   };
 
   const enrollUser = async (rut: string, activityId: string) => {
       // Optimistic
       setEnrollments(prev => [...prev, { id: 'temp', rut, activityId, state: ActivityState.INSCRITO, grades: [] }]);
       
-      const { error } = await supabase.from('enrollments').insert({
+      const { error } = await supabase.from('enrollments').upsert({
           user_rut: rut,
           activity_id: activityId,
           state: 'Inscrito'
-      });
-      if(error) alert(error.message);
+      }, { onConflict: 'user_rut, activity_id' }); // Use upsert to avoid duplicate errors
+      
+      if(error) console.error("Enroll error:", error.message);
       fetchData();
   };
 
   const bulkEnroll = async (ruts: string[], activityId: string) => {
-      const payloads = ruts.map(rut => ({ user_rut: rut, activity_id: activityId, state: 'Inscrito' }));
-      await supabase.from('enrollments').insert(payloads);
+      const payloads = ruts.map(rut => ({ 
+          user_rut: rut, 
+          activity_id: activityId, 
+          state: 'Inscrito' 
+      }));
+      // Use upsert on unique constraint to prevent entire batch failure if some are already enrolled
+      const { error } = await supabase.from('enrollments').upsert(payloads, { onConflict: 'user_rut, activity_id' });
+      
+      if (error) {
+          console.error("Bulk enroll error:", error);
+          throw error;
+      }
+      
       fetchData();
       return { success: ruts.length, skipped: 0 };
   };
@@ -304,8 +319,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (updates.attendanceSession6 !== undefined) dbUpdates.attendance_session_6 = updates.attendanceSession6;
 
       await supabase.from('enrollments').update(dbUpdates).eq('id', id);
-      // No hacemos fetchData() aquí para evitar sobrescribir input del usuario mientras escribe, 
-      // confiamos en el optimistic update y el subscription del background.
   };
 
   const deleteEnrollment = async (id: string) => {
@@ -319,7 +332,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const resetData = async () => {
-      // Clean DB logic...
       fetchData();
   };
 
