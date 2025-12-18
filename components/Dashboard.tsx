@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, Activity, UserRole, ActivityState } from '../types';
 import { useData } from '../context/DataContext';
@@ -942,8 +941,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                           <table className="w-full text-sm text-left">
                               <thead className="bg-indigo-50 text-indigo-800 font-bold border-b border-indigo-100">
                                   <tr>
-                                      <th className="px-6 py-4">Curso Académico</th>
-                                      <th className="px-6 py-4">Periodo</th>
+                                      <th className="px-6 py-4 min-w-[280px]">Curso Académico</th>
+                                      <th className="px-6 py-4 whitespace-nowrap">Periodo</th>
                                       <th className="px-6 py-4">Matrícula</th>
                                       <th className="px-6 py-4">Avance Notas</th>
                                       <th className="px-6 py-4 text-center">Acción</th>
@@ -955,15 +954,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                       return (
                                           <tr key={act.id} className="hover:bg-indigo-50/30 transition-colors group">
                                               <td className="px-6 py-4">
-                                                  <div className="font-bold text-slate-800">{act.name}</div>
+                                                  <div className="font-bold text-slate-800 break-words">{act.name}</div>
                                                   <div className="text-xs text-slate-500 font-mono">{act.internalCode || act.id}</div>
                                               </td>
-                                              <td className="px-6 py-4 text-xs text-slate-600">
+                                              <td className="px-6 py-4 text-xs text-slate-600 whitespace-nowrap">
                                                   <span className="bg-slate-100 px-2 py-1 rounded">{act.year} - {act.version}</span>
                                               </td>
                                               <td className="px-6 py-4">
-                                                  <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold border border-indigo-200">
-                                                      {count} Alumnos
+                                                  <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold border border-indigo-200 flex items-center justify-center gap-1 w-fit">
+                                                      {count}
+                                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                                      </svg>
                                                   </span>
                                               </td>
                                               <td className="px-6 py-4">
