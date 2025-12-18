@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useData } from '../context/DataContext';
+import { useData, normalizeRut } from '../context/DataContext';
 import { Activity, User, UserRole, Enrollment, ActivityState } from '../types';
 import { GENERAL_ACTIVITY_TYPES, ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST } from '../constants';
 import { SmartSelect } from './SmartSelect';
@@ -42,12 +42,6 @@ const cleanRutFormat = (rut: string): string => {
     const body = clean.slice(0, -1);
     const dv = clean.slice(-1).toUpperCase();
     return `${body}-${dv}`;
-};
-
-// Utility para normalizar RUT (Lógica de Comparación)
-const normalizeRut = (rut: string): string => {
-    if (!rut) return '';
-    return rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '').toLowerCase();
 };
 
 // Utility para normalizar valores de Excel
@@ -273,7 +267,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                 
                 const usersToUpsert: User[] = []; 
                 const rutsToEnroll: string[] = []; 
-                const processedInBatch = new Set<string>(); // Evita duplicados en el mismo archivo
+                const processedInBatch = new Set<string>();
                 let startRow = hasHeaders ? 1 : 0;
                 
                 for (let i = startRow; i < rows.length; i++) {
@@ -287,7 +281,6 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                     const cleanRut = cleanRutFormat(rawRut);
                     const normRut = normalizeRut(cleanRut);
 
-                    // Evitamos procesar la misma fila del archivo dos veces
                     if (processedInBatch.has(normRut)) continue;
                     processedInBatch.add(normRut);
 
@@ -296,7 +289,9 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                     const masterUser = users.find(u => normalizeRut(u.rut) === normRut);
                     const hasNameInFile = rowStrings[1] && rowStrings[1].length > 1;
 
-                    if (hasNameInFile || !masterUser) {
+                    // CORRECCIÓN CRÍTICA: Solo intentamos actualizar la Base Maestra si la fila del Excel 
+                    // contiene efectivamente datos de nombres. Si solo viene el RUT, confiamos en la DB.
+                    if (hasNameInFile) {
                         usersToUpsert.push({ 
                             rut: cleanRut, 
                             names: rowStrings[1] || masterUser?.names || 'Pendiente', 
@@ -322,20 +317,16 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                     return;
                 }
 
-                // 1. Asegurar que los usuarios existan
                 if (usersToUpsert.length > 0) { 
                     await upsertUsers(usersToUpsert); 
                 }
 
-                // 2. Ejecutar matrícula masiva
                 const result = await bulkEnroll(rutsToEnroll, selectedActivity.id);
-                
-                // 3. Sincronizar UI
                 await executeReload();
                 
                 setEnrollMsg({ 
                     type: 'success', 
-                    text: `Proceso completado: ${result.success} inscritos. ${rows.length - startRow - result.success} omitidos.` 
+                    text: `Proceso completado: ${result.success} inscritos.` 
                 }); 
                 setUploadFile(null);
             } catch (err: any) {
@@ -548,7 +539,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                 <form onSubmit={handleEnrollSubmit} className="space-y-4">
                                     <h5 className="text-xs font-bold text-slate-400 uppercase border-b border-slate-100 pb-1 mb-2">Identificación Personal</h5>
                                     <div className="grid grid-cols-2 gap-3">
-                                        <div className="relative col-span-2"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" placeholder="12345678-9" value={enrollForm.rut} onChange={handleEnrollChange} className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-teal-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : ''}`}/>{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-teal-50 cursor-pointer text-xs border-b border-slate-50"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div>
+                                        <div className="relative col-span-2"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" placeholder="12345678-9" value={enrollForm.rut} onChange={handleEnrollChange} className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-teal-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : ''}`}/>{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-xs border-b border-slate-50"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div>
                                         <div><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" name="names" required value={enrollForm.names} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-xs"/></div>
                                         <div><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label><input type="text" name="paternalSurname" required value={enrollForm.paternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-xs"/></div>
                                         <div className="col-span-2"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={enrollForm.maternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-xs"/></div>
@@ -594,7 +585,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                         {activityEnrollments.map(enr => {
                                             const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut));
                                             return (
-                                                <tr key={enr.id} className="hover:bg-slate-50"><td className="px-6 py-3 font-medium text-slate-700">{u ? `${u.names} ${u.paternalSurname}` : 'Usuario Desconocido'}</td><td className="px-6 py-3 font-mono text-xs text-slate-500">{enr.rut}</td><td className="px-6 py-3 text-xs text-slate-500">{u?.email || '-'}</td><td className="px-6 py-3 text-xs text-slate-500">{u?.faculty || '-'}</td><td className="px-6 py-3 text-center"><span className="bg-green-100 text-green-700 text-[10px] px-2 py-1 rounded-full font-bold uppercase">{enr.state}</span></td></tr>
+                                                <tr key={enr.id} className="hover:bg-slate-50"><td className="px-6 py-3 font-medium text-slate-700">{u ? `${u.names} ${u.paternalSurname}` : 'Usuario No en Base Maestra'}</td><td className="px-6 py-3 font-mono text-xs text-slate-500">{enr.rut}</td><td className="px-6 py-3 text-xs text-slate-500">{u?.email || '-'}</td><td className="px-6 py-3 text-xs text-slate-500">{u?.faculty || '-'}</td><td className="px-6 py-3 text-center"><span className="bg-green-100 text-green-700 text-[10px] px-2 py-1 rounded-full font-bold uppercase">{enr.state}</span></td></tr>
                                             );
                                         })}
                                         {activityEnrollments.length === 0 && (<tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">No hay participantes registrados aún.</td></tr>)}

@@ -1,7 +1,7 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, Activity, Enrollment, SystemConfig, ActivityState } from '../types';
-import { MOCK_CONFIG, MOCK_USERS, MOCK_ACTIVITIES, MOCK_ENROLLMENTS } from '../constants';
+import { MOCK_CONFIG } from '../constants';
 import { supabase } from '../services/supabaseClient';
 
 interface DataContextType {
@@ -27,7 +27,12 @@ interface DataContextType {
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
-// --- HELPER: Parse Postgres Arrays from Realtime Payload ---
+// --- HELPER UNIFICADO DE NORMALIZACIÓN ---
+export const normalizeRut = (rut: string): string => {
+    if (!rut) return '';
+    return rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '').toLowerCase();
+};
+
 const parsePostgresArray = (val: any): number[] => {
     if (Array.isArray(val)) return val;
     if (typeof val === 'string') {
@@ -38,7 +43,6 @@ const parsePostgresArray = (val: any): number[] => {
     return [];
 };
 
-// --- HELPER MAPPERS (DB snake_case -> App camelCase) ---
 const mapUserFromDB = (u: any): User => ({
     rut: u.rut,
     names: u.names,
@@ -114,47 +118,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return saved ? JSON.parse(saved) : MOCK_CONFIG;
   });
 
-  useEffect(() => {
-    fetchData();
-    const channel = supabase.channel('global-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
-            if (payload.eventType === 'INSERT') {
-                setUsers(prev => [...prev, mapUserFromDB(payload.new)]);
-            } else if (payload.eventType === 'UPDATE') {
-                const updated = mapUserFromDB(payload.new);
-                setUsers(prev => prev.map(u => u.rut === updated.rut ? updated : u));
-            } else if (payload.eventType === 'DELETE') {
-                setUsers(prev => prev.filter(u => u.rut !== payload.old.rut));
-            }
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, (payload) => {
-            if (payload.eventType === 'INSERT') {
-                setActivities(prev => [...prev, mapActivityFromDB(payload.new)]);
-            } else if (payload.eventType === 'UPDATE') {
-                const updated = mapActivityFromDB(payload.new);
-                setActivities(prev => prev.map(a => a.id === updated.id ? updated : a));
-            } else if (payload.eventType === 'DELETE') {
-                setActivities(prev => prev.filter(a => a.id !== payload.old.id));
-            }
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'enrollments' }, (payload) => {
-            if (payload.eventType === 'INSERT') {
-                setEnrollments(prev => [...prev, mapEnrollmentFromDB(payload.new)]);
-            } else if (payload.eventType === 'UPDATE') {
-                const updated = mapEnrollmentFromDB(payload.new);
-                setEnrollments(prev => prev.map(e => e.id === updated.id ? updated : e));
-            } else if (payload.eventType === 'DELETE') {
-                setEnrollments(prev => prev.filter(e => e.id !== payload.old.id));
-            }
-        })
-        .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
         const [usersRes, actsRes, enrRes] = await Promise.all([
-            supabase.from('users').select('*'),
+            // Aumentamos el límite a 5000 para evitar que usuarios "desaparezcan" del frontend
+            supabase.from('users').select('*').limit(5000),
             supabase.from('activities').select('*'),
             supabase.from('enrollments').select('*')
         ]);
@@ -167,11 +135,30 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
         setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    const channel = supabase.channel('global-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
+            if (payload.eventType === 'INSERT') {
+                setUsers(prev => [...prev, mapUserFromDB(payload.new)]);
+            } else if (payload.eventType === 'UPDATE') {
+                const updated = mapUserFromDB(payload.new);
+                setUsers(prev => prev.map(u => normalizeRut(u.rut) === normalizeRut(updated.rut) ? updated : u));
+            } else if (payload.eventType === 'DELETE') {
+                setUsers(prev => prev.filter(u => normalizeRut(u.rut) !== normalizeRut(payload.old.rut)));
+            }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'enrollments' }, () => {
+            fetchData();
+        })
+        .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchData]);
 
   const addActivity = async (activity: Activity) => {
-    setActivities(prev => [...prev, activity]); 
-    const dbRow = {
+    const { error } = await supabase.from('activities').upsert({
         id: activity.id,
         name: activity.name,
         category: activity.category,
@@ -184,40 +171,37 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         hours: activity.hours,
         module_count: activity.moduleCount,
         evaluation_count: activity.evaluationCount,
-        start_date: activity.startDate && activity.startDate !== '' ? activity.startDate : null,
-        end_date: activity.endDate && activity.endDate !== '' ? activity.endDate : null,
+        start_date: activity.startDate || null,
+        end_date: activity.endDate || null,
         relator: activity.relator,
         link_resources: activity.linkResources,
         class_link: activity.classLink,
         evaluation_link: activity.evaluationLink, 
         is_public: activity.isPublic,
         program_config: activity.programConfig || null
-    };
-    const { error } = await supabase.from('activities').upsert(dbRow);
-    if (error) {
-        setActivities(prev => prev.filter(a => a.id !== activity.id));
-        throw error;
-    }
+    });
+    if (error) throw error;
     fetchData(); 
   };
 
   const deleteActivity = async (id: string) => {
-      setActivities(prev => prev.filter(a => a.id !== id));
       await supabase.from('activities').delete().eq('id', id);
+      fetchData();
   };
 
-  const getUser = (rut: string) => users.find(u => u.rut.toLowerCase() === rut.toLowerCase());
+  const getUser = (rut: string) => users.find(u => normalizeRut(u.rut) === normalizeRut(rut));
 
   const deleteUser = async (rut: string) => {
-      setUsers(prev => prev.filter(u => u.rut !== rut));
       await supabase.from('users').delete().eq('rut', rut);
+      fetchData();
   };
 
   const upsertUsers = async (incomingUsers: User[]) => {
-      // DEDUPLICACIÓN CRÍTICA: Evita el error "ON CONFLICT DO UPDATE command cannot affect row a second time"
-      // Usamos un Map para quedarnos solo con la última versión de cada usuario por RUT en este lote.
       const uniqueMap = new Map<string, User>();
-      incomingUsers.forEach(u => uniqueMap.set(u.rut, u));
+      incomingUsers.forEach(u => {
+          const key = normalizeRut(u.rut);
+          uniqueMap.set(key, u);
+      });
       const deduplicatedUsers = Array.from(uniqueMap.values());
 
       const dbPayloads = deduplicatedUsers.map(u => ({
@@ -225,8 +209,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           names: u.names,
           paternal_surname: u.paternalSurname,
           maternal_surname: u.maternalSurname || null,
-          email: (u.email && u.email.trim() !== '') ? u.email : null,
-          phone: (u.phone && u.phone.trim() !== '') ? u.phone : null,
+          email: u.email || null,
+          phone: u.phone || null,
           photo_url: u.photoUrl || null,
           system_role: u.systemRole,
           password: u.password || null,
@@ -241,40 +225,35 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }));
       
       const { error } = await supabase.from('users').upsert(dbPayloads, { onConflict: 'rut' });
-      if(!error) fetchData();
+      if (error) throw error;
+      await fetchData();
       return { added: deduplicatedUsers.length, updated: 0 };
   };
 
   const enrollUser = async (rut: string, activityId: string) => {
-      setEnrollments(prev => [...prev, { id: 'temp', rut, activityId, state: ActivityState.INSCRITO, grades: [] }]);
       const { error } = await supabase.from('enrollments').upsert({
           user_rut: rut,
           activity_id: activityId,
           state: 'Inscrito'
       }, { onConflict: 'user_rut, activity_id' });
-      if(error) console.error("Enroll error:", error.message);
+      if(error) throw error;
       fetchData();
   };
 
   const bulkEnroll = async (ruts: string[], activityId: string) => {
-      // DEDUPLICACIÓN DE RUTS
-      const uniqueRuts = Array.from(new Set(ruts));
+      const uniqueRuts = Array.from(new Set(ruts.map(r => r.trim())));
       const payloads = uniqueRuts.map(rut => ({ 
           user_rut: rut, 
           activity_id: activityId, 
           state: 'Inscrito' 
       }));
       const { error } = await supabase.from('enrollments').upsert(payloads, { onConflict: 'user_rut, activity_id' });
-      if (error) {
-          console.error("Bulk enroll error:", error);
-          throw error;
-      }
+      if (error) throw error;
       fetchData();
       return { success: uniqueRuts.length, skipped: 0 };
   };
 
   const updateEnrollment = async (id: string, updates: Partial<Enrollment>) => {
-      setEnrollments(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
       const dbUpdates: any = {};
       if (updates.state) dbUpdates.state = updates.state;
       if (updates.grades) dbUpdates.grades = updates.grades;
@@ -289,12 +268,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (updates.attendanceSession4 !== undefined) dbUpdates.attendance_session_4 = updates.attendanceSession4;
       if (updates.attendanceSession5 !== undefined) dbUpdates.attendance_session_5 = updates.attendanceSession5;
       if (updates.attendanceSession6 !== undefined) dbUpdates.attendance_session_6 = updates.attendanceSession6;
-      await supabase.from('enrollments').update(dbUpdates).eq('id', id);
+      
+      const { error } = await supabase.from('enrollments').update(dbUpdates).eq('id', id);
+      if (error) throw error;
+      fetchData();
   };
 
   const deleteEnrollment = async (id: string) => {
-      setEnrollments(prev => prev.filter(e => e.id !== id));
       await supabase.from('enrollments').delete().eq('id', id);
+      fetchData();
   };
 
   const updateConfig = (newConfig: SystemConfig) => {
