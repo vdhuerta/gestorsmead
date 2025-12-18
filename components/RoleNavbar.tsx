@@ -85,7 +85,7 @@ const TemplateDownloadDropdown: React.FC = () => {
     }, []);
 
     const handleDownload = () => {
-        // Columnas solicitadas: RUT, Nombre, Apellido Paterno, Apellido Materno, Correo, Teléfono, Rol, Facultad, Departamento, Carrera, Contrato, Semestre, Docente, Sede
+        // Datos solicitados: RUT, Nombre, Apellido Paterno, Apellido Materno, Correo, Teléfono, Rol, Facultad, Departamento, Carrera, Contrato, Semestre Docente, Sede
         const headers = [
             "RUT", 
             "Nombre", 
@@ -98,8 +98,7 @@ const TemplateDownloadDropdown: React.FC = () => {
             "Departamento", 
             "Carrera", 
             "Contrato", 
-            "Semestre", 
-            "Docente", 
+            "Semestre Docente", 
             "Sede"
         ];
         
@@ -142,7 +141,7 @@ const TemplateDownloadDropdown: React.FC = () => {
                             </div>
                             <div className="flex-1 min-w-0">
                                 <span className="block text-xs font-bold text-slate-700 truncate">Plantilla de Subida de Datos</span>
-                                <span className="block text-[10px] text-slate-400">14 columnas requeridas</span>
+                                <span className="block text-[10px] text-slate-400">13 columnas requeridas</span>
                             </div>
                         </button>
                     </div>
