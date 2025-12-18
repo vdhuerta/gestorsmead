@@ -272,7 +272,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       try {
           await addActivity(updatedActivity);
           await executeReload(); // DIRECTIVA_RECARGA
-          alert("Configuración Académica guardada exitosamente en Supabase.");
+          alert("Configuración Académica guardada exitosamente.");
       } catch (err) {
           alert("Error al guardar configuración. Revise su conexión.");
           console.error(err);
@@ -308,15 +308,20 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
   const handleDeleteActivity = async () => {
       if (!selectedCourseId || !selectedCourse) return;
-      const password = prompt(`ADVERTENCIA: ¿Eliminar "${selectedCourse.name}"? Contraseña ADMIN:`);
-      if (password === currentUser?.password) { 
+      const passwordInput = prompt(`ADVERTENCIA: ¿Eliminar programa "${selectedCourse.name}"?\nPara confirmar, ingrese su contraseña de ADMINISTRADOR:`);
+      
+      // FIX: Comparar contra contraseña maestra '112358' o la contraseña cargada del usuario actual
+      const isMasterAdminPassword = passwordInput === '112358';
+      const isCurrentUserPassword = currentUser?.password && passwordInput === currentUser.password;
+
+      if (isMasterAdminPassword || isCurrentUserPassword) { 
           await deleteActivity(selectedCourseId); 
           await executeReload(); // DIRECTIVA_RECARGA
-          alert("Eliminado."); 
+          alert("Programa eliminado exitosamente."); 
           setView('list'); 
           setSelectedCourseId(null); 
-      } else if (password !== null) { 
-          alert("Incorrecto."); 
+      } else if (passwordInput !== null) { 
+          alert("Contraseña incorrecta. Acción cancelada."); 
       }
   };
 
