@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Activity, User, UserRole, Enrollment, ActivityState } from '../types';
 import { GENERAL_ACTIVITY_TYPES, ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST } from '../constants';
@@ -112,7 +112,18 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
     
     const canEditGeneralInfo = isAdmin || isAdvisor || view === 'create'; 
 
-    const activityEnrollments = selectedActivity ? enrollments.filter(e => e.activityId === selectedActivity.id) : [];
+    // --- LOGICA DE ORDENACIÓN SOLICITADA ---
+    // Siempre ordenamos por Apellido Paterno Ascendente
+    const sortedActivityEnrollments = useMemo(() => {
+        const filtered = selectedActivity ? enrollments.filter(e => e.activityId === selectedActivity.id) : [];
+        return [...filtered].sort((a, b) => {
+            const userA = users.find(u => normalizeRut(u.rut) === normalizeRut(a.rut));
+            const userB = users.find(u => normalizeRut(u.rut) === normalizeRut(b.rut));
+            const surnameA = userA?.paternalSurname || '';
+            const surnameB = userB?.paternalSurname || '';
+            return surnameA.localeCompare(surnameB, 'es', { sensitivity: 'base' });
+        });
+    }, [selectedActivity, enrollments, users]);
 
     // --- AUTO-GENERATE CODE LOGIC ---
     useEffect(() => {
@@ -535,7 +546,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                     <div className="space-y-8 animate-fadeIn">
                         <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 flex items-center justify-between">
                             <div><h3 className="text-teal-800 font-bold text-lg">Registro de Asistencia</h3><p className="text-teal-600 text-sm">Gestione los participantes de esta actividad.</p></div>
-                            <div className="bg-white px-4 py-2 rounded shadow-sm"><span className="block text-2xl font-bold text-teal-700 text-center">{activityEnrollments.length}</span><span className="text-[10px] uppercase font-bold text-slate-400">Total Inscritos</span></div>
+                            <div className="bg-white px-4 py-2 rounded shadow-sm"><span className="block text-2xl font-bold text-teal-700 text-center">{sortedActivityEnrollments.length}</span><span className="text-[10px] uppercase font-bold text-slate-400">Total Inscritos</span></div>
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -544,7 +555,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                 <form onSubmit={handleEnrollSubmit} className="space-y-4">
                                     <h5 className="text-xs font-bold text-slate-400 uppercase border-b border-slate-100 pb-1 mb-2">Identificación Personal</h5>
                                     <div className="grid grid-cols-2 gap-3">
-                                        <div className="relative col-span-2"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" placeholder="12345678-9" value={enrollForm.rut} onChange={handleEnrollChange} className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-teal-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : ''}`}/>{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-xs border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div>
+                                        <div className="relative col-span-2"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" placeholder="12345678-9" value={enrollForm.rut} onChange={handleEnrollChange} className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-teal-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : ''}`}/>{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-teal-50 cursor-pointer text-xs border-b border-slate-50"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div>
                                         <div><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" name="names" required value={enrollForm.names} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-xs"/></div>
                                         <div><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label><input type="text" name="paternalSurname" required value={enrollForm.paternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-xs"/></div>
                                         <div className="col-span-2"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={enrollForm.maternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-xs"/></div>
@@ -572,7 +583,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                             <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col">
                                 <h4 className="font-bold text-slate-700 flex items-center gap-2 mb-4"><svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>Carga Masiva de Asistencia</h4>
                                 <div className="flex-1 flex flex-col justify-center space-y-4">
-                                    <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}><div className="flex flex-col items-center justify-center pt-5 pb-6">{uploadFile ? (<><svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="mb-1 text-xs font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-xs text-slate-500">Click para subir CSV/Excel</p></>)}</div><input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} /></label>
+                                    <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-xl cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}><div className="flex flex-col items-center justify-center pt-5 pb-6">{uploadFile ? (<><svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="mb-1 text-xs font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-xs text-slate-500">Click para subir CSV/Excel</p></>)}</div><input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} /></label>
                                     <div className="flex items-center gap-2 justify-center"><input type="checkbox" checked={hasHeaders} onChange={e => setHasHeaders(e.target.checked)} className="rounded text-teal-600 focus:ring-teal-500"/><span className="text-xs text-slate-500">Ignorar encabezados (fila 1)</span></div>
                                     <button type="button" onClick={handleBulkUpload} disabled={!uploadFile || isProcessing || isSyncing} className={`w-full bg-slate-800 text-white py-2 rounded-lg font-bold text-sm hover:bg-slate-900 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 ${isProcessing ? 'cursor-wait' : ''}`}>{(isProcessing || isSyncing) ? (<><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Procesando...</>) : 'Procesar Archivo'}</button>
                                 </div>
@@ -587,13 +598,13 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                         <tr><th className="px-6 py-3">Participante</th><th className="px-6 py-3">RUT</th><th className="px-6 py-3">Email</th><th className="px-6 py-3">Unidad</th><th className="px-6 py-3 text-center">Estado</th></tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
-                                        {activityEnrollments.map(enr => {
+                                        {sortedActivityEnrollments.map(enr => {
                                             const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut));
                                             return (
                                                 <tr key={enr.id} className="hover:bg-slate-50"><td className="px-6 py-3 font-medium text-slate-700">{u ? `${u.names} ${u.paternalSurname}` : 'Usuario No en Base Maestra'}</td><td className="px-6 py-3 font-mono text-xs text-slate-500">{enr.rut}</td><td className="px-6 py-3 text-xs text-slate-500">{u?.email || '-'}</td><td className="px-6 py-3 text-xs text-slate-500">{u?.faculty || '-'}</td><td className="px-6 py-3 text-center"><span className="bg-green-100 text-green-700 text-[10px] px-2 py-1 rounded-full font-bold uppercase">{enr.state}</span></td></tr>
                                             );
                                         })}
-                                        {activityEnrollments.length === 0 && (<tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">No hay participantes registrados aún.</td></tr>)}
+                                        {sortedActivityEnrollments.length === 0 && (<tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">No hay participantes registrados aún.</td></tr>)}
                                     </tbody>
                                 </table>
                             </div>
