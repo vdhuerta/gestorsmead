@@ -250,12 +250,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           photo_url: u.photoUrl || null,
           system_role: u.systemRole,
           password: u.password || null,
-          academic_role: u.academic_role,
+          // FIX: Use camelCase properties 'academicRole', 'contractType', and 'teachingSemester' for mapping to DB snake_case.
+          academic_role: u.academicRole,
           faculty: u.faculty,
           department: u.department,
           career: u.career,
-          contract_type: u.contract_type,
-          teaching_semester: u.teaching_semester,
+          contract_type: u.contractType,
+          teaching_semester: u.teachingSemester,
           campus: u.campus,
           title: u.title || null
       }));
