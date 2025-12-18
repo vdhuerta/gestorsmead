@@ -111,8 +111,10 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
     const [hasHeaders, setHasHeaders] = useState(true);
 
     const isAdmin = currentUser.systemRole === UserRole.ADMIN;
-    // Asesores can only edit Resources in details tab
-    const canEditGeneralInfo = isAdmin || view === 'create'; 
+    const isAdvisor = currentUser.systemRole === UserRole.ASESOR;
+    
+    // El Asesor ahora puede editar información general en creación o si es admin
+    const canEditGeneralInfo = isAdmin || isAdvisor || view === 'create'; 
 
     const activityEnrollments = selectedActivity ? enrollments.filter(e => e.activityId === selectedActivity.id) : [];
 
@@ -139,8 +141,6 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
 
             if (d && m && y) {
                 const autoCode = `${prefix}-${d}${m}${y}-V1`;
-                // Only update internal code if creating or if manual editing isn't locked (simplified logic)
-                // In a real app, check if user touched the field.
                 if (view === 'create') {
                      setFormData(prev => ({ ...prev, internalCode: autoCode }));
                 }
@@ -180,7 +180,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         setView('edit');
     };
 
-    // --- ENROLLMENT HANDLERS (Same as CourseManager) ---
+    // --- ENROLLMENT HANDLERS ---
     const handleEnrollChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setEnrollForm(prev => ({ ...prev, [name]: value }));
@@ -216,7 +216,6 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         e.preventDefault();
         if (!selectedActivity) return;
         
-        // Validation for critical fields
         if (!enrollForm.rut || !enrollForm.names || !enrollForm.paternalSurname || !enrollForm.campus || !enrollForm.faculty) {
             setEnrollMsg({ type: 'error', text: 'Complete los campos obligatorios de la Base Maestra.' });
             return;
@@ -231,7 +230,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         enrollUser(formattedRut, selectedActivity.id);
         
         setEnrollMsg({ type: 'success', text: 'Participante registrado exitosamente.' });
-        setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
+        setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE, responsible: '' });
         setIsFoundInMaster(false);
     };
 
@@ -350,7 +349,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                         <h2 className="text-2xl font-bold text-slate-800">Gestión de Actividades Generales</h2>
                         <p className="text-sm text-slate-500">Charlas, Talleres, Webinars y otras instancias de extensión.</p>
                     </div>
-                    {isAdmin && (
+                    {(isAdmin || isAdvisor) && (
                         <button onClick={() => {
                             setFormData({
                                 internalCode: '', year: new Date().getFullYear(), activityType: 'Charla', otherType: '',
@@ -358,7 +357,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                 linkRecursos: '', linkClase: '', linkEvaluacion: '', isPublic: true
                             });
                             setView('create');
-                        }} className="bg-teal-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-teal-700 flex items-center gap-2 shadow-lg">
+                        }} className="bg-teal-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-teal-700 flex items-center gap-2 shadow-lg transition-all active:scale-95">
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                             Nueva Actividad
                         </button>
@@ -445,7 +444,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                             {GENERAL_ACTIVITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                                         </select>
                                     </div>
-                                    {isAdmin && (
+                                    {(isAdmin || isAdvisor) && (
                                         <div className="flex items-center justify-start pt-6">
                                             <input 
                                                 type="checkbox" 
@@ -508,7 +507,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                 </div>
                             </div>
 
-                            {/* Resources Section - ALWAYS EDITABLE */}
+                            {/* Resources Section - ALWAYS EDITABLE FOR PERMITTED ROLES */}
                             <div className="space-y-4 pt-4 border-t border-slate-100">
                                 <h3 className="text-sm font-bold text-teal-600 uppercase tracking-wide flex items-center gap-2">
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
@@ -715,7 +714,6 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
                                         {activityEnrollments.map(enr => {
-                                            // CORRECCIÓN: Uso de normalizeRut para encontrar al usuario
                                             const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut));
                                             return (
                                                 <tr key={enr.id} className="hover:bg-slate-50">
