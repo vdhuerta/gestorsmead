@@ -1,6 +1,9 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { UserRole, User } from '../types';
 import { useData } from '../context/DataContext';
+// @ts-ignore
+import { utils, writeFile } from 'xlsx';
 
 export type TabType = 'dashboard' | 'erd' | 'json' | 'arch' | 'config' | 'courses' | 'generalActivities' | 'postgraduate' | 'advisory' | 'participants' | 'advisors' | 'reports';
 
@@ -45,7 +48,7 @@ const NAV_ITEMS: NavItem[] = [
   { 
     id: 'erd', 
     label: 'Modelo ER', 
-    allowedRoles: [], // Se elimina UserRole.ASESOR ya que no trabajan con esta sección
+    allowedRoles: [], 
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <title>Modelo Entidad-Relación</title>
@@ -66,12 +69,91 @@ const NAV_ITEMS: NavItem[] = [
   }, 
 ];
 
-interface RoleNavbarProps {
-  user: User;
-  activeTab: TabType;
-  onTabChange: (tab: TabType) => void;
-  onLogout: () => void;
-}
+// --- COMPONENTE DE DESCARGA DE PLANTILLAS (ASESOR) ---
+const TemplateDownloadDropdown: React.FC = () => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const handleDownload = () => {
+        // Columnas solicitadas: RUT, Nombre, Apellido Paterno, Apellido Materno, Correo, Teléfono, Rol, Facultad, Departamento, Carrera, Contrato, Semestre, Docente, Sede
+        const headers = [
+            "RUT", 
+            "Nombre", 
+            "Apellido Paterno", 
+            "Apellido Materno", 
+            "Correo", 
+            "Teléfono", 
+            "Rol", 
+            "Facultad", 
+            "Departamento", 
+            "Carrera", 
+            "Contrato", 
+            "Semestre", 
+            "Docente", 
+            "Sede"
+        ];
+        
+        const worksheet = utils.aoa_to_sheet([headers]);
+        const workbook = utils.book_new();
+        utils.book_append_sheet(workbook, worksheet, "Plantilla");
+        
+        // Generar archivo XLS
+        writeFile(workbook, "Plantilla de Subida de Datos.xlsx");
+        setIsOpen(false);
+    };
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <button 
+                onClick={() => setIsOpen(!isOpen)} 
+                className={`p-2 rounded-full transition-colors relative ${isOpen ? 'bg-emerald-100 text-emerald-600' : 'text-slate-400 hover:text-emerald-600 hover:bg-slate-50'}`}
+                title="Descargar Plantillas de Subida"
+            >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+            </button>
+
+            {isOpen && (
+                <div className="absolute top-12 right-0 w-72 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden animate-fadeIn">
+                    <div className="bg-slate-50 px-4 py-3 border-b border-slate-100">
+                        <h3 className="font-bold text-slate-700 text-sm">Plantillas Disponibles</h3>
+                        <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tight">Formato Excel .xlsx</p>
+                    </div>
+                    <div className="p-2">
+                        <button 
+                            onClick={handleDownload}
+                            className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-emerald-50 transition-colors text-left border border-transparent hover:border-emerald-100 group"
+                        >
+                            <div className="bg-emerald-100 text-emerald-600 p-2 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <span className="block text-xs font-bold text-slate-700 truncate">Plantilla de Subida de Datos</span>
+                                <span className="block text-[10px] text-slate-400">14 columnas requeridas</span>
+                            </div>
+                        </button>
+                    </div>
+                    <div className="bg-slate-50 p-2 text-center border-t border-slate-100">
+                        <span className="text-[9px] text-slate-400 italic">Unidad de Acompañamiento Docente</span>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
 
 // --- COMPONENTE INTERNO DE NOTIFICACIONES (ASESOR) ---
 const NotificationDropdown: React.FC = () => {
@@ -104,7 +186,6 @@ const NotificationDropdown: React.FC = () => {
         };
 
         activities.forEach(act => {
-            // 1. CURSOS PRONTO A CERRAR (0 a 5 días)
             if (act.category === 'ACADEMIC' && act.endDate) {
                 const diff = getDaysDiff(act.endDate);
                 if (diff >= 0 && diff <= 5) {
@@ -118,7 +199,6 @@ const NotificationDropdown: React.FC = () => {
                 }
             }
 
-            // 2. ACTIVIDAD GENERAL (Pronto a iniciar - Simulamos "Hoy" como 30 min antes)
             if (act.category === 'GENERAL' && act.startDate) {
                 if (act.startDate === todayStr) {
                     list.push({
@@ -131,7 +211,6 @@ const NotificationDropdown: React.FC = () => {
                 }
             }
 
-            // 3. POSTITULOS (Módulo cerrando en <= 3 días)
             if (act.category === 'POSTGRADUATE' && act.programConfig?.modules) {
                 act.programConfig.modules.forEach(mod => {
                     if (mod.endDate) {
@@ -150,8 +229,6 @@ const NotificationDropdown: React.FC = () => {
             }
         });
 
-        // 4. ASESORIA CERRADA SATISFACTORIAMENTE (Hoy)
-        // Buscamos en los logs de sesión que estén verificados y tengan fecha de hoy (simulado con date del log)
         enrollments.forEach(enr => {
             if (enr.sessionLogs) {
                 enr.sessionLogs.forEach(log => {
@@ -289,7 +366,12 @@ export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabCh
 
           <div className="flex items-center gap-4">
             
-            {/* NEW: NOTIFICATION CENTER FOR ADVISORS */}
+            {/* HERRAMIENTA DE PLANTILLAS (SOLO ASESORES) */}
+            {user.systemRole === UserRole.ASESOR && (
+                <TemplateDownloadDropdown />
+            )}
+
+            {/* NOTIFICACIONES (SOLO ASESORES) */}
             {user.systemRole === UserRole.ASESOR && (
                 <NotificationDropdown />
             )}
@@ -329,3 +411,10 @@ export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabCh
     </header>
   );
 };
+
+interface RoleNavbarProps {
+  user: User;
+  activeTab: TabType;
+  onTabChange: (tab: TabType) => void;
+  onLogout: () => void;
+}
