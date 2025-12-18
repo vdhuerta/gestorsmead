@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole } from '../types';
@@ -273,19 +272,20 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   const handleToggleAttendance = async (enrollmentId: string, sessionIndex: number) => {
       const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
-      if (!enrollment) return;
+      if (!enrollment || !selectedCourse) return;
 
       const fieldName = `attendanceSession${sessionIndex + 1}`;
       // @ts-ignore
       const newVal = !enrollment[fieldName];
       
+      const totalSessions = selectedCourse.evaluationCount || 1;
       let presentCount = 0;
-      for (let i = 1; i <= 6; i++) {
+      for (let i = 1; i <= totalSessions; i++) {
           const key = `attendanceSession${i}`;
           // @ts-ignore
           if ((i === sessionIndex + 1) ? newVal : enrollment[key]) presentCount++;
       }
-      const percentage = Math.round((presentCount / 6) * 100);
+      const percentage = Math.round((presentCount / totalSessions) * 100);
 
       const totalExpected = selectedCourse?.evaluationCount || 3;
       const currentGrades = enrollment.grades || [];
@@ -618,7 +618,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   // --- CREATE / EDIT VIEW ---
   if (view === 'create' || view === 'edit') {
-      // ... (Content unchanged for Create/Edit view)
       return (
           <div className="animate-fadeIn max-w-4xl mx-auto">
               <button onClick={() => setView('list')} className="text-slate-500 hover:text-slate-700 mb-6 flex items-center gap-1 text-sm font-bold">
@@ -757,7 +756,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   // --- VIEW DETAILS ---
   if (view === 'details' && selectedCourse) {
-      // ... (Resto del componente details permanece igual)
       return (
           <div className="animate-fadeIn space-y-6">
                <button onClick={() => { setSelectedCourseId(null); setView('list'); }} className="text-slate-500 hover:text-slate-700 mb-4 flex items-center gap-1 text-sm">← Volver al listado</button>
@@ -1056,7 +1054,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                           <td className="px-4 py-2 text-center border-r border-slate-200">
                                                               <div className="flex flex-col items-center">
                                                                   <div className="flex gap-1 justify-center mb-1">
-                                                                      {[0,1,2,3,4,5].map(idx => (
+                                                                      {Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, idx) => (
                                                                           <input 
                                                                               key={idx}
                                                                               type="checkbox"
@@ -1067,7 +1065,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                                           />
                                                                       ))}
                                                                   </div>
-                                                                  <span className={`text-[10px] font-bold ${(enr.attendancePercentage || 0) < 75 ? 'text-red-500' : 'text-green-600'}`}>
+                                                                  <span className={`text-[10px] font-bold ${(enr.attendancePercentage || 0) < (config.minAttendancePercentage || 75) ? 'text-red-500' : 'text-green-600'}`}>
                                                                       {enr.attendancePercentage || 0}% Asistencia
                                                                   </span>
                                                               </div>
