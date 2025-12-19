@@ -1,6 +1,8 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useMemo, useEffect } from 'react';
 import { useData } from '../context/DataContext';
 import { User, Enrollment, Activity, ActivityState } from '../types';
+import { useReloadDirective } from '../hooks/useReloadDirective';
 
 type DetailFilter = {
     faculty: string;
@@ -17,10 +19,19 @@ const CATEGORY_NAMES: Record<string, string> = {
 
 export const ReportManager: React.FC = () => {
     const { enrollments, activities, users } = useData();
+    const { isSyncing, executeReload } = useReloadDirective(); // DIRECTIVA_RECARGA
+
     const [activeReport, setActiveReport] = useState<'consolidated' | 'effectiveness' | 'preferences' | 'advisoryImpact' | 'frequentTeachers' | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedFaculty, setSelectedFaculty] = useState<string | null>(null);
     const [detailFilter, setDetailFilter] = useState<DetailFilter | null>(null);
+
+    // --- EFECTO: RECARGA AUTOMÁTICA AL ENTRAR A UN INFORME ---
+    useEffect(() => {
+        if (activeReport) {
+            executeReload();
+        }
+    }, [activeReport]);
 
     // --- HELPER: FORMAT dd-mmm-aa (Spanish) ---
     const formatReportDate = (rawDate: string | undefined): string => {
@@ -332,6 +343,11 @@ export const ReportManager: React.FC = () => {
                     <h2 className="text-2xl font-bold text-slate-800">Centro de Informes Académicos</h2>
                     <p className="text-sm text-slate-500">Generación de reportes estratégicos y análisis de participación institucional.</p>
                 </div>
+                {/* SYNC INDICATOR */}
+                <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm">
+                    <div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-green-500'}`}></div>
+                    <span className="text-[10px] font-bold uppercase text-slate-500">{isSyncing ? 'Actualizando Datos...' : 'Datos Actualizados'}</span>
+                </div>
             </div>
 
             {/* GRID DE INFORMES DISPONIBLES */}
@@ -415,7 +431,13 @@ export const ReportManager: React.FC = () => {
                             <div><h3 className="text-xl font-bold text-slate-800">Informe Consolidado de Participación Académica</h3><p className="text-xs text-slate-500 mt-1">Criterio: Aprobados, Extensión Finalizada y Asesorías Abiertas.</p></div>
                             <div className="flex items-center gap-3"><button onClick={handleExportCSV} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-sm flex items-center gap-2 transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> Exportar CSV</button><button onClick={() => setActiveReport(null)} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button></div>
                         </div>
-                        <div className="p-4 bg-white border-b border-slate-100"><div className="relative max-w-md"><input type="text" placeholder="Buscar por RUT, Nombre o Actividad..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"/><svg className="w-4 h-4 text-slate-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg></div></div>
+                        <div className="p-4 bg-white border-b border-slate-100 flex items-center justify-between">
+                            <div className="relative max-w-md w-full">
+                                <input type="text" placeholder="Buscar por RUT, Nombre o Actividad..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"/>
+                                <svg className="w-4 h-4 text-slate-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                            </div>
+                            {isSyncing && <div className="text-[10px] text-indigo-500 font-bold animate-pulse">Sincronizando registros...</div>}
+                        </div>
                         <div className="flex-1 overflow-auto custom-scrollbar">
                             <table className="w-full text-left text-xs whitespace-nowrap">
                                 <thead className="bg-slate-50 text-slate-600 font-bold sticky top-0 z-10 border-b border-slate-200 shadow-sm">
@@ -440,7 +462,10 @@ export const ReportManager: React.FC = () => {
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-emerald-200">
                         <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                             <div><h3 className="text-xl font-bold text-slate-800">Tasa de Efectividad Académica por Facultad</h3><p className="text-xs text-slate-500 mt-1">Porcentaje de aprobación en cursos curriculares desglosado por unidad académica.</p></div>
-                            <button onClick={() => { setActiveReport(null); setSelectedFaculty(null); }} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button>
+                            <div className="flex items-center gap-3">
+                                {isSyncing && <div className="text-[10px] text-emerald-600 font-bold animate-pulse">Sincronizando...</div>}
+                                <button onClick={() => { setActiveReport(null); setSelectedFaculty(null); }} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button>
+                            </div>
                         </div>
                         <div className="flex-1 flex overflow-hidden">
                             <div className={`w-full md:w-1/2 flex flex-col border-r border-slate-100 ${selectedFaculty ? 'hidden md:flex' : 'flex'}`}>
@@ -482,7 +507,10 @@ export const ReportManager: React.FC = () => {
                                 <h3 className="text-xl font-bold text-slate-800">Matriz de Preferencias: Actividad vs Facultad</h3>
                                 <p className="text-xs text-slate-500 mt-1">Análisis cruzado del volumen de participación por tipo de formación.</p>
                             </div>
-                            <button onClick={() => { setActiveReport(null); setDetailFilter(null); }} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button>
+                            <div className="flex items-center gap-3">
+                                {isSyncing && <div className="text-[10px] text-blue-500 font-bold animate-pulse">Sincronizando...</div>}
+                                <button onClick={() => { setActiveReport(null); setDetailFilter(null); }} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button>
+                            </div>
                         </div>
 
                         <div className="flex-1 flex overflow-hidden">
@@ -572,7 +600,10 @@ export const ReportManager: React.FC = () => {
                                 <h3 className="text-xl font-bold text-indigo-900">Mapa de Impacto de Asesorías Individuales</h3>
                                 <p className="text-xs text-indigo-700 mt-1">Análisis de acompañamiento pedagógico por unidad académica (Facultad).</p>
                             </div>
-                            <button onClick={() => { setActiveReport(null); setSelectedFaculty(null); }} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button>
+                            <div className="flex items-center gap-3">
+                                {isSyncing && <div className="text-[10px] text-indigo-600 font-bold animate-pulse">Sincronizando...</div>}
+                                <button onClick={() => { setActiveReport(null); setSelectedFaculty(null); }} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button>
+                            </div>
                         </div>
 
                         <div className="flex-1 flex overflow-hidden">
@@ -635,7 +666,7 @@ export const ReportManager: React.FC = () => {
                                                     const act = activities.find(a => a.id === enr.activityId);
                                                     return f === selectedFaculty && act?.category === 'ADVISORY';
                                                 }).map((enr, i) => {
-                                                    const u = users.find(user => user.rut === user.rut);
+                                                    const u = users.find(user => user.rut === enr.rut);
                                                     const sessionCount = enr.sessionLogs?.length || 0;
                                                     
                                                     return (
@@ -689,7 +720,10 @@ export const ReportManager: React.FC = () => {
                                 <h3 className="text-xl font-bold text-purple-900">Índice de Docentes Frecuentes (Fidelización)</h3>
                                 <p className="text-xs text-purple-700 mt-1">Identificación de docentes con 2 o más actividades aprobadas por unidad académica.</p>
                             </div>
-                            <button onClick={() => { setActiveReport(null); setSelectedFaculty(null); }} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button>
+                            <div className="flex items-center gap-3">
+                                {isSyncing && <div className="text-[10px] text-purple-600 font-bold animate-pulse">Sincronizando...</div>}
+                                <button onClick={() => { setActiveReport(null); setSelectedFaculty(null); }} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button>
+                            </div>
                         </div>
 
                         <div className="flex-1 flex overflow-hidden">
