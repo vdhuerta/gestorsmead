@@ -228,8 +228,23 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
 
         setIsProcessing(true);
         const formattedRut = cleanRutFormat(enrollForm.rut);
+        
+        // FIX: Garantizar que el email nunca sea null para evitar crash en Supabase (Netlify)
         const userToUpsert: User = {
-            rut: formattedRut, names: enrollForm.names, paternalSurname: enrollForm.paternalSurname, maternalSurname: enrollForm.maternalSurname, email: enrollForm.email, phone: enrollForm.phone, academicRole: enrollForm.academicRole, faculty: enrollForm.faculty, department: enrollForm.department, career: enrollForm.career, contractType: enrollForm.contractType, teachingSemester: enrollForm.teachingSemester, campus: enrollForm.campus, systemRole: enrollForm.systemRole as UserRole
+            rut: formattedRut, 
+            names: enrollForm.names, 
+            paternalSurname: enrollForm.paternalSurname, 
+            maternalSurname: enrollForm.maternalSurname, 
+            email: enrollForm.email || `pendiente.${formattedRut.replace(/[^0-9kK]/g, '')}@upla.cl`, // Fallback
+            phone: enrollForm.phone, 
+            academicRole: enrollForm.academicRole, 
+            faculty: enrollForm.faculty, 
+            department: enrollForm.department, 
+            career: enrollForm.career, 
+            contractType: enrollForm.contractType, 
+            teachingSemester: enrollForm.teachingSemester, 
+            campus: enrollForm.campus, 
+            systemRole: enrollForm.systemRole as UserRole
         };
 
         try {
@@ -239,8 +254,8 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
             setEnrollMsg({ type: 'success', text: 'Participante registrado exitosamente.' });
             setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
             setIsFoundInMaster(false);
-        } catch (error) {
-            setEnrollMsg({ type: 'error', text: 'Error al registrar participante.' });
+        } catch (error: any) {
+            setEnrollMsg({ type: 'error', text: `Error al registrar: ${error.message || 'Verifique conexión.'}` });
         } finally {
             setIsProcessing(false);
         }
@@ -300,15 +315,18 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                     const masterUser = users.find(u => normalizeRut(u.rut) === normRut);
                     const hasNameInFile = rowStrings[1] && rowStrings[1].length > 1;
 
-                    // CORRECCIÓN CRÍTICA: Solo intentamos actualizar la Base Maestra si la fila del Excel 
-                    // contiene efectivamente datos de nombres. Si solo viene el RUT, confiamos en la DB.
                     if (hasNameInFile) {
+                        // FIX: Fallback de Email para evitar error NOT NULL en ambiente Netlify
+                        const excelEmail = rowStrings[4];
+                        const masterEmail = masterUser?.email;
+                        const fallbackEmail = `upla.${cleanRut.replace(/[^0-9kK]/g, '')}@universidad.cl`;
+
                         usersToUpsert.push({ 
                             rut: cleanRut, 
                             names: rowStrings[1] || masterUser?.names || 'Pendiente', 
                             paternalSurname: rowStrings[2] || masterUser?.paternalSurname || 'Pendiente', 
                             maternalSurname: rowStrings[3] || masterUser?.maternalSurname || '', 
-                            email: rowStrings[4] || masterUser?.email || '', 
+                            email: excelEmail || masterEmail || fallbackEmail, 
                             phone: rowStrings[5] || masterUser?.phone || '', 
                             academicRole: normalizeValue(rowStrings[6] || masterUser?.academicRole || '', listRoles), 
                             faculty: normalizeValue(rowStrings[7] || masterUser?.faculty || '', listFaculties), 
@@ -385,7 +403,6 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         if (!selectedActivity) return;
         const passwordInput = prompt(`ADVERTENCIA: ¿Eliminar actividad "${selectedActivity.name}"?\nPara confirmar, ingrese su contraseña de ADMINISTRADOR:`);
         
-        // FIX: Comparar contra contraseña maestra '112358' o la contraseña cargada del usuario actual
         const isMasterAdminPassword = passwordInput === '112358';
         const isCurrentUserPassword = currentUser.password && passwordInput === currentUser.password;
 
@@ -555,7 +572,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                 <form onSubmit={handleEnrollSubmit} className="space-y-4">
                                     <h5 className="text-xs font-bold text-slate-400 uppercase border-b border-slate-100 pb-1 mb-2">Identificación Personal</h5>
                                     <div className="grid grid-cols-2 gap-3">
-                                        <div className="relative col-span-2"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" placeholder="12345678-9" value={enrollForm.rut} onChange={handleEnrollChange} className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-teal-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : ''}`}/>{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-teal-50 cursor-pointer text-xs border-b border-slate-50"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div>
+                                        <div className="relative col-span-2"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" placeholder="12345678-9" value={enrollForm.rut} onChange={handleEnrollChange} className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-teal-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : ''}`}/>{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-teal-50 cursor-pointer text-xs border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div>
                                         <div><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" name="names" required value={enrollForm.names} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-xs"/></div>
                                         <div><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label><input type="text" name="paternalSurname" required value={enrollForm.paternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-xs"/></div>
                                         <div className="col-span-2"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={enrollForm.maternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-xs"/></div>

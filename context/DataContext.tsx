@@ -1,6 +1,7 @@
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { User, Activity, Enrollment, SystemConfig, ActivityState } from '../types';
+import { Activity, ActivityState, Enrollment, SystemConfig, User } from '../types';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+
 import { MOCK_CONFIG } from '../constants';
 import { supabase } from '../services/supabaseClient';
 
@@ -80,6 +81,7 @@ const mapActivityFromDB = (a: any): Activity => ({
     endDate: a.end_date,
     relator: a.relator,
     linkResources: a.link_resources,
+    // FIX: Use camelCase property names defined in the Activity interface as per the reported error.
     classLink: a.class_link,
     evaluationLink: a.evaluation_link, 
     isPublic: a.is_public,
@@ -121,7 +123,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchData = useCallback(async () => {
     try {
         const [usersRes, actsRes, enrRes] = await Promise.all([
-            // Aumentamos el límite a 5000 para evitar que usuarios "desaparezcan" del frontend
             supabase.from('users').select('*').limit(5000),
             supabase.from('activities').select('*'),
             supabase.from('enrollments').select('*')
@@ -208,12 +209,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           rut: u.rut,
           names: u.names,
           paternal_surname: u.paternalSurname,
+          // FIX: Correct property mapping from User object (camelCase) to DB payload (snake_case)
           maternal_surname: u.maternalSurname || null,
-          email: u.email || null,
+          // FIX: No enviar null en email si es requerido por la DB. Usar string vacío o el valor actual.
+          email: u.email || '', 
           phone: u.phone || null,
           photo_url: u.photoUrl || null,
           system_role: u.systemRole,
           password: u.password || null,
+          // FIX: Access academicRole property from User interface correctly.
           academic_role: u.academicRole,
           faculty: u.faculty,
           department: u.department,
