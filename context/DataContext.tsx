@@ -81,7 +81,6 @@ const mapActivityFromDB = (a: any): Activity => ({
     endDate: a.end_date,
     relator: a.relator,
     linkResources: a.link_resources,
-    // FIX: Use camelCase property names defined in the Activity interface as per the reported error.
     classLink: a.class_link,
     evaluationLink: a.evaluation_link, 
     isPublic: a.is_public,
@@ -154,6 +153,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .on('postgres_changes', { event: '*', schema: 'public', table: 'enrollments' }, () => {
             fetchData();
         })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, () => {
+            // FIX: Escuchar cambios en actividades para sincronizar entre perfiles/exploradores
+            fetchData();
+        })
         .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
@@ -171,6 +174,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         modality: activity.modality,
         hours: activity.hours,
         module_count: activity.moduleCount,
+        // FIX: Fixed evaluation_count value assignment to use evaluationCount property from Activity interface
         evaluation_count: activity.evaluationCount,
         start_date: activity.startDate || null,
         end_date: activity.endDate || null,
@@ -182,19 +186,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         program_config: activity.programConfig || null
     });
     if (error) throw error;
-    fetchData(); 
+    // No es necesario llamar a fetchData aquí ya que el listener Realtime lo hará
   };
 
   const deleteActivity = async (id: string) => {
+      // NOTA: Esto elimina la actividad y sus matrículas (si hay cascada en DB).
+      // BAJO NINGUNA CIRCUNSTANCIA elimina usuarios de la Base Maestra.
       await supabase.from('activities').delete().eq('id', id);
-      fetchData();
   };
 
   const getUser = (rut: string) => users.find(u => normalizeRut(u.rut) === normalizeRut(rut));
 
   const deleteUser = async (rut: string) => {
       await supabase.from('users').delete().eq('rut', rut);
-      fetchData();
   };
 
   const upsertUsers = async (incomingUsers: User[]) => {
@@ -205,32 +209,38 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       const deduplicatedUsers = Array.from(uniqueMap.values());
 
-      const dbPayloads = deduplicatedUsers.map(u => ({
-          rut: u.rut,
-          names: u.names,
-          paternal_surname: u.paternalSurname,
-          // FIX: Correct property mapping from User object (camelCase) to DB payload (snake_case)
-          maternal_surname: u.maternalSurname || null,
-          // FIX: No enviar null en email si es requerido por la DB. Usar string vacío o el valor actual.
-          email: u.email || '', 
-          phone: u.phone || null,
-          photo_url: u.photoUrl || null,
-          system_role: u.systemRole,
-          password: u.password || null,
-          // FIX: Access academicRole property from User interface correctly.
-          academic_role: u.academicRole,
-          faculty: u.faculty,
-          department: u.department,
-          career: u.career,
-          contract_type: u.contractType,
-          teaching_semester: u.teachingSemester,
-          campus: u.campus,
-          title: u.title || null
-      }));
+      const dbPayloads = deduplicatedUsers.map(u => {
+          // Construcción dinámica del payload para evitar sobrescribir contraseñas con null
+          const payload: any = {
+              rut: u.rut,
+              names: u.names,
+              paternal_surname: u.paternalSurname,
+              maternal_surname: u.maternalSurname || null,
+              email: u.email || '', 
+              phone: u.phone || null,
+              photo_url: u.photoUrl || null,
+              system_role: u.systemRole,
+              academic_role: u.academicRole,
+              faculty: u.faculty,
+              department: u.department,
+              career: u.career,
+              contract_type: u.contractType,
+              teaching_semester: u.teachingSemester,
+              campus: u.campus,
+              title: u.title || null
+          };
+
+          // CRITICAL FIX: Solo incluir password si viene definido y tiene contenido.
+          // Esto evita que asesores pierdan su clave al ser inscritos como estudiantes en cursos.
+          if (u.password !== undefined && u.password !== null && u.password !== '') {
+              payload.password = u.password;
+          }
+
+          return payload;
+      });
       
       const { error } = await supabase.from('users').upsert(dbPayloads, { onConflict: 'rut' });
       if (error) throw error;
-      await fetchData();
       return { added: deduplicatedUsers.length, updated: 0 };
   };
 
@@ -241,7 +251,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           state: 'Inscrito'
       }, { onConflict: 'user_rut, activity_id' });
       if(error) throw error;
-      fetchData();
   };
 
   const bulkEnroll = async (ruts: string[], activityId: string) => {
@@ -253,7 +262,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }));
       const { error } = await supabase.from('enrollments').upsert(payloads, { onConflict: 'user_rut, activity_id' });
       if (error) throw error;
-      fetchData();
       return { success: uniqueRuts.length, skipped: 0 };
   };
 
@@ -275,12 +283,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       const { error } = await supabase.from('enrollments').update(dbUpdates).eq('id', id);
       if (error) throw error;
-      fetchData();
   };
 
   const deleteEnrollment = async (id: string) => {
       await supabase.from('enrollments').delete().eq('id', id);
-      fetchData();
   };
 
   const updateConfig = (newConfig: SystemConfig) => {
