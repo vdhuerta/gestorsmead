@@ -23,7 +23,6 @@ import { ReportManager } from './components/ReportManager';
 import { DatabaseCleaner } from './components/DatabaseCleaner'; // New Import
 import { DataProvider, useData } from './context/DataContext';
 import { checkConnection, supabase } from './services/supabaseClient'; 
-import { AppTour } from './components/AppTour';
 
 // Color Mapping for Visuals - Updated to New Institutional Palette
 const TABLE_COLORS = [
@@ -49,9 +48,6 @@ const MainContent: React.FC = () => {
 
   // --- REALTIME PRESENCE STATE (ASESORES) ---
   const [onlinePeers, setOnlinePeers] = useState<{rut: string, names: string, photoUrl: string}[]>([]);
-
-  // --- TOUR STATE ---
-  const [runTour, setRunTour] = useState(false);
 
   // Verificar conexión y Rutas al montar
   useEffect(() => {
@@ -290,8 +286,6 @@ const MainContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#F9F8F6] text-slate-900 font-sans pb-10">
       
-      <AppTour trigger={runTour} setTrigger={setRunTour} onTabChange={setActiveTab} />
-
       {connectionStatus === 'error' && (
           <div className="bg-red-600 text-white px-4 py-2 text-center text-sm font-bold shadow-md relative z-50">
               ⚠️ Alerta: No se pudo conectar a la Base de Datos. Los cambios NO se guardarán. 
@@ -304,7 +298,6 @@ const MainContent: React.FC = () => {
         activeTab={activeTab} 
         onTabChange={setActiveTab} 
         onLogout={handleLogout} 
-        onStartTour={() => setRunTour(true)}
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">

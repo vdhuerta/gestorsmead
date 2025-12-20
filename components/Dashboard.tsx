@@ -105,7 +105,7 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                             
                             {/* Dots Indicators */}
                             <div className="flex gap-0.5 mt-0.5">
-                                {hasAcademic && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-white' : 'bg-indigo-50'}`}></div>}
+                                {hasAcademic && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-white' : 'bg-indigo-500'}`}></div>}
                                 {hasGeneral && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-teal-200' : 'bg-teal-500'}`}></div>}
                                 {hasPostgraduate && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-purple-200' : 'bg-purple-500'}`}></div>}
                             </div>
@@ -137,17 +137,15 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
 
 // --- KPI CARD COMPONENT for ASESOR with Tooltip Improved ---
 const KpiCardCompact: React.FC<{
-    id?: string;
     title: string;
     value: string | number;
     suffix?: string;
     colorClass?: string;
     tooltipContent?: React.ReactNode;
-}> = ({ id, title, value, suffix = '', colorClass = 'text-slate-700', tooltipContent }) => {
+}> = ({ title, value, suffix = '', colorClass = 'text-slate-700', tooltipContent }) => {
     const [isHovered, setIsHovered] = useState(false);
     return (
         <div 
-            id={id}
             className="text-center px-4 py-3 bg-white rounded-xl border border-slate-200 shadow-sm relative group cursor-help transition-all hover:border-[#647FBC]/30"
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
@@ -613,7 +611,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
           localStorage.setItem('jumpto_activity_id', act.id);
           onNavigate('generalActivities');
       } else if (act.category === 'POSTGRADUATE') {
-          localStorage.setItem('jumpto_postgrad_id', act.id);
           onNavigate('postgraduate');
       } else if (act.category === 'ADVISORY') {
           onNavigate('advisory');
@@ -742,7 +739,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                   )}
                   <div>
                       <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2 mb-4 border-b border-slate-200 pb-2"><svg className="w-6 h-6 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>Inscripción Abierta (Oferta Disponible)</h3>
-                      {offerActivities.length > 0 ? (<div className="grid grid-cols-1 md:grid-cols-2 gap-4">{offerActivities.map(act => (<div key={act.id} className="relative bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:border-emerald-300 transition-all"><div className="absolute top-4 right-4"><span className={`text-[10px] px-2 py-1 rounded font-bold uppercase border ${act.category === 'ACADEMIC' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-teal-50 text-teal-700 border-teal-100'}`}>{act.category === 'ACADEMIC' ? 'CURSO' : 'EXTENSIÓN'}</span></div><div className="mt-6"><h4 className="font-bold text-slate-800 text-base mb-2 line-clamp-2 h-14 leading-tight">{act.name}</h4><div className="text-xs text-slate-600 space-y-1 mb-4"><p className="flex items-center gap-2"><span className="font-bold text-xs text-slate-400">Inicio:</span> {formatDateCL(act.startDate)}</p><p className="flex items-center gap-2"><span className="font-bold text-xs text-slate-400">Mod:</span> {act.modality}</p></div><button onClick={() => handleOpenEnrollModal(act)} className={`w-full py-2 rounded-lg font-bold shadow-sm text-xs transition-colors text-white flex items-center justify-center gap-2 ${act.category === 'ACADEMIC' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-teal-600 hover:bg-teal-700'}`}>Solicitar Inscripción</button></div></div>))}</div>) : (<div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">No hay actividades con matrícula abierta.</div>)}
+                      {offerActivities.length > 0 ? (<div className="grid grid-cols-1 md:grid-cols-2 gap-4">{offerActivities.map(act => (<div key={act.id} className="relative bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:border-emerald-300 transition-all"><div className="absolute top-4 right-4"><span className={`text-[10px] px-2 py-1 rounded font-bold uppercase border ${act.category === 'ACADEMIC' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-teal-50 text-teal-700 border-teal-100'}`}>{act.category === 'ACADEMIC' ? 'CURSO' : 'EXTENSIÓN'}</span></div><div className="mt-6"><h4 className="font-bold text-slate-800 text-base mb-2 line-clamp-2 h-10 leading-tight">{act.name}</h4><div className="text-xs text-slate-600 space-y-1 mb-4"><p className="flex items-center gap-2"><span className="font-bold text-xs text-slate-400">Inicio:</span> {formatDateCL(act.startDate)}</p><p className="flex items-center gap-2"><span className="font-bold text-xs text-slate-400">Mod:</span> {act.modality}</p></div><button onClick={() => handleOpenEnrollModal(act)} className={`w-full py-2 rounded-lg font-bold shadow-sm text-xs transition-colors text-white flex items-center justify-center gap-2 ${act.category === 'ACADEMIC' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-teal-600 hover:bg-teal-700'}`}>Solicitar Inscripción</button></div></div>))}</div>) : (<div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">No hay actividades con matrícula abierta.</div>)}
                   </div>
               </div>
               <div className="lg:col-span-1"><MiniCalendar activities={calendarActivities} /></div>
@@ -1066,7 +1063,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                       {/* 1. Tasa Aprobación */}
                       <KpiCardCompact 
-                        id="tour-kpi-aprobacion"
                         title="Tasa Aprobación" 
                         value={advisorKpis.tasaAprobacion} 
                         suffix="%" 
@@ -1087,7 +1083,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
 
                       {/* 2. Alumnos Riesgo (FIXED TOOLTIP STYLE) */}
                       <KpiCardCompact 
-                        id="tour-kpi-riesgo"
                         title="Alumnos en Riesgo" 
                         value={advisorKpis.totalEstudiantesRiesgo} 
                         colorClass="text-amber-600" 
@@ -1189,7 +1184,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
               </div>
 
               {/* SECCIÓN 1: CURSOS CURRICULARES (ACADÉMICOS) */}
-              <div id="tour-courses-section">
+              <div>
                   <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-indigo-200 pb-4">
                       <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
                       Cursos Curriculares (Seguimiento)

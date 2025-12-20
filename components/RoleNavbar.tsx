@@ -125,7 +125,6 @@ const TemplateDownloadDropdown: React.FC = () => {
     return (
         <div className="relative" ref={dropdownRef}>
             <button 
-                id="tour-download"
                 onClick={() => setIsOpen(!isOpen)} 
                 className={`p-2 rounded-full transition-colors relative ${isOpen ? 'bg-emerald-100 text-emerald-600' : 'text-slate-400 hover:text-emerald-600 hover:bg-slate-50'}`}
                 title="Descargar Plantillas de Subida"
@@ -272,7 +271,6 @@ const NotificationDropdown: React.FC = () => {
     return (
         <div className="relative" ref={dropdownRef}>
             <button 
-                id="tour-notifications"
                 onClick={() => setIsOpen(!isOpen)} 
                 className={`p-2 rounded-full transition-colors relative ${isOpen ? 'bg-indigo-100 text-indigo-600' : 'text-slate-400 hover:text-[#647FBC] hover:bg-slate-50'}`}
                 title="Mensajería y Alertas"
@@ -332,7 +330,7 @@ const NotificationDropdown: React.FC = () => {
     );
 };
 
-export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabChange, onLogout, onStartTour }) => {
+export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabChange, onLogout }) => {
   const availableTabs = NAV_ITEMS.filter(item => item.allowedRoles.includes(user.systemRole));
 
   return (
@@ -363,7 +361,6 @@ export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabCh
             {availableTabs.map((tab) => (
               <button 
                 key={tab.id}
-                id={`nav-${tab.id}`}
                 onClick={() => onTabChange(tab.id)}
                 title={tab.label}
                 className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center ${
@@ -379,19 +376,6 @@ export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabCh
 
           <div className="flex items-center gap-4">
             
-            {/* BOTÓN DE TOUR (SOLO ASESORES) */}
-            {user.systemRole === UserRole.ASESOR && onStartTour && (
-                <button 
-                    onClick={onStartTour}
-                    className="p-2 rounded-full text-slate-400 hover:text-indigo-600 hover:bg-slate-50 transition-colors"
-                    title="Iniciar Guía de Usuario"
-                >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                </button>
-            )}
-
             {/* HERRAMIENTA DE PLANTILLAS (SOLO ASESORES) */}
             {user.systemRole === UserRole.ASESOR && (
                 <TemplateDownloadDropdown />
@@ -443,5 +427,4 @@ interface RoleNavbarProps {
   activeTab: TabType;
   onTabChange: (tab: TabType) => void;
   onLogout: () => void;
-  onStartTour?: () => void;
 }
