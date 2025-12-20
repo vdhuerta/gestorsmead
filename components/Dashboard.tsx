@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, Activity, UserRole, ActivityState } from '../types';
 import { useData } from '../context/DataContext';
@@ -105,7 +104,7 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                             
                             {/* Dots Indicators */}
                             <div className="flex gap-0.5 mt-0.5">
-                                {hasAcademic && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-white' : 'bg-indigo-500'}`}></div>}
+                                {hasAcademic && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-white' : 'bg-indigo-50'}`}></div>}
                                 {hasGeneral && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-teal-200' : 'bg-teal-500'}`}></div>}
                                 {hasPostgraduate && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-purple-200' : 'bg-purple-500'}`}></div>}
                             </div>
@@ -136,6 +135,7 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
 };
 
 // --- KPI CARD COMPONENT for ASESOR with Tooltip Improved ---
+// FIX: Tooltip position updated to show downwards as requested by user.
 const KpiCardCompact: React.FC<{
     title: string;
     value: string | number;
@@ -154,7 +154,7 @@ const KpiCardCompact: React.FC<{
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-tight h-6 flex items-center justify-center">{title}</span>
             
             {isHovered && tooltipContent && (
-                <div className="absolute z-[100] bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 bg-white text-left p-0 rounded-xl shadow-2xl animate-fadeIn border border-indigo-200 overflow-hidden">
+                <div className="absolute z-[100] top-full left-1/2 -translate-x-1/2 mt-2 w-80 bg-white text-left p-0 rounded-xl shadow-2xl animate-fadeIn border border-indigo-200 overflow-hidden">
                     <div className="text-[10px] font-black text-indigo-700 bg-indigo-50 uppercase border-b border-indigo-100 p-3 flex items-center gap-2">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                         {title}
@@ -163,9 +163,9 @@ const KpiCardCompact: React.FC<{
                         {tooltipContent}
                     </div>
                     {/* Invisible bridge to prevent tooltip disappearing when moving mouse between card and tooltip */}
-                    <div className="absolute -bottom-2 left-0 w-full h-2 bg-transparent"></div>
-                    {/* Tooltip Arrow */}
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-white"></div>
+                    <div className="absolute -top-2 left-0 w-full h-2 bg-transparent"></div>
+                    {/* Tooltip Arrow pointing up */}
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-8 border-transparent border-b-white"></div>
                 </div>
             )}
         </div>
