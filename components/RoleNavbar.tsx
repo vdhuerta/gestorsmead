@@ -5,7 +5,7 @@ import { useData } from '../context/DataContext';
 // @ts-ignore
 import { utils, writeFile } from 'xlsx';
 
-export type TabType = 'dashboard' | 'erd' | 'json' | 'arch' | 'config' | 'courses' | 'generalActivities' | 'postgraduate' | 'advisory' | 'participants' | 'advisors' | 'reports';
+export type TabType = 'dashboard' | 'erd' | 'json' | 'arch' | 'config' | 'courses' | 'generalActivities' | 'postgraduate' | 'advisory' | 'participants' | 'advisors' | 'reports' | 'dbCleaner';
 
 interface NavItem {
   id: TabType;
@@ -22,6 +22,17 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'generalActivities', label: 'Gestión Actividades', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] }, 
   { id: 'postgraduate', label: 'Postítulos', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] }, 
   { id: 'advisory', label: 'Asesorías', allowedRoles: [UserRole.ASESOR] }, 
+  { 
+    id: 'dbCleaner', 
+    label: 'Base de Datos', 
+    allowedRoles: [UserRole.ADMIN, UserRole.ASESOR],
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <title>Limpieza de Base de Datos</title>
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+      </svg>
+    )
+  },
   { 
     id: 'reports', 
     label: 'Informes', 

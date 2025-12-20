@@ -19,7 +19,8 @@ import { PostgraduateManager } from './components/PostgraduateManager';
 import { AdvisoryManager, PublicVerification } from './components/AdvisoryManager';
 import { StudentSignature } from './components/StudentSignature'; 
 import { CertificateVerification } from './components/CertificateVerification'; 
-import { ReportManager } from './components/ReportManager'; // New Import
+import { ReportManager } from './components/ReportManager'; 
+import { DatabaseCleaner } from './components/DatabaseCleaner'; // New Import
 import { DataProvider, useData } from './context/DataContext';
 import { checkConnection, supabase } from './services/supabaseClient'; 
 
@@ -223,6 +224,9 @@ const MainContent: React.FC = () => {
 
       case 'participants':
         return <ParticipantManager />;
+
+      case 'dbCleaner':
+        return <DatabaseCleaner />;
       
       case 'advisors':
         return <AdvisorManager currentUser={user} />;
