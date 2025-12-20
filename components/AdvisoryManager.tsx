@@ -82,7 +82,6 @@ const ExpandableText: React.FC<{ text: string }> = ({ text }) => {
 
 // --- COMPONENTE DE VERIFICACIÓN PÚBLICA (VISTA QR) ---
 export const PublicVerification: React.FC<{ code: string }> = ({ code }) => {
-    // ... (Keep implementation unchanged)
     const [loading, setLoading] = useState(true);
     const [verifiedData, setVerifiedData] = useState<{log: SessionLog, student: any} | null>(null);
     const [error, setError] = useState('');
@@ -142,9 +141,8 @@ interface AdvisoryManagerProps { currentUser?: User; }
 
 export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser }) => {
     const { enrollments, users, addActivity, activities, upsertUsers, enrollUser, updateEnrollment, deleteEnrollment, getUser, config } = useData();
-    const { isSyncing, executeReload } = useReloadDirective(); // DIRECTIVA_RECARGA
+    const { isSyncing, executeReload } = useReloadDirective();
     
-    // Lists & Config
     const listFaculties = config.faculties?.length ? config.faculties : FACULTY_LIST;
     const listDepts = config.departments?.length ? config.departments : DEPARTMENT_LIST;
     const listCareers = config.careers?.length ? config.careers : CAREER_LIST;
@@ -152,21 +150,17 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const listRoles = config.academicRoles?.length ? config.academicRoles : ACADEMIC_ROLES;
     const listSemesters = config.semesters?.length ? config.semesters : ["1er Semestre", "2do Semestre", "Anual"];
 
-    // Lista de Asesores (para el desplegable)
     const advisorsList = useMemo(() => users.filter(u => u.systemRole === UserRole.ASESOR), [users]);
 
-    // States
     const [view, setView] = useState<'list' | 'manage'>('list');
     const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string | null>(null);
     const [realtimeLogs, setRealtimeLogs] = useState<SessionLog[] | null>(null);
 
-    // Search
     const [searchRut, setSearchRut] = useState('');
     const [searchSurname, setSearchSurname] = useState('');
     const [rutSuggestions, setRutSuggestions] = useState<{enrollmentId: string, user: User}[]>([]);
     const [surnameSuggestions, setSurnameSuggestions] = useState<{enrollmentId: string, user: User}[]>([]);
 
-    // Enrollment Form
     const [enrollForm, setEnrollForm] = useState({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE, responsible: '' });
     const [showEnrollModal, setShowEnrollModal] = useState(false);
     const [enrollMsg, setEnrollMsg] = useState<{ type: 'success'|'error', text: string } | null>(null);
@@ -175,7 +169,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const [showSuggestions, setShowSuggestions] = useState(false);
     const suggestionsRef = useRef<HTMLDivElement>(null);
 
-    // Session Management
     const [signatureStep, setSignatureStep] = useState<'form' | 'qr-wait' | 'success'>('form');
     const [currentSessionId, setCurrentSessionId] = useState<string>(''); 
     const [showVerificationModal, setShowVerificationModal] = useState<SessionLog | null>(null);
@@ -186,14 +179,12 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const [tagInput, setTagInput] = useState('');
     const [manageTab, setManageTab] = useState<'management' | 'tracking'>('management');
 
-    // --- EFFECT: Suggestions Click Outside ---
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => { if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) { setShowSuggestions(false); } };
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    // --- EFFECT: Init Activity ---
     useEffect(() => {
         const checkAndCreateActivity = async () => {
             if (activities.length > 0 && !activities.some(a => a.id === ADVISORY_ACTIVITY_ID)) {
@@ -203,7 +194,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         checkAndCreateActivity();
     }, [activities, addActivity]);
 
-    // Data filtering
     const advisoryEnrollments = useMemo(() => enrollments.filter(e => e.activityId === ADVISORY_ACTIVITY_ID), [enrollments]);
     const stats = useMemo(() => {
         let totalSessions = 0, totalHours = 0;
@@ -211,7 +201,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         return { students: advisoryEnrollments.length, sessions: totalSessions, hours: totalHours.toFixed(1) };
     }, [advisoryEnrollments]);
 
-    // --- Realtime Sync Logic (Local) ---
     useEffect(() => { setRealtimeLogs(null); }, [selectedEnrollmentId]);
 
     const fetchLatestLogs = async (id: string) => {
@@ -230,11 +219,10 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     }, [view, selectedEnrollmentId]);
 
     const handleManualRefresh = async () => {
-        await executeReload(); // APPLY DIRECTIVE
+        await executeReload();
         if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId);
     };
 
-    // --- Search & Enroll Handlers ---
     const handleSearchRutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value; setSearchRut(val); setSearchSurname(''); setSurnameSuggestions([]);
         if (val.length < 2) { setRutSuggestions([]); return; }
@@ -282,26 +270,13 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             await upsertUsers([{ ...enrollForm, rut: cleanRut, systemRole: enrollForm.systemRole as UserRole }]);
             await enrollUser(cleanRut, ADVISORY_ACTIVITY_ID);
             
-            // --- NUEVO: ASIGNAR RESPONSABLE ---
             if (currentUser) {
-                // Buscamos la matrícula recién creada para obtener su ID y actualizarla
-                const { data: enrData } = await supabase
-                    .from('enrollments')
-                    .select('id')
-                    .eq('user_rut', cleanRut)
-                    .eq('activity_id', ADVISORY_ACTIVITY_ID)
-                    .maybeSingle();
-                
+                const { data: enrData } = await supabase.from('enrollments').select('id').eq('user_rut', cleanRut).eq('activity_id', ADVISORY_ACTIVITY_ID).maybeSingle();
                 if (enrData) {
-                    await updateEnrollment(enrData.id, { 
-                        responsible: enrollForm.responsible || `${currentUser.names} ${currentUser.paternalSurname}` // Usar seleccionado o actual
-                    });
+                    await updateEnrollment(enrData.id, { responsible: enrollForm.responsible || `${currentUser.names} ${currentUser.paternalSurname}` });
                 }
             }
-            // --------------------------------------------------
-
-            await executeReload(); // DIRECTIVA_RECARGA
-
+            await executeReload();
             setEnrollMsg({ type: 'success', text: 'Expediente creado correctamente.' });
             setTimeout(() => { setShowEnrollModal(false); setIsProcessing(false); }, 1500);
         } catch (err: any) { setEnrollMsg({ type: 'error', text: `Error: ${err.message || 'No se pudo guardar'}` }); setIsProcessing(false); }
@@ -312,11 +287,10 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const handleDeleteBitacora = async (id: string, name: string) => { 
         if(window.confirm(`ADVERTENCIA: ¿Está seguro que desea eliminar la bitácora completa de ${name}?`)) {
             await deleteEnrollment(id);
-            await executeReload(); // DIRECTIVA_RECARGA
+            await executeReload();
         }
     };
 
-    // --- Session Handlers ---
     const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter' || e.key === ',') {
             e.preventDefault(); const newTag = tagInput.trim().replace(/,/g, '');
@@ -336,10 +310,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         const sessionId = `SES-${Date.now()}`; setCurrentSessionId(sessionId);
         const newLog: any = { id: sessionId, date: sessionForm.date, duration: sessionForm.duration, observation: sessionForm.observation, advisorName: currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : 'Asesor', verified: false, signedAt: undefined, location: sessionForm.location, modality: sessionForm.modality, tags: sessionForm.tags };
         const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
-        
         await updateEnrollment(selectedEnrollmentId, { sessionLogs: [...(enrollment?.sessionLogs || []), newLog] });
-        // NOTE: No ejecutamos executeReload() aquí, solo al firmar como se solicitó.
-        
         setSignatureStep('qr-wait');
     };
 
@@ -360,57 +331,27 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             return log;
         });
         await updateEnrollment(selectedEnrollmentId, { sessionLogs: updatedLogs });
-        
-        await executeReload(); // DIRECTIVA_RECARGA
-        if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId); // Refresh local logs specific
-
+        await executeReload();
+        if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId);
         setEditingLogId(null); setEditingLogIndex(null); setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [] }); setSignatureStep('form'); alert("Registro actualizado.");
     };
 
-    const handleCancelEdit = () => { handleCancelSession(); };
-
-    // --- FIX: ROBUST DELETE HANDLER (EVENT DRIVEN) ---
     const handleDeleteSession = async (e: React.MouseEvent, logId: string | undefined, originalIndex: number) => {
-        e.preventDefault();
-        e.stopPropagation(); // CRITICAL: Stop bubbling to card click
-
+        e.preventDefault(); e.stopPropagation(); 
         if (!selectedEnrollmentId) return;
-        
         if (window.confirm("¿Confirma que desea eliminar este registro de sesión del historial?")) {
-            // 1. Get Source Truth
             const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
             const currentLogs = realtimeLogs || enrollment?.sessionLogs || [];
-            
-            let updatedLogs: SessionLog[] = [];
-
-            if (logId) {
-                updatedLogs = currentLogs.filter(l => l.id !== logId);
-            } else {
-                updatedLogs = currentLogs.filter((_, i) => i !== originalIndex);
-            }
-            
-            // 2. Optimistic Update (Visual)
+            let updatedLogs: SessionLog[] = logId ? currentLogs.filter(l => l.id !== logId) : currentLogs.filter((_, i) => i !== originalIndex);
             setRealtimeLogs(updatedLogs);
-            
-            // 3. Persist in DB
-            try {
-                await updateEnrollment(selectedEnrollmentId, { sessionLogs: updatedLogs });
-                // 4. Force Sync via Directive
-                await executeReload(); 
-                // 5. Force specific sync for this manager
-                if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId);
-            } catch (err) {
-                alert("Error al eliminar. Verifique su conexión.");
-                // Revert optimistic update if needed
-                fetchLatestLogs(selectedEnrollmentId);
-            }
+            try { await updateEnrollment(selectedEnrollmentId, { sessionLogs: updatedLogs }); await executeReload(); if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId); } 
+            catch (err) { alert("Error al eliminar."); fetchLatestLogs(selectedEnrollmentId); }
         }
     };
 
     const getQrUrl = () => { if (!selectedEnrollmentId || !currentSessionId) return ''; return `${window.location.origin}/?mode=sign&eid=${selectedEnrollmentId}&sid=${currentSessionId}`; };
     const handleCopyLink = () => { navigator.clipboard.writeText(getQrUrl()); alert("Enlace copiado al portapapeles."); };
 
-    // --- POLLING FOR QR SIGNATURE ---
     useEffect(() => {
         let interval: any;
         if (signatureStep === 'qr-wait' && selectedEnrollmentId && currentSessionId) {
@@ -421,9 +362,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                     if (logs.find(l => l.id === currentSessionId && l.verified)) {
                         clearInterval(interval);
                         await updateEnrollment(selectedEnrollmentId, { sessionLogs: logs });
-                        
-                        await executeReload(); // DIRECTIVA_RECARGA (Applied HERE as requested)
-
+                        await executeReload();
                         setSignatureStep('success');
                         setTimeout(() => { setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [] }); setSignatureStep('form'); }, 3000);
                     }
@@ -434,7 +373,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         return () => { if (interval) clearInterval(interval); };
     }, [signatureStep, selectedEnrollmentId, currentSessionId]);
 
-    // --- RENDER ---
     if (view === 'manage' && selectedEnrollmentId) {
         const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
         const student = users.find(u => u.rut === enrollment?.rut);
@@ -453,13 +391,11 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                         <button onClick={handleManualRefresh} className="flex items-center gap-2 bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-100 border border-indigo-200">Actualizar</button>
                     </div>
                 </div>
-
                 <div className="mt-8">
                     <div className="flex items-end gap-2 border-b border-indigo-200 pl-4 mb-0">
                         <button onClick={() => setManageTab('management')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 ${manageTab === 'management' ? 'bg-white text-indigo-700 border-t-indigo-600 shadow-sm z-10' : 'bg-slate-200 text-slate-600 border-transparent hover:bg-slate-100'}`}>GESTIÓN ASESORÍA</button>
                         <button onClick={() => setManageTab('tracking')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 ${manageTab === 'tracking' ? 'bg-white text-indigo-700 border-t-indigo-600 shadow-sm z-10' : 'bg-slate-200 text-slate-600 border-transparent hover:bg-slate-100'}`}>SEGUIMIENTO</button>
                     </div>
-
                     <div className="bg-white rounded-b-xl rounded-tr-xl shadow-sm border border-indigo-200 border-t-0 p-8 animate-fadeIn">
                         {manageTab === 'management' && (
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -474,22 +410,9 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                             <div><span className="block text-xs font-bold text-slate-400 uppercase">Unidad Académica</span><span className="text-slate-700">{student?.faculty}</span><span className="block text-xs text-slate-500">{student?.department}</span></div>
                                         </div>
                                     </div>
-                                    <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-6 text-center">
-                                        <h3 className="text-indigo-900 font-bold text-lg mb-1">Resumen Atención</h3>
-                                        <div className="flex justify-center gap-4 mt-4">
-                                            <div><span className="block text-2xl font-bold text-indigo-700">{logs.length}</span><span className="text-[10px] uppercase font-bold text-indigo-400">Sesiones</span></div>
-                                            <div><span className="block text-2xl font-bold text-indigo-700">{studentTotalHours}</span><span className="text-[10px] uppercase font-bold text-indigo-400">Horas Tot.</span></div>
-                                        </div>
-                                    </div>
                                 </div>
-
                                 <div className="lg:col-span-2 space-y-6">
                                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 overflow-hidden relative">
-                                        <div className="flex justify-between items-center border-b border-slate-100 pb-2 mb-4">
-                                            <h3 className="font-bold text-slate-800 flex items-center gap-2"><svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg> {editingLogId || editingLogIndex !== null ? 'Editar Sesión Existente' : 'Registrar Nueva Sesión'}</h3>
-                                            {(editingLogId || editingLogIndex !== null) && (<span className="text-xs text-amber-600 font-bold bg-amber-50 px-2 py-1 rounded border border-amber-100">Modo Edición</span>)}
-                                        </div>
-
                                         {signatureStep === 'form' && (
                                             <div className="animate-fadeIn">
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -501,19 +424,12 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                                     <div><label className="block text-xs font-bold text-slate-600 mb-1">Lugar / Plataforma</label><input type="text" placeholder="Ej. Oficina 304, Zoom, Email..." value={sessionForm.location} onChange={e => setSessionForm({...sessionForm, location: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"/></div>
                                                 </div>
                                                 <div className="mb-4"><label className="block text-xs font-bold text-slate-600 mb-1">Observaciones / Temática Tratada</label><textarea rows={6} value={sessionForm.observation} onChange={e => setSessionForm({...sessionForm, observation: e.target.value})} placeholder="Describa los puntos principales abordados en la sesión..." className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm resize-y"/></div>
-                                                <div className="mb-4">
-                                                    <div className="flex justify-between items-center mb-1"><label className="block text-xs font-bold text-slate-600">Etiquetas (Conceptos Clave)</label><button type="button" onClick={handleSuggestTags} disabled={isGeneratingTags} className="text-[10px] bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded-full border border-indigo-200 flex items-center gap-1 transition-colors">{isGeneratingTags ? '...' : 'Sugerir Tags'}</button></div>
-                                                    <div className="w-full px-3 py-2 border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-indigo-500 bg-white flex flex-wrap gap-2 items-center min-h-[42px]">
-                                                        {sessionForm.tags.map((tag, index) => (<span key={index} className={`text-xs px-2 py-1 rounded-full font-medium flex items-center gap-1 ${getTagColor(tag)}`}>{tag}<button onClick={() => removeTag(tag)} className="hover:text-red-500 font-bold ml-1">×</button></span>))}
-                                                        <input type="text" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagInputKeyDown} placeholder={sessionForm.tags.length === 0 ? "Escribe conceptos y presiona Enter o Coma..." : "..."} className="flex-1 min-w-[120px] outline-none text-sm bg-transparent"/>
-                                                    </div>
-                                                </div>
                                                 <div className="flex justify-end gap-2">
-                                                    <button onClick={handleCancelSession} className="bg-white border border-slate-300 text-slate-500 px-4 py-2 rounded-lg font-bold hover:bg-slate-50 hover:text-slate-700 transition-colors text-sm shadow-sm">Cancelar</button>
+                                                    <button onClick={handleCancelSession} className="bg-white border border-slate-300 text-slate-500 px-4 py-2 rounded-lg font-bold hover:bg-slate-50 transition-colors text-sm shadow-sm">Cancelar</button>
                                                     {editingLogId || editingLogIndex !== null ? (
-                                                        <button onClick={handleSaveEdit} className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 transition-colors shadow-md text-sm flex items-center gap-2">Guardar Cambios</button>
+                                                        <button onClick={handleSaveEdit} className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 transition-colors shadow-md text-sm">Guardar Cambios</button>
                                                     ) : (
-                                                        <button onClick={handleStartSignature} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-md text-sm flex items-center gap-2">Generar QR para Firma</button>
+                                                        <button id="tour-advisory-btn-manage" onClick={handleStartSignature} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-md text-sm">Generar QR para Firma</button>
                                                     )}
                                                 </div>
                                             </div>
@@ -522,172 +438,75 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                             <div className="animate-fadeIn flex flex-col items-center justify-center py-6 space-y-6">
                                                 <div className="bg-white p-2 rounded-xl shadow-lg border-2 border-indigo-100 relative">
                                                     <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(getQrUrl())}`} alt="QR Firma" className="w-48 h-48"/>
-                                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                                        <div className="w-40 h-0.5 bg-red-500/30 animate-pulse"></div>
-                                                    </div>
                                                 </div>
-                                                
-                                                <div className="w-full max-w-sm">
-                                                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wide text-center mb-2">O comparte el enlace para firma remota:</p>
-                                                    <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-lg border border-slate-200">
-                                                        <input 
-                                                            type="text" 
-                                                            readOnly 
-                                                            value={getQrUrl()} 
-                                                            className="flex-1 bg-transparent text-xs text-slate-600 font-mono outline-none px-1"
-                                                        />
-                                                        <button 
-                                                            onClick={handleCopyLink}
-                                                            className="bg-white hover:bg-indigo-50 text-indigo-600 border border-slate-200 p-1.5 rounded-md transition-colors"
-                                                            title="Copiar Enlace"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                <button onClick={() => setSignatureStep('form')} className="px-4 py-2 text-xs text-red-500 font-bold hover:text-red-700 hover:underline">
-                                                    Cancelar Espera
-                                                </button>
+                                                <button onClick={() => setSignatureStep('form')} className="px-4 py-2 text-xs text-red-500 font-bold hover:underline">Cancelar</button>
                                             </div>
                                         )}
-                                        {signatureStep === 'success' && (<div className="animate-fadeIn flex flex-col items-center justify-center py-10 text-center"><h4 className="text-xl font-bold text-slate-800">Sesión Firmada Correctamente</h4></div>)}
                                     </div>
-
-                                    {/* --- HISTORY LIST --- */}
                                     <div className="bg-slate-50 rounded-xl border border-slate-200 p-6">
-                                        <h3 className="font-bold text-slate-600 mb-4 uppercase text-xs tracking-wide">Historial de Acompañamiento</h3>
-                                        {logs.length === 0 ? (
-                                            <p className="text-slate-400 text-sm italic text-center py-8">No hay sesiones registradas aún.</p>
-                                        ) : (
-                                            <div className="space-y-4">
-                                                {[...logs].reverse().map((log, idx) => {
-                                                    const originalIndex = logs.length - 1 - idx;
-                                                    const logTags = log.tags || [];
-                                                    const isEditing = (editingLogId && log.id === editingLogId) || (editingLogIndex !== null && originalIndex === editingLogIndex);
-                                                    
-                                                    return (
-                                                    <div key={log.id || originalIndex} className={`bg-white p-4 rounded-lg border shadow-sm relative pl-6 group transition-all ${isEditing ? 'border-amber-400 ring-2 ring-amber-100' : 'border-slate-200'}`}>
-                                                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${log.verified ? 'bg-green-500' : 'bg-amber-300'} rounded-l-lg`}></div>
-                                                        
-                                                        {/* FIXED: Actions Layout with z-index and isolated event handlers */}
-                                                        <div className="flex justify-between items-start mb-2">
-                                                            <div>
-                                                                <span className="text-sm font-bold text-indigo-700 block">{new Date(log.date).toLocaleDateString()}</span>
-                                                                <div className="flex flex-col">
-                                                                    <span className="text-xs text-slate-400">Atendido por: {log.advisorName || 'Asesor'}</span>
-                                                                    {(log.modality || log.location) && (<span className="text-[10px] text-slate-500 mt-0.5">{log.modality} {log.location ? `• ${log.location}` : ''}</span>)}
-                                                                </div>
-                                                            </div>
-                                                            
-                                                            <div className="flex flex-col items-end gap-1.5 relative z-50">
-                                                                <div className="flex items-center gap-1">
-                                                                    <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEditLog(log, originalIndex); }} className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Editar"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
-                                                                    <button type="button" onClick={(e) => handleDeleteSession(e, log.id, originalIndex)} className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Eliminar"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
-                                                                </div>
-                                                                <span className="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-100">{log.duration} min</span>
-                                                                {log.verified ? <span className="text-[10px] text-green-600 font-bold flex items-center gap-1 bg-green-50 px-2 py-0.5 rounded border border-green-100">Firma Digital</span> : <span className="text-[10px] text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-100">Pendiente</span>}
-                                                            </div>
+                                        <h3 className="font-bold text-slate-600 mb-4 uppercase text-xs">Historial</h3>
+                                        <div className="space-y-4">
+                                            {[...logs].reverse().map((log, idx) => (
+                                                <div key={idx} className="bg-white p-4 rounded-lg border shadow-sm relative pl-6 group">
+                                                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${log.verified ? 'bg-green-500' : 'bg-amber-300'} rounded-l-lg`}></div>
+                                                    <div className="flex justify-between items-start">
+                                                        <div><span className="text-sm font-bold text-indigo-700 block">{formatDateCL(log.date)}</span><span className="text-xs text-slate-400">Atendido por: {log.advisorName}</span></div>
+                                                        <div className="flex gap-2">
+                                                            <button onClick={() => handleEditLog(log, idx)} className="text-slate-400 hover:text-blue-600"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
+                                                            <button onClick={(e) => handleDeleteSession(e, log.id, idx)} className="text-slate-400 hover:text-red-600"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                                                         </div>
-                                                        {logTags.length > 0 && (<div className="flex flex-wrap gap-1 mb-2">{logTags.map((t: string, i: number) => (<span key={i} className={`text-[10px] px-1.5 py-0.5 rounded border ${getTagColor(t)} bg-opacity-50`}>{t}</span>))}</div>)}
-                                                        <ExpandableText text={log.observation} />
-                                                        {log.verified && (<div className="border-t border-slate-100 pt-2 flex justify-between items-center"><span className="text-[10px] font-mono text-slate-400">COD: {log.verificationCode}</span><button onClick={() => setShowVerificationModal(log)} className="text-[10px] text-blue-600 hover:underline font-bold flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg> Verificar Autenticidad</button></div>)}
                                                     </div>
-                                                )})}
-                                            </div>
-                                        )}
+                                                    <p className="text-slate-600 text-sm mt-2">"{log.observation}"</p>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                </div>
-                            </div>
-                        )}
-                        {/* Tracking tab omitted for brevity (unchanged) */}
-                        {manageTab === 'tracking' && (
-                            <div className="animate-fadeIn">
-                                {/* ... Tracking Content ... */}
-                                <div className="p-12 text-center bg-slate-50 border border-dashed border-slate-300 rounded-xl">
-                                    <h3 className="text-xl font-bold text-slate-500 mb-2">Módulo de Seguimiento Avanzado</h3>
-                                    <p className="text-slate-400">Próximamente: Gráficos de evolución y análisis de impacto.</p>
                                 </div>
                             </div>
                         )}
                     </div>
                 </div>
-                {/* ... Modals ... */}
-                {showVerificationModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
-                        {/* ... Verification Modal Content ... */}
-                        <div className="bg-white rounded-xl shadow-2xl p-6 relative w-full max-w-md text-center">
-                            <button onClick={() => setShowVerificationModal(null)} className="absolute top-4 right-4 text-slate-400 font-bold">✕</button>
-                            <h2 className="text-xl font-bold text-slate-800 mb-4">Código de Verificación</h2>
-                            <div className="bg-slate-100 p-4 rounded-lg font-mono text-lg font-bold text-slate-700 tracking-wider mb-4">{showVerificationModal.verificationCode}</div>
-                            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${window.location.origin}/?mode=verify&code=${showVerificationModal.verificationCode}`)}`} alt="QR" className="mx-auto mb-4"/>
-                            <p className="text-xs text-slate-500">Escanee para validar autenticidad.</p>
-                        </div>
-                    </div>
-                )}
             </div>
         );
     }
 
-    // List view omitted for brevity (unchanged)
     return (
         <div className="animate-fadeIn space-y-6">
-            {/* Header, Search and Table (Unchanged from original) */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-r from-slate-800 to-slate-700 p-6 rounded-xl shadow-lg text-white">
-                <div><h2 className="text-2xl font-bold">Bitácora de Asesorías</h2><p className="text-slate-300 text-sm mt-1">Gestión de acompañamiento individual docente.</p></div>
-                <div className="flex gap-4 text-center">
-                    <div className="px-4 border-r border-slate-600"><span className="block text-2xl font-bold text-indigo-400">{stats.students}</span><span className="text-[10px] uppercase font-bold text-slate-400">Docentes</span></div>
-                    <div className="px-4 border-r border-slate-600"><span className="block text-2xl font-bold text-emerald-400">{stats.sessions}</span><span className="text-[10px] uppercase font-bold text-slate-400">Sesiones</span></div>
-                    <div className="px-4"><span className="block text-2xl font-bold text-amber-400">{stats.hours}</span><span className="text-[10px] uppercase font-bold text-slate-400">Horas</span></div>
-                </div>
-                <button onClick={handleOpenEnrollModal} className="bg-white text-slate-800 px-4 py-2 rounded-lg font-bold hover:bg-indigo-50 transition-colors shadow-md flex items-center gap-2 text-sm"><svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Nuevo Expediente</button>
+                <div><h2 className="text-2xl font-bold">Bitácora de Asesorías</h2><p className="text-slate-300 text-sm mt-1">Acompañamiento individual docente.</p></div>
+                <button id="tour-advisory-btn-new" onClick={handleOpenEnrollModal} className="bg-white text-slate-800 px-4 py-2 rounded-lg font-bold hover:bg-indigo-50 transition-colors shadow-md flex items-center gap-2 text-sm"><svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Nuevo Expediente</button>
             </div>
-            
-            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-6 shadow-sm">
-                <div className="flex items-center gap-2 mb-3"><svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg><h3 className="font-bold text-indigo-900 text-sm uppercase tracking-wide">Búsqueda Rápida de Expedientes</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="relative"><label className="block text-xs font-bold text-slate-600 mb-1">Buscar por RUT</label><input type="text" placeholder="Ingrese RUT..." value={searchRut} onChange={handleSearchRutChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"/>{rutSuggestions.length > 0 && (<div className="absolute top-full left-0 w-full bg-white border border-slate-200 rounded-lg shadow-xl mt-1 z-20 max-h-48 overflow-y-auto">{rutSuggestions.map(s => (<button key={s.enrollmentId} onClick={() => selectSearchResult(s.enrollmentId)} className="w-full text-left px-4 py-2 hover:bg-indigo-50 border-b border-slate-50 last:border-0"><span className="block font-bold text-slate-700 text-sm">{s.user.names} {s.user.paternalSurname}</span><span className="block text-xs text-slate-500 font-mono">{s.user.rut}</span></button>))}</div>)}</div>
-                    <div className="relative"><label className="block text-xs font-bold text-slate-600 mb-1">Buscar por Apellido Paterno</label><input type="text" placeholder="Ingrese Apellido..." value={searchSurname} onChange={handleSearchSurnameChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"/>{surnameSuggestions.length > 0 && (<div className="absolute top-full left-0 w-full bg-white border border-slate-200 rounded-lg shadow-xl mt-1 z-20 max-h-48 overflow-y-auto">{surnameSuggestions.map(s => (<button key={s.enrollmentId} onClick={() => selectSearchResult(s.enrollmentId)} className="w-full text-left px-4 py-2 hover:bg-indigo-50 border-b border-slate-50 last:border-0"><span className="block font-bold text-slate-700 text-sm">{s.user.names} {s.user.paternalSurname}</span><span className="block text-xs text-slate-500 font-mono">{s.user.rut}</span></button>))}</div>)}</div>
-                </div>
-            </div>
-
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <table className="w-full text-sm text-left">
                     <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
-                        <tr>
-                            <th className="px-6 py-4">Docente Asesorado</th>
-                            <th className="px-6 py-4">Unidad Académica</th>
-                            <th className="px-6 py-4">Asesor Responsable</th>
-                            <th className="px-6 py-4 text-center">Sesiones</th>
-                            <th className="px-6 py-4 text-center">Última Atención</th>
-                            <th className="px-6 py-4 text-center">Acción</th>
-                        </tr>
+                        <tr><th className="px-6 py-4">Docente</th><th className="px-6 py-4">Asesor</th><th className="px-6 py-4 text-center">Sesiones</th><th className="px-6 py-4 text-center">Acción</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {advisoryEnrollments.map(enr => {
-                            const user = users.find(u => u.rut === enr.rut);
-                            const lastSession = enr.sessionLogs && enr.sessionLogs.length > 0 ? formatDateCL(enr.sessionLogs[enr.sessionLogs.length - 1].date) : '-';
-                            const sessionCount = enr.sessionLogs?.length || 0;
-                            // Display logic: Responsible Field -> First Session Advisor -> 'Sin Asignar'
-                            const advisorDisplay = enr.responsible || (enr.sessionLogs && enr.sessionLogs.length > 0 ? enr.sessionLogs[0].advisorName : 'Sin Asignar');
-
-                            return (
-                                <tr key={enr.id} className="hover:bg-indigo-50/20 transition-colors">
-                                    <td className="px-6 py-4"><div className="font-bold text-slate-800">{user?.names} {user?.paternalSurname}</div><div className="text-xs text-slate-500 font-mono">{enr.rut}</div></td>
-                                    <td className="px-6 py-4 text-xs text-slate-600"><div className="font-bold">{user?.faculty || 'Sin Facultad'}</div><div>{user?.department}</div></td>
-                                    <td className="px-6 py-4 text-xs font-bold text-indigo-700">{advisorDisplay}</td>
-                                    <td className="px-6 py-4 text-center"><span className={`px-3 py-1 rounded-full text-xs font-bold ${sessionCount > 0 ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>{sessionCount}</span></td>
-                                    <td className="px-6 py-4 text-center text-slate-600 font-mono text-xs">{lastSession}</td>
-                                    <td className="px-6 py-4 text-center"><div className="flex items-center justify-center gap-2"><button onClick={() => handleManageStudent(enr.id)} className="text-indigo-600 hover:text-white hover:bg-indigo-600 border border-indigo-200 bg-indigo-50 font-bold px-3 py-1.5 rounded-lg text-xs transition-colors">Gestionar Bitácora</button><button onClick={() => handleDeleteBitacora(enr.id, `${user?.names} ${user?.paternalSurname}`)} className="text-red-500 hover:text-white hover:bg-red-500 border border-red-200 bg-red-50 font-bold px-3 py-1.5 rounded-lg text-xs transition-colors" title="Eliminar Expediente Completo"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button></div></td>
-                                </tr>
-                            );
-                        })}
-                        {advisoryEnrollments.length === 0 && (<tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400 italic">No hay expedientes de asesoría abiertos. Cree uno nuevo para comenzar.</td></tr>)}
+                        {advisoryEnrollments.map(enr => (
+                            <tr key={enr.id} className="hover:bg-indigo-50/20 transition-colors">
+                                <td className="px-6 py-4"><div className="font-bold text-slate-800">{users.find(u => u.rut === enr.rut)?.names}</div><div className="text-xs text-slate-500">{enr.rut}</div></td>
+                                <td className="px-6 py-4 font-bold text-indigo-700">{enr.responsible}</td>
+                                <td className="px-6 py-4 text-center"><span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full text-xs font-bold">{enr.sessionLogs?.length || 0}</span></td>
+                                <td className="px-6 py-4 text-center"><button onClick={() => handleManageStudent(enr.id)} className="text-indigo-600 hover:underline font-bold text-xs">Gestionar</button></td>
+                            </tr>
+                        ))}
                     </tbody>
                 </table>
             </div>
-            
-            {showEnrollModal && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn"><div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-slate-200"><div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 sticky top-0 z-10"><h3 className="text-lg font-bold text-slate-800">Apertura de Expediente (Ficha Base)</h3><button onClick={() => setShowEnrollModal(false)} className="text-slate-400 hover:text-slate-600 text-2xl font-bold">×</button></div><form onSubmit={handleEnrollSubmit} className="p-8 space-y-6"> <div className="space-y-4"><h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wide border-b border-indigo-100 pb-1">1. Identificación del Docente</h4><div className="grid grid-cols-1 md:grid-cols-4 gap-4"><div className="md:col-span-1 relative"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" value={enrollForm.rut} onChange={handleEnrollChange} onBlur={handleRutBlur} placeholder="12345678-9" autoComplete="off" className="w-full px-3 py-2 border border-slate-300 rounded font-bold text-sm focus:ring-2 focus:ring-indigo-500"/>{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div><div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" required value={enrollForm.names} onChange={e => setEnrollForm({...enrollForm, names: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div><div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label><input type="text" required value={enrollForm.paternalSurname} onChange={e => setEnrollForm({...enrollForm, paternalSurname: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div><div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" value={enrollForm.maternalSurname} onChange={e => setEnrollForm({...enrollForm, maternalSurname: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-medium text-slate-700 mb-1">Email</label><input type="email" value={enrollForm.email} onChange={e => setEnrollForm({...enrollForm, email: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div><div><label className="block text-xs font-medium text-slate-700 mb-1">Teléfono</label><input type="tel" value={enrollForm.phone} onChange={e => setEnrollForm({...enrollForm, phone: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div></div></div> <div className="space-y-4"><h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wide border-b border-indigo-100 pb-1">2. Antecedentes Institucionales</h4><div className="grid grid-cols-1 md:grid-cols-4 gap-4"><SmartSelect label="Sede / Campus" name="campus" value={enrollForm.campus} options={config.campuses || ["Valparaíso"]} onChange={(e) => setEnrollForm({...enrollForm, campus: e.target.value})} /><SmartSelect label="Facultad" name="faculty" value={enrollForm.faculty} options={listFaculties} onChange={(e) => setEnrollForm({...enrollForm, faculty: e.target.value})} /><SmartSelect label="Departamento" name="department" value={enrollForm.department} options={listDepts} onChange={(e) => setEnrollForm({...enrollForm, department: e.target.value})} /><SmartSelect label="Carrera" name="career" value={enrollForm.career} options={listCareers} onChange={(e) => setEnrollForm({...enrollForm, career: e.target.value})} /><SmartSelect label="Tipo Contrato" name="contractType" value={enrollForm.contractType} options={listContracts} onChange={(e) => setEnrollForm({...enrollForm, contractType: e.target.value})} /><SmartSelect label="Rol Académico" name="academicRole" value={enrollForm.academicRole} options={listRoles} onChange={(e) => setEnrollForm({...enrollForm, academicRole: e.target.value})} /><div className="md:col-span-2"><label className="block text-xs font-medium text-slate-700 mb-1">Asesor Responsable</label><select name="responsible" value={enrollForm.responsible} onChange={handleEnrollChange} className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-indigo-500"><option value="">Seleccione Asesor...</option>{advisorsList.map(adv => (<option key={adv.rut} value={`${adv.names} ${adv.paternalSurname}`}>{adv.names} {adv.paternalSurname}</option>))}</select></div></div></div> <div className="flex justify-end gap-3 pt-6 border-t border-slate-100 items-center"><button type="button" onClick={() => setShowEnrollModal(false)} className="px-4 py-2 text-slate-500 hover:text-slate-700 font-bold">Cancelar</button><button type="submit" disabled={isProcessing} className={`bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-md flex items-center gap-2 ${isProcessing ? 'opacity-70 cursor-wait' : ''}`}>{isProcessing && (<svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>)} Crear Expediente</button></div> {enrollMsg && (<div className={`text-center p-2 rounded text-sm font-bold animate-fadeIn ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{enrollMsg.text}</div>)} </form></div></div>)}
+            {showEnrollModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-8">
+                        <div className="flex justify-between items-center mb-6"><h3 className="text-lg font-bold">Apertura de Expediente</h3><button onClick={() => setShowEnrollModal(false)} className="text-2xl">&times;</button></div>
+                        <form onSubmit={handleEnrollSubmit} className="space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div><label className="block text-xs font-bold mb-1">RUT *</label><input type="text" value={enrollForm.rut} onChange={handleEnrollChange} onBlur={handleRutBlur} className="w-full px-3 py-2 border rounded" placeholder="12345678-9"/></div>
+                                <div><label className="block text-xs font-bold mb-1">Nombre Completo *</label><input type="text" required value={enrollForm.names} onChange={e => setEnrollForm({...enrollForm, names: e.target.value})} className="w-full px-3 py-2 border rounded"/></div>
+                            </div>
+                            <div className="flex justify-end gap-2"><button type="button" onClick={() => setShowEnrollModal(false)} className="px-4 py-2 text-slate-500">Cancelar</button><button type="submit" disabled={isProcessing} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold">Crear Expediente</button></div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
