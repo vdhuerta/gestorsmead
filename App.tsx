@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User, UserRole } from './types';
 import { LoginSimulator } from './components/LoginSimulator';
 import { RoleNavbar, TabType } from './components/RoleNavbar';
@@ -46,8 +45,9 @@ const MainContent: React.FC = () => {
   const [verificationCode, setVerificationCode] = useState<string | null>(null);
   const [certVerificationCode, setCertVerificationCode] = useState<string | null>(null); 
 
-  // --- REALTIME PRESENCE STATE (ASESORES) ---
+  // --- REALTIME PRESENCE & CHAT STATE ---
   const [onlinePeers, setOnlinePeers] = useState<{rut: string, names: string, photoUrl: string}[]>([]);
+  const channelRef = useRef<any>(null);
 
   // Verificar conexión y Rutas al montar
   useEffect(() => {
@@ -80,7 +80,7 @@ const MainContent: React.FC = () => {
 
   }, []);
 
-  // --- REALTIME PRESENCE EFFECT (Only for Advisors) ---
+  // --- REALTIME PRESENCE & MESSAGING EFFECT ---
   useEffect(() => {
       if (!user || user.systemRole !== UserRole.ASESOR) {
           setOnlinePeers([]);
@@ -94,6 +94,8 @@ const MainContent: React.FC = () => {
               },
           },
       });
+
+      channelRef.current = channel;
 
       channel
           .on('presence', { event: 'sync' }, () => {
@@ -110,6 +112,14 @@ const MainContent: React.FC = () => {
               }
               setOnlinePeers(peers);
           })
+          // --- LISTEN FOR PRIVATE BROADCAST MESSAGES ---
+          .on('broadcast', { event: 'private_msg' }, (payload: any) => {
+              const { from, to, text } = payload.payload;
+              // Si el mensaje es para mí, mostrarlo
+              if (to === user.rut) {
+                  alert(`💬 Mensaje de ${from}:\n\n"${text}"`);
+              }
+          })
           .subscribe(async (status) => {
               if (status === 'SUBSCRIBED') {
                   await channel.track({
@@ -123,8 +133,30 @@ const MainContent: React.FC = () => {
 
       return () => {
           supabase.removeChannel(channel);
+          channelRef.current = null;
       };
   }, [user]);
+
+  // Handler para enviar mensaje privado
+  const handleSendPrivateMessage = (peer: {rut: string, names: string}) => {
+      if (!user || !channelRef.current) return;
+      
+      const text = window.prompt(`Escribe tu mensaje privado para ${peer.names}:`);
+      
+      if (text && text.trim() !== "") {
+          channelRef.current.send({
+              type: 'broadcast',
+              event: 'private_msg',
+              payload: {
+                  from: user.names,
+                  to: peer.rut,
+                  text: text.trim()
+              }
+          });
+          // Feedback opcional para el remitente
+          console.log(`Mensaje enviado a ${peer.names}`);
+      }
+  };
 
 
   if (signatureParams) {
@@ -325,8 +357,8 @@ const MainContent: React.FC = () => {
             {user.systemRole === UserRole.ASESOR && onlinePeers.length > 0 && (
                 <div className="flex -space-x-3 items-center pb-1">
                     {onlinePeers.map((peer) => (
-                        <div key={peer.rut} className="relative group/peer cursor-help">
-                            <div className="w-10 h-10 rounded-full border-2 border-white shadow-md bg-slate-200 overflow-hidden relative z-10 hover:z-20 transition-all hover:scale-110">
+                        <div key={peer.rut} className="relative group/peer cursor-pointer" onClick={() => handleSendPrivateMessage(peer)}>
+                            <div className="w-10 h-10 rounded-full border-2 border-white shadow-md bg-slate-200 overflow-hidden relative z-10 hover:z-20 transition-all hover:scale-110 active:scale-95">
                                 {peer.photoUrl ? (
                                     <img src={peer.photoUrl} alt={peer.names} className="w-full h-full object-cover" />
                                 ) : (
@@ -338,7 +370,8 @@ const MainContent: React.FC = () => {
                             <div className="absolute w-3 h-3 bg-green-500 border-2 border-white rounded-full bottom-0 right-0 z-20"></div>
                             
                             <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover/peer:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-30">
-                                {peer.names} (Conectado)
+                                <span className="block font-bold">{peer.names}</span>
+                                <span className="block opacity-75">Click para enviar mensaje</span>
                             </div>
                         </div>
                     ))}
