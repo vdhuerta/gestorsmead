@@ -1,6 +1,5 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { UserRole, User } from '../types';
+import { UserRole, User, ActivityState } from '../types';
 import { useData } from '../context/DataContext';
 // @ts-ignore
 import { utils, writeFile } from 'xlsx';
@@ -96,28 +95,10 @@ const TemplateDownloadDropdown: React.FC = () => {
     }, []);
 
     const handleDownload = () => {
-        // Datos solicitados: RUT, Nombre, Apellido Paterno, Apellido Materno, Correo, Teléfono, Rol, Facultad, Departamento, Carrera, Contrato, Semestre Docente, Sede
-        const headers = [
-            "RUT", 
-            "Nombre", 
-            "Apellido Paterno", 
-            "Apellido Materno", 
-            "Correo", 
-            "Teléfono", 
-            "Rol", 
-            "Facultad", 
-            "Departamento", 
-            "Carrera", 
-            "Contrato", 
-            "Semestre Docente", 
-            "Sede"
-        ];
-        
+        const headers = ["RUT", "Nombre", "Apellido Paterno", "Apellido Materno", "Correo", "Teléfono", "Rol", "Facultad", "Departamento", "Carrera", "Contrato", "Semestre Docente", "Sede"];
         const worksheet = utils.aoa_to_sheet([headers]);
         const workbook = utils.book_new();
         utils.book_append_sheet(workbook, worksheet, "Plantilla");
-        
-        // Generar archivo XLS
         writeFile(workbook, "Plantilla de Subida de Datos.xlsx");
         setIsOpen(false);
     };
@@ -156,9 +137,6 @@ const TemplateDownloadDropdown: React.FC = () => {
                             </div>
                         </button>
                     </div>
-                    <div className="bg-slate-50 p-2 text-center border-t border-slate-100">
-                        <span className="text-[9px] text-slate-400 italic">Unidad de Acompañamiento Docente</span>
-                    </div>
                 </div>
             )}
         </div>
@@ -166,12 +144,11 @@ const TemplateDownloadDropdown: React.FC = () => {
 };
 
 // --- COMPONENTE INTERNO DE NOTIFICACIONES (ASESOR) ---
-const NotificationDropdown: React.FC = () => {
-    const { activities, enrollments } = useData();
+const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unreadMessagesRuts }) => {
+    const { activities, enrollments, users, config } = useData();
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Close on click outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -183,88 +160,98 @@ const NotificationDropdown: React.FC = () => {
     }, []);
 
     const notifications = useMemo(() => {
-        const list: { type: 'course'|'general'|'postgrad'|'advisory', title: string, subtitle: string, urgency: 'high'|'medium'|'info', date: string }[] = [];
+        const list: { type: 'course-closing'|'course-active'|'chat'|'kpi-risk'|'kpi-critical'|'advisory', title: string, subtitle: string, urgency: 'high'|'medium'|'info', date?: string }[] = [];
         const today = new Date();
         const todayStr = today.toISOString().split('T')[0];
 
-        // Helper para diferencia de días
-        const getDaysDiff = (dateStr: string) => {
-            if (!dateStr) return -999;
-            const target = new Date(dateStr);
-            const diffTime = target.getTime() - today.getTime();
-            return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-        };
+        // 1. CHAT - Mensajes sin leer
+        unreadMessagesRuts.forEach(rut => {
+            const sender = users.find(u => u.rut === rut);
+            list.push({
+                type: 'chat',
+                title: 'Nuevo Mensaje de Chat',
+                subtitle: `${sender?.names || 'Compañero'} te ha enviado un mensaje privado.`,
+                urgency: 'high'
+            });
+        });
 
+        // 2. CURSOS - Cierres Proximos (Cuenta Regresiva 5 dias)
         activities.forEach(act => {
-            if (act.category === 'ACADEMIC' && act.endDate) {
-                const diff = getDaysDiff(act.endDate);
-                if (diff >= 0 && diff <= 5) {
+            if (act.endDate) {
+                const end = new Date(act.endDate + 'T12:00:00');
+                const diffTime = end.getTime() - today.getTime();
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                if (diffDays >= 0 && diffDays <= 5) {
                     list.push({
-                        type: 'course',
-                        title: 'Cierre de Curso Próximo',
-                        subtitle: `${act.name} cierra en ${diff === 0 ? 'hoy' : diff + ' días'}.`,
-                        urgency: diff <= 2 ? 'high' : 'medium',
+                        type: 'course-closing',
+                        title: '⚠️ Cierre de Curso Próximo',
+                        subtitle: `"${act.name}" finaliza en ${diffDays === 0 ? 'HOY' : diffDays + ' días'}.`,
+                        urgency: diffDays <= 2 ? 'high' : 'medium',
                         date: act.endDate
                     });
                 }
-            }
 
-            if (act.category === 'GENERAL' && act.startDate) {
-                if (act.startDate === todayStr) {
+                // Cursos abiertos HOY
+                if (act.startDate && act.startDate <= todayStr && act.endDate >= todayStr) {
                     list.push({
-                        type: 'general',
-                        title: 'Actividad por Iniciar',
-                        subtitle: `"${act.name}" comienza hoy.`,
-                        urgency: 'high',
+                        type: 'course-active',
+                        title: '📚 Curso en Ejecución',
+                        subtitle: `"${act.name}" se encuentra activo actualmente.`,
+                        urgency: 'info',
                         date: act.startDate
                     });
                 }
             }
+        });
 
-            if (act.category === 'POSTGRADUATE' && act.programConfig?.modules) {
-                act.programConfig.modules.forEach(mod => {
-                    if (mod.endDate) {
-                        const diff = getDaysDiff(mod.endDate);
-                        if (diff >= 0 && diff <= 3) {
-                            list.push({
-                                type: 'postgrad',
-                                title: 'Cierre de Módulo Postítulo',
-                                subtitle: `${mod.name} (${act.name}) finaliza pronto.`,
-                                urgency: diff <= 1 ? 'high' : 'medium',
-                                date: mod.endDate
-                            });
-                        }
-                    }
+        // 3. KPIs - Alumnos en Riesgo & Cursos Críticos
+        const minGrade = config.minPassingGrade || 4.0;
+        const minAtt = config.minAttendancePercentage || 75;
+
+        // Cursos Críticos (< 5 alumnos)
+        activities.filter(a => a.category === 'ACADEMIC' && a.year === today.getFullYear()).forEach(act => {
+            const count = enrollments.filter(e => e.activityId === act.id).length;
+            if (count > 0 && count < 5) {
+                list.push({
+                    type: 'kpi-critical',
+                    title: '📉 Curso con Baja Matrícula',
+                    subtitle: `"${act.name}" solo tiene ${count} inscritos. Requiere gestión.`,
+                    urgency: 'medium'
                 });
             }
         });
 
-        enrollments.forEach(enr => {
-            if (enr.sessionLogs) {
-                enr.sessionLogs.forEach(log => {
-                    if (log.verified && log.date === todayStr) {
-                        list.push({
-                            type: 'advisory',
-                            title: 'Asesoría Realizada',
-                            subtitle: `Sesión completada con éxito.`,
-                            urgency: 'info',
-                            date: log.date
-                        });
-                    }
-                });
-            }
-        });
+        // Alumnos en Riesgo (Análisis de Matrícula)
+        const atRiskCount = enrollments.filter(e => {
+            const isFailingGrade = e.finalGrade !== undefined && e.finalGrade > 0 && e.finalGrade < minGrade;
+            const isFailingAttendance = e.attendancePercentage !== undefined && e.attendancePercentage > 0 && e.attendancePercentage < minAtt;
+            return isFailingGrade || isFailingAttendance;
+        }).length;
 
-        return list.sort((a, b) => (a.urgency === 'high' ? -1 : 1));
-    }, [activities, enrollments]);
+        if (atRiskCount > 0) {
+            list.push({
+                type: 'kpi-risk',
+                title: '🚨 Alerta de Rendimiento',
+                subtitle: `Hay ${atRiskCount} alumnos en riesgo académico (nota/asistencia) para revisar.`,
+                urgency: 'high'
+            });
+        }
+
+        return list.sort((a, b) => {
+            const priority = { 'high': 0, 'medium': 1, 'info': 2 };
+            return priority[a.urgency] - priority[b.urgency];
+        });
+    }, [activities, enrollments, unreadMessagesRuts, config, users]);
 
     const getIcon = (type: string) => {
         switch(type) {
-            case 'course': return <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>;
-            case 'general': return <svg className="w-4 h-4 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
-            case 'postgrad': return <svg className="w-4 h-4 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>;
-            case 'advisory': return <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
-            default: return <div className="w-2 h-2 rounded-full bg-slate-400"></div>;
+            case 'chat': return <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg></div>;
+            case 'course-closing': return <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>;
+            case 'course-active': return <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg></div>;
+            case 'kpi-risk': return <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-600"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg></div>;
+            case 'kpi-critical': return <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg></div>;
+            default: return <div className="w-8 h-8 rounded-full bg-slate-100"></div>;
         }
     };
 
@@ -272,55 +259,68 @@ const NotificationDropdown: React.FC = () => {
         <div className="relative" ref={dropdownRef}>
             <button 
                 onClick={() => setIsOpen(!isOpen)} 
-                className={`p-2 rounded-full transition-colors relative ${isOpen ? 'bg-indigo-100 text-indigo-600' : 'text-slate-400 hover:text-[#647FBC] hover:bg-slate-50'}`}
+                className={`p-2 rounded-full transition-all relative ${isOpen ? 'bg-indigo-100 text-indigo-600 scale-110 shadow-inner' : 'text-slate-400 hover:text-[#647FBC] hover:bg-slate-50'}`}
                 title="Mensajería y Alertas"
             >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                 </svg>
                 {notifications.length > 0 && (
-                    <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full animate-pulse"></span>
+                    <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 border-2 border-white rounded-full text-[9px] text-white font-bold flex items-center justify-center animate-bounce">
+                        {notifications.length}
+                    </span>
                 )}
             </button>
 
             {isOpen && (
-                <div className="absolute top-12 right-0 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden animate-fadeIn">
-                    <div className="bg-slate-50 px-4 py-3 border-b border-slate-100 flex justify-between items-center">
-                        <h3 className="font-bold text-slate-700 text-sm">Centro de Notificaciones</h3>
-                        <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded-full">{notifications.length} Nuevas</span>
+                <div className="absolute top-12 right-0 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden animate-fadeInUp">
+                    <div className="bg-[#647FBC] px-4 py-4 flex justify-between items-center text-white">
+                        <div>
+                            <h3 className="font-bold text-sm">Centro de Notificaciones</h3>
+                            <p className="text-[10px] opacity-80 uppercase font-bold tracking-widest">Resumen de Gestión Hoy</p>
+                        </div>
+                        <span className="bg-white/20 px-2 py-1 rounded text-[10px] font-bold">{notifications.length} Alertas</span>
                     </div>
-                    <div className="max-h-80 overflow-y-auto">
+                    
+                    <div className="max-h-[400px] overflow-y-auto custom-scrollbar bg-[#F9F8F6]">
                         {notifications.length === 0 ? (
-                            <div className="p-6 text-center text-slate-400 text-xs">
-                                No hay alertas pendientes por el momento.
+                            <div className="p-10 text-center flex flex-col items-center gap-2">
+                                <svg className="w-12 h-12 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>
+                                <p className="text-xs text-slate-400 font-medium">Todo al día, Asesor.</p>
                             </div>
                         ) : (
-                            <div className="divide-y divide-slate-50">
+                            <div className="divide-y divide-slate-100">
                                 {notifications.map((notif, idx) => (
-                                    <div key={idx} className={`p-4 hover:bg-slate-50 transition-colors ${notif.urgency === 'high' ? 'bg-red-50/30' : ''}`}>
-                                        <div className="flex gap-3">
-                                            <div className="mt-1 flex-shrink-0">
+                                    <div key={idx} className={`p-4 transition-colors hover:bg-white ${notif.urgency === 'high' ? 'bg-red-50/20' : ''}`}>
+                                        <div className="flex gap-4">
+                                            <div className="flex-shrink-0 mt-0.5">
                                                 {getIcon(notif.type)}
                                             </div>
-                                            <div>
-                                                <h4 className={`text-xs font-bold ${notif.urgency === 'high' ? 'text-red-600' : 'text-slate-700'}`}>
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className={`text-xs font-bold leading-tight ${notif.urgency === 'high' ? 'text-red-700' : 'text-slate-800'}`}>
                                                     {notif.title}
                                                 </h4>
-                                                <p className="text-xs text-slate-500 mt-0.5 leading-snug">
+                                                <p className="text-[11px] text-slate-500 mt-1 leading-snug">
                                                     {notif.subtitle}
                                                 </p>
-                                                <span className="text-[10px] text-slate-400 mt-1 block font-mono">
-                                                    {notif.date}
-                                                </span>
+                                                {notif.date && (
+                                                    <span className="text-[9px] font-mono text-indigo-400 mt-2 block font-bold">
+                                                        VENCIMIENTO: {notif.date}
+                                                    </span>
+                                                )}
                                             </div>
+                                            {notif.urgency === 'high' && (
+                                                <div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1"></div>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         )}
                     </div>
-                    <div className="bg-slate-50 p-2 text-center border-t border-slate-100">
-                        <button onClick={() => setIsOpen(false)} className="text-[10px] text-[#647FBC] font-bold hover:underline">
+                    
+                    <div className="bg-white p-3 text-center border-t border-slate-100">
+                        <button onClick={() => setIsOpen(false)} className="text-[10px] text-[#647FBC] font-black uppercase tracking-widest hover:underline transition-all">
                             Cerrar Panel
                         </button>
                     </div>
@@ -330,7 +330,7 @@ const NotificationDropdown: React.FC = () => {
     );
 };
 
-export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabChange, onLogout }) => {
+export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabChange, onLogout, unreadMessagesRuts = [] }) => {
   const availableTabs = NAV_ITEMS.filter(item => item.allowedRoles.includes(user.systemRole));
 
   return (
@@ -383,7 +383,7 @@ export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabCh
 
             {/* NOTIFICACIONES (SOLO ASESORES) */}
             {user.systemRole === UserRole.ASESOR && (
-                <NotificationDropdown />
+                <NotificationDropdown unreadMessagesRuts={unreadMessagesRuts} />
             )}
 
             <div className="text-right hidden sm:block">
@@ -427,4 +427,5 @@ interface RoleNavbarProps {
   activeTab: TabType;
   onTabChange: (tab: TabType) => void;
   onLogout: () => void;
+  unreadMessagesRuts?: string[];
 }

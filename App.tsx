@@ -364,6 +364,7 @@ const MainContent: React.FC = () => {
         activeTab={activeTab} 
         onTabChange={setActiveTab} 
         onLogout={handleLogout} 
+        unreadMessagesRuts={unreadFrom}
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
@@ -479,7 +480,7 @@ const MainContent: React.FC = () => {
                         className="flex-1 text-xs border border-slate-200 rounded-full px-4 py-2 focus:ring-2 focus:ring-[#647FBC] focus:border-transparent outline-none bg-slate-50"
                     />
                     <button type="submit" className="bg-[#647FBC] text-white p-2 rounded-full hover:bg-blue-800 transition-colors shadow-md">
-                        <svg className="w-4 h-4 transform rotate-90" fill="currentColor" viewBox="0 0 20 20"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" /></svg>
+                        <svg className="w-4 h-4 transform rotate-90" fill="currentColor" viewBox="0 0 24 24"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" /></svg>
                     </button>
                 </form>
             </div>
