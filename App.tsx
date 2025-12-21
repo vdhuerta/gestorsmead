@@ -31,6 +31,15 @@ const TABLE_COLORS = [
   'bg-slate-600'  // Neutro
 ];
 
+// Interface para mensajes de chat
+interface ChatMessage {
+    from: string; // RUT
+    fromName: string;
+    to: string; // RUT
+    text: string;
+    timestamp: number;
+}
+
 const MainContent: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
@@ -48,6 +57,17 @@ const MainContent: React.FC = () => {
   // --- REALTIME PRESENCE & CHAT STATE ---
   const [onlinePeers, setOnlinePeers] = useState<{rut: string, names: string, photoUrl: string}[]>([]);
   const channelRef = useRef<any>(null);
+  
+  // Estados de Chat
+  const [activeChatPeer, setActiveChatPeer] = useState<{rut: string, names: string, photoUrl?: string} | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [unreadFrom, setUnreadFrom] = useState<string[]>([]); // RUTs con mensajes nuevos
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll al final del chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages, activeChatPeer]);
 
   // Verificar conexión y Rutas al montar
   useEffect(() => {
@@ -112,12 +132,18 @@ const MainContent: React.FC = () => {
               }
               setOnlinePeers(peers);
           })
-          // --- LISTEN FOR PRIVATE BROADCAST MESSAGES ---
+          // --- RECIBIR MENSAJES DE CHAT ---
           .on('broadcast', { event: 'private_msg' }, (payload: any) => {
-              const { from, to, text } = payload.payload;
-              // Si el mensaje es para mí, mostrarlo
-              if (to === user.rut) {
-                  alert(`💬 Mensaje de ${from}:\n\n"${text}"`);
+              const msg: ChatMessage = payload.payload;
+              
+              // Solo procesar si el mensaje es para mí
+              if (msg.to === user.rut) {
+                  setChatMessages(prev => [...prev, msg]);
+                  
+                  // Si no tengo el chat abierto con esa persona, marcar como no leído
+                  if (!activeChatPeer || activeChatPeer.rut !== msg.from) {
+                      setUnreadFrom(prev => [...new Set([...prev, msg.from])]);
+                  }
               }
           })
           .subscribe(async (status) => {
@@ -135,27 +161,35 @@ const MainContent: React.FC = () => {
           supabase.removeChannel(channel);
           channelRef.current = null;
       };
-  }, [user]);
+  }, [user, activeChatPeer]);
 
-  // Handler para enviar mensaje privado
-  const handleSendPrivateMessage = (peer: {rut: string, names: string}) => {
-      if (!user || !channelRef.current) return;
-      
-      const text = window.prompt(`Escribe tu mensaje privado para ${peer.names}:`);
-      
-      if (text && text.trim() !== "") {
-          channelRef.current.send({
-              type: 'broadcast',
-              event: 'private_msg',
-              payload: {
-                  from: user.names,
-                  to: peer.rut,
-                  text: text.trim()
-              }
-          });
-          // Feedback opcional para el remitente
-          console.log(`Mensaje enviado a ${peer.names}`);
-      }
+  // Handler para enviar mensaje
+  const sendMessage = (text: string) => {
+      if (!user || !activeChatPeer || !channelRef.current || !text.trim()) return;
+
+      const newMsg: ChatMessage = {
+          from: user.rut,
+          fromName: user.names,
+          to: activeChatPeer.rut,
+          text: text.trim(),
+          timestamp: Date.now()
+      };
+
+      // Enviar por broadcast
+      channelRef.current.send({
+          type: 'broadcast',
+          event: 'private_msg',
+          payload: newMsg
+      });
+
+      // Agregar a mi propio historial
+      setChatMessages(prev => [...prev, newMsg]);
+  };
+
+  const handleOpenChat = (peer: {rut: string, names: string, photoUrl?: string}) => {
+      setActiveChatPeer(peer);
+      // Limpiar indicador de no leído
+      setUnreadFrom(prev => prev.filter(r => r !== peer.rut));
   };
 
 
@@ -335,8 +369,8 @@ const MainContent: React.FC = () => {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
         {renderContent()}
 
+        {/* CONTENEDOR DE PRESENCIA (INFERIOR IZQUIERDA) */}
         <div className="fixed bottom-6 left-6 z-50 flex items-end gap-3 animate-fadeIn">
-            
             <div className="relative group">
                 <div className={`absolute -inset-1 rounded-full border-4 ${connectionStatus === 'error' ? 'border-red-500/60' : 'border-green-500/60'} animate-pulse`}></div>
                 <div className={`absolute inset-0 rounded-full border-4 ${connectionStatus === 'error' ? 'border-red-500' : 'border-green-500'}`}></div>
@@ -357,8 +391,8 @@ const MainContent: React.FC = () => {
             {user.systemRole === UserRole.ASESOR && onlinePeers.length > 0 && (
                 <div className="flex -space-x-3 items-center pb-1">
                     {onlinePeers.map((peer) => (
-                        <div key={peer.rut} className="relative group/peer cursor-pointer" onClick={() => handleSendPrivateMessage(peer)}>
-                            <div className="w-10 h-10 rounded-full border-2 border-white shadow-md bg-slate-200 overflow-hidden relative z-10 hover:z-20 transition-all hover:scale-110 active:scale-95">
+                        <div key={peer.rut} className="relative group/peer cursor-pointer" onClick={() => handleOpenChat(peer)}>
+                            <div className={`w-10 h-10 rounded-full border-2 shadow-md bg-slate-200 overflow-hidden relative z-10 hover:z-20 transition-all hover:scale-110 active:scale-95 ${unreadFrom.includes(peer.rut) ? 'border-amber-500 ring-2 ring-amber-300 animate-bounce' : 'border-white'}`}>
                                 {peer.photoUrl ? (
                                     <img src={peer.photoUrl} alt={peer.names} className="w-full h-full object-cover" />
                                 ) : (
@@ -371,17 +405,85 @@ const MainContent: React.FC = () => {
                             
                             <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover/peer:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-30">
                                 <span className="block font-bold">{peer.names}</span>
-                                <span className="block opacity-75">Click para enviar mensaje</span>
+                                <span className="block opacity-75">Click para chatear</span>
                             </div>
                         </div>
                     ))}
-                    <div className="pl-4 text-[10px] font-bold text-slate-400 bg-white/80 px-2 py-1 rounded-full shadow-sm">
-                        +{onlinePeers.length} online
-                    </div>
                 </div>
             )}
-
         </div>
+
+        {/* VENTANA DE CHAT FLOTANTE (INFERIOR DERECHA, SOBRE EL BOTÓN DE DEBUG) */}
+        {activeChatPeer && (
+            <div className="fixed bottom-16 right-6 w-80 h-96 bg-white rounded-t-2xl shadow-2xl border border-slate-200 flex flex-col z-[100] animate-fadeInUp">
+                {/* Header del Chat */}
+                <div className="bg-[#647FBC] p-3 text-white flex justify-between items-center rounded-t-2xl">
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-white/20 overflow-hidden border border-white/30">
+                            {activeChatPeer.photoUrl ? (
+                                <img src={activeChatPeer.photoUrl} alt={activeChatPeer.names} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-[10px] font-bold">{activeChatPeer.names.charAt(0)}</div>
+                            )}
+                        </div>
+                        <div className="leading-tight">
+                            <p className="text-xs font-bold truncate w-40">{activeChatPeer.names}</p>
+                            <p className="text-[9px] text-blue-100 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span> en línea
+                            </p>
+                        </div>
+                    </div>
+                    <button onClick={() => setActiveChatPeer(null)} className="hover:bg-white/10 p-1 rounded transition-colors">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+
+                {/* Cuerpo del Chat */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#F9F8F6] custom-scrollbar">
+                    {chatMessages
+                        .filter(m => (m.from === user.rut && m.to === activeChatPeer.rut) || (m.from === activeChatPeer.rut && m.to === user.rut))
+                        .map((msg, i) => (
+                            <div key={i} className={`flex flex-col ${msg.from === user.rut ? 'items-end' : 'items-start'}`}>
+                                <div className={`max-w-[85%] px-3 py-2 rounded-2xl text-xs shadow-sm ${
+                                    msg.from === user.rut 
+                                        ? 'bg-[#647FBC] text-white rounded-tr-none' 
+                                        : 'bg-white text-slate-700 border border-slate-200 rounded-tl-none'
+                                }`}>
+                                    {msg.text}
+                                </div>
+                                <span className="text-[8px] text-slate-400 mt-1 uppercase font-bold">
+                                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                            </div>
+                        ))}
+                    <div ref={chatEndRef} />
+                </div>
+
+                {/* Input del Chat */}
+                <form 
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        const input = e.currentTarget.elements.namedItem('msg') as HTMLInputElement;
+                        if (input.value.trim()) {
+                            sendMessage(input.value);
+                            input.value = '';
+                        }
+                    }}
+                    className="p-3 bg-white border-t border-slate-100 flex gap-2"
+                >
+                    <input 
+                        name="msg"
+                        type="text" 
+                        autoComplete="off"
+                        placeholder="Escribe un mensaje..."
+                        className="flex-1 text-xs border border-slate-200 rounded-full px-4 py-2 focus:ring-2 focus:ring-[#647FBC] focus:border-transparent outline-none bg-slate-50"
+                    />
+                    <button type="submit" className="bg-[#647FBC] text-white p-2 rounded-full hover:bg-blue-800 transition-colors shadow-md">
+                        <svg className="w-4 h-4 transform rotate-90" fill="currentColor" viewBox="0 0 20 20"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" /></svg>
+                    </button>
+                </form>
+            </div>
+        )}
 
         <div className="fixed bottom-4 right-4">
              <button onClick={resetData} className="bg-[#91ADC8] hover:bg-slate-600 text-white text-xs px-3 py-1 rounded-full shadow-lg border border-white transition-colors opacity-70 hover:opacity-100">
