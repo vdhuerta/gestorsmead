@@ -256,7 +256,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
       return act && act.year === selectedYear;
   });
 
-  const totalEnrollments = yearEnrollments.length;
+  const totalEnrollmentsPeriod = yearEnrollments.length;
   const totalApprovedPeriod = yearEnrollments.filter(e => e.state === ActivityState.APROBADO).length;
 
   // --- ASESOR / ADMIN KPIs Calculation (FILTERED EXCLUSIVELY BY SELECTED YEAR) ---
@@ -339,7 +339,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
         const enrs = academicEnrollments.filter(e => e.activityId === act.id && typeof e.attendancePercentage === 'number' && e.attendancePercentage > 0);
         const avg = enrs.length > 0 ? Math.round(enrs.reduce((acc, e) => acc + (e.attendancePercentage || 0), 0) / enrs.length) : 0;
         return { name: act.name, avg };
-    }).filter(a => a.avg > 0).sort((a,b) => a.avg - b.avg).slice(0, 10);
+    }).filter(a => a.avg > 0).sort((a,b) => a.avg - a.avg).slice(0, 10);
 
     // 6. Cursos Críticos (<5 inscritos)
     const cursosCriticosList = yearAcademicActivities.map(a => {
@@ -371,23 +371,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     };
   }, [user.systemRole, activities, enrollments, config, selectedYear, users]);
 
-  // --- LOGIC: Mis Cursos (My Enrollments) ---
-  const myEnrollments = useMemo(() => {
-      return enrollments.filter(e => e.rut === user.rut);
-  }, [enrollments, user.rut]);
-
   // --- HANDLERS ---
-  const handleOpenEnrollModal = (act: Activity) => {
-    if (user.systemRole === UserRole.ESTUDIANTE) {
-         setTargetEnrollActivity(act);
-         setShowStudentEnrollModal(true);
-         setEnrollSuccessMsg(null);
-    } else {
-        localStorage.setItem(act.category === 'GENERAL' ? 'jumpto_activity_id' : 'jumpto_course_id', act.id);
-        onNavigate(act.category === 'GENERAL' ? 'generalActivities' : 'courses');
-    }
-  };
-
   const handleAdvisorNavigate = (act: Activity, targetTab: 'enrollment' | 'tracking' = 'tracking') => {
       if (act.category === 'GENERAL') {
           localStorage.setItem('jumpto_activity_id', act.id);
@@ -475,6 +459,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
              <div className="text-center px-4 py-2.5 bg-white rounded-xl border border-slate-100 shadow-sm min-w-[100px]">
                   <span className="block text-2xl font-bold text-emerald-600">{totalApprovedPeriod}</span>
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Aprobados</span>
+             </div>
+             <div className="text-center px-4 py-2.5 bg-white rounded-xl border border-slate-100 shadow-sm min-w-[100px]">
+                  <span className="block text-2xl font-bold text-slate-800">{totalEnrollmentsPeriod}</span>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Inscritos</span>
              </div>
           </div>
       </div>
@@ -655,6 +643,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                   <tbody className="divide-y divide-slate-100">
                                       {activities.filter(a => a.category === 'ACADEMIC' && a.year === selectedYear).map(act => {
                                           const { count, progress } = getCourseMetrics(act.id, act.evaluationCount);
+                                          const hoy = new Date().toISOString().split('T')[0];
+                                          const mes = new Date().getMonth();
+                                          const isFinished = (act.endDate && act.endDate < hoy) || 
+                                                            ((act.academicPeriod?.endsWith("-1") || act.academicPeriod?.toLowerCase().includes("1er")) && mes >= 7);
+
                                           return (
                                               <tr key={act.id} className="hover:bg-indigo-50/30 transition-colors group">
                                                   <td className="px-6 py-4">
@@ -662,9 +655,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                                       <div className="text-xs text-slate-500 font-mono mt-1">{act.internalCode || act.id} | {act.academicPeriod}</div>
                                                   </td>
                                                   <td className="px-6 py-4">
-                                                      <span className="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-full text-xs font-black border border-indigo-200 flex items-center justify-center gap-1.5 w-fit">
+                                                      <span className={`px-3 py-1.5 rounded-full text-xs font-black border flex items-center justify-center gap-2 w-fit ${isFinished ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-indigo-100 text-indigo-700 border-indigo-200'}`}>
+                                                          {isFinished ? (
+                                                              <svg className="w-3.5 h-3.5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" title="Curso Cerrado"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                                          ) : (
+                                                              <svg className="w-3.5 h-3.5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" title="Curso Abierto"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
+                                                          )}
                                                           {count}
-                                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                                                       </span>
                                                   </td>
                                                   <td className="px-6 py-4">
@@ -733,6 +730,55 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                               </tr>
                                           );
                                       })}
+                                  </tbody>
+                              </table>
+                          </div>
+                      </div>
+                  </div>
+
+                  {/* SECCIÓN 3: EXTENSIÓN Y VINCULACIÓN */}
+                  <div>
+                      <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-teal-200 pb-4">
+                          <svg className="w-8 h-8 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" /></svg>
+                          Actividades de Extensión y Vinculación ({selectedYear})
+                      </h3>
+                      
+                      <div className="bg-white border border-teal-100 rounded-xl shadow-sm overflow-hidden">
+                          <div className="overflow-x-auto">
+                              <table className="w-full text-sm text-left">
+                                  <thead className="bg-teal-50 text-teal-800 font-bold border-b border-teal-100">
+                                      <tr>
+                                          <th className="px-6 py-4">Actividad / Evento</th>
+                                          <th className="px-6 py-4">Inscritos</th>
+                                          <th className="px-6 py-4">Modalidad</th>
+                                          <th className="px-6 py-4 text-center">Gestión</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                      {activities.filter(a => a.category === 'GENERAL' && a.year === selectedYear).map(act => {
+                                          const count = enrollments.filter(e => e.activityId === act.id).length;
+                                          return (
+                                              <tr key={act.id} className="hover:bg-teal-50/30 transition-colors group">
+                                                  <td className="px-6 py-4">
+                                                      <div className="font-bold text-slate-800">{act.name}</div>
+                                                      <div className="text-xs text-slate-500">{act.activityType} | {formatDateCL(act.startDate)}</div>
+                                                  </td>
+                                                  <td className="px-6 py-4">
+                                                      <span className="bg-teal-100 text-teal-700 px-3 py-1.5 rounded-full text-xs font-black border border-teal-200 flex items-center gap-1.5 w-fit">
+                                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                                          {count}
+                                                      </span>
+                                                  </td>
+                                                  <td className="px-6 py-4 font-medium text-slate-600">{act.modality}</td>
+                                                  <td className="px-6 py-4 text-center">
+                                                      <button onClick={() => handleAdvisorNavigate(act)} className="text-teal-600 hover:text-white hover:bg-teal-600 font-bold text-xs bg-teal-50 border border-teal-200 px-3 py-2 rounded-lg transition-colors">Gestionar</button>
+                                                  </td>
+                                              </tr>
+                                          );
+                                      })}
+                                      {activities.filter(a => a.category === 'GENERAL' && a.year === selectedYear).length === 0 && (
+                                          <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400 italic">No hay actividades registradas en este período.</td></tr>
+                                      )}
                                   </tbody>
                               </table>
                           </div>
