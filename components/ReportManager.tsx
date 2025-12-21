@@ -47,17 +47,19 @@ export const ReportManager: React.FC = () => {
         }
     };
 
-    // --- LÓGICA FILTRO CONSOLIDADO ---
+    // --- LÓGICA FILTRO CONSOLIDADO (Actualizado según requerimiento) ---
     const consolidatedList = useMemo(() => {
-        const today = new Date().toISOString().split('T')[0];
-        
         return enrollments.filter(enr => {
             const act = activities.find(a => a.id === enr.activityId);
             if (!act) return false;
 
-            if (act.category === 'ACADEMIC' && enr.state === ActivityState.APROBADO) return true;
-            if (act.category === 'POSTGRADUATE' && enr.state === ActivityState.APROBADO) return true;
-            if (act.category === 'GENERAL' && act.endDate && act.endDate < today) return true;
+            // 1. Estudiantes aprobados en cursos y postítulos
+            if ((act.category === 'ACADEMIC' || act.category === 'POSTGRADUATE') && enr.state === ActivityState.APROBADO) return true;
+            
+            // 2. Participantes en TODAS las actividades de extensión
+            if (act.category === 'GENERAL') return true;
+            
+            // 3. Estudiantes con expediente abierto en asesorías personalizadas
             if (act.category === 'ADVISORY') return true;
 
             return false;
@@ -81,6 +83,28 @@ export const ReportManager: React.FC = () => {
             };
         });
     }, [enrollments, activities, users]);
+
+    // Estadísticas de resumen para el informe consolidado
+    const consolidatedStats = useMemo(() => {
+        const stats = {
+            total: consolidatedList.length,
+            approved: 0,
+            extension: 0,
+            advisory: 0
+        };
+
+        consolidatedList.forEach(item => {
+            if (item.activityData?.category === 'ACADEMIC' || item.activityData?.category === 'POSTGRADUATE') {
+                stats.approved++;
+            } else if (item.activityData?.category === 'GENERAL') {
+                stats.extension++;
+            } else if (item.activityData?.category === 'ADVISORY') {
+                stats.advisory++;
+            }
+        });
+
+        return stats;
+    }, [consolidatedList]);
 
     // --- LÓGICA TASA DE EFECTIVIDAD POR FACULTAD ---
     const effectivenessData = useMemo(() => {
@@ -427,9 +451,45 @@ export const ReportManager: React.FC = () => {
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[95vw] h-[90vh] flex flex-col overflow-hidden border border-indigo-200">
                         <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                            <div><h3 className="text-xl font-bold text-slate-800">Informe Consolidado de Participación Académica</h3><p className="text-xs text-slate-500 mt-1">Criterio: Aprobados, Extensión Finalizada y Asesorías Abiertas.</p></div>
+                            <div><h3 className="text-xl font-bold text-slate-800">Informe Consolidado de Participación Académica</h3><p className="text-xs text-slate-500 mt-1">Criterio: Aprobados, Extensión y Asesorías Abiertas.</p></div>
                             <div className="flex items-center gap-3"><button onClick={handleExportCSV} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-sm flex items-center gap-2 transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> Exportar CSV</button><button onClick={() => setActiveReport(null)} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button></div>
                         </div>
+
+                        {/* PANEL DE RESUMEN DE CONTEOS (SOLICITADO) */}
+                        <div className="px-6 py-4 bg-indigo-50/50 border-b border-indigo-100 flex flex-wrap gap-4 md:gap-8 items-center">
+                             <div className="flex items-center gap-3">
+                                 <div className="w-10 h-10 bg-indigo-600 text-white rounded-lg flex items-center justify-center shadow-md">
+                                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                                 </div>
+                                 <div>
+                                     <span className="block text-xl font-black text-indigo-700 leading-none">{consolidatedStats.total}</span>
+                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Total Consolidado</span>
+                                 </div>
+                             </div>
+                             <div className="h-8 w-px bg-indigo-200 hidden md:block"></div>
+                             <div className="flex items-center gap-2">
+                                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm"></span>
+                                 <div>
+                                     <span className="block text-sm font-black text-slate-700 leading-none">{consolidatedStats.approved}</span>
+                                     <span className="text-[9px] font-bold text-slate-400 uppercase">Aprobados (Cursos/Post)</span>
+                                 </div>
+                             </div>
+                             <div className="flex items-center gap-2">
+                                 <span className="w-2.5 h-2.5 rounded-full bg-teal-500 shadow-sm"></span>
+                                 <div>
+                                     <span className="block text-sm font-black text-slate-700 leading-none">{consolidatedStats.extension}</span>
+                                     <span className="text-[9px] font-bold text-slate-400 uppercase">Extensión (Total)</span>
+                                 </div>
+                             </div>
+                             <div className="flex items-center gap-2">
+                                 <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm"></span>
+                                 <div>
+                                     <span className="block text-sm font-black text-slate-700 leading-none">{consolidatedStats.advisory}</span>
+                                     <span className="text-[9px] font-bold text-slate-400 uppercase">Asesorías (Expedientes)</span>
+                                 </div>
+                             </div>
+                        </div>
+
                         <div className="p-4 bg-white border-b border-slate-100 flex items-center justify-between">
                             <div className="relative max-w-md w-full">
                                 <input type="text" placeholder="Buscar por RUT, Nombre o Actividad..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"/>
@@ -869,7 +929,7 @@ export const ReportManager: React.FC = () => {
                                 ) : (
                                     <div className="text-center p-12">
                                         <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-                                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>
+                                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 000.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>
                                         </div>
                                         <h4 className="font-bold text-slate-400">Análisis de Fidelización</h4>
                                         <p className="text-xs text-slate-400 mt-1 max-w-[250px] mx-auto">Seleccione una unidad académica para listar a sus docentes más comprometidos con la formación continua.</p>

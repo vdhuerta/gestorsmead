@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Activity, User, UserRole, Enrollment, ActivityState } from '../types';
@@ -93,7 +92,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
     const [enrollForm, setEnrollForm] = useState({
         rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '',
         academicRole: '', faculty: '', department: '', career: '', contractType: '',
-        teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE
+        teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE, responsible: ''
     });
     const [suggestions, setSuggestions] = useState<User[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
@@ -252,7 +251,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
             await enrollUser(formattedRut, selectedActivity.id);
             await executeReload();
             setEnrollMsg({ type: 'success', text: 'Participante registrado exitosamente.' });
-            setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
+            setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE, responsible: '' });
             setIsFoundInMaster(false);
         } catch (error: any) {
             setEnrollMsg({ type: 'error', text: `Error al registrar: ${error.message || 'Verifique conexión.'}` });
@@ -441,22 +440,31 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {generalActivities.map(act => (
-                        <div key={act.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative overflow-hidden group hover:border-teal-300 transition-colors">
-                            <div className="absolute top-0 right-0 p-3">
-                                <span className="bg-teal-50 text-teal-700 text-xs font-bold px-2 py-1 rounded border border-teal-100">{act.activityType}</span>
+                    {generalActivities.map(act => {
+                        const enrollmentCount = enrollments.filter(e => e.activityId === act.id).length;
+                        return (
+                            <div key={act.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative overflow-hidden group hover:border-teal-300 transition-colors">
+                                <div className="absolute top-0 right-0 p-3">
+                                    <span className="bg-teal-50 text-teal-700 text-xs font-bold px-2 py-1 rounded border border-teal-100">{act.activityType}</span>
+                                </div>
+                                <h3 className="font-bold text-slate-800 text-lg mb-2 pr-16 truncate" title={act.name}>{act.name}</h3>
+                                <div className="text-sm text-slate-500 space-y-1 mb-4">
+                                    <p className="text-xs font-mono text-slate-400">ID: {act.id}</p>
+                                    <p>Modalidad: {act.modality}</p>
+                                    <p>Fecha: {formatDateCL(act.startDate)}</p>
+                                    <p className="flex items-center gap-2 mt-1">
+                                        <svg className="w-4 h-4 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                        </svg>
+                                        Participantes: <span className="font-bold text-slate-700">{enrollmentCount}</span>
+                                    </p>
+                                </div>
+                                <button onClick={() => handleEdit(act)} className="w-full bg-slate-50 border border-slate-300 text-slate-700 py-2 rounded-lg font-medium hover:bg-white hover:border-teal-500 hover:text-teal-600 transition-colors text-sm">
+                                    Gestionar / Editar
+                                </button>
                             </div>
-                            <h3 className="font-bold text-slate-800 text-lg mb-2 pr-16 truncate" title={act.name}>{act.name}</h3>
-                            <div className="text-sm text-slate-500 space-y-1 mb-4">
-                                <p className="text-xs font-mono text-slate-400">ID: {act.id}</p>
-                                <p>Modalidad: {act.modality}</p>
-                                <p>Fecha: {formatDateCL(act.startDate)}</p>
-                            </div>
-                            <button onClick={() => handleEdit(act)} className="w-full bg-slate-50 border border-slate-300 text-slate-700 py-2 rounded-lg font-medium hover:bg-white hover:border-teal-500 hover:text-teal-600 transition-colors text-sm">
-                                Gestionar / Editar
-                            </button>
-                        </div>
-                    ))}
+                        );
+                    })}
                     {generalActivities.length === 0 && (
                         <div className="col-span-full py-12 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">
                             No hay actividades generales registradas.
@@ -572,7 +580,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                 <form onSubmit={handleEnrollSubmit} className="space-y-4">
                                     <h5 className="text-xs font-bold text-slate-400 uppercase border-b border-slate-100 pb-1 mb-2">Identificación Personal</h5>
                                     <div className="grid grid-cols-2 gap-3">
-                                        <div className="relative col-span-2"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" placeholder="12345678-9" value={enrollForm.rut} onChange={handleEnrollChange} className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-teal-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : ''}`}/>{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-teal-50 cursor-pointer text-xs border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div>
+                                        <div className="relative col-span-2"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" placeholder="12345678-9" value={enrollForm.rut} onChange={handleEnrollChange} className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-teal-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : 'bg-white border-slate-300'}`}/>{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-teal-50 cursor-pointer text-xs border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div>
                                         <div><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" name="names" required value={enrollForm.names} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-xs"/></div>
                                         <div><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label><input type="text" name="paternalSurname" required value={enrollForm.paternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-xs"/></div>
                                         <div className="col-span-2"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={enrollForm.maternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-xs"/></div>

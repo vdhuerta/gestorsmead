@@ -185,65 +185,37 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
 
+  // --- STATE FOR KIOSK SEARCH (ESTUDIANTE) ---
+  const [kioskRut, setKioskRut] = useState('');
+  const [activeSearchRut, setActiveSearchRut] = useState<string | null>(null);
+  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+
   // EFECTO: RECARGA AL CAMBIAR AÑO (Garantiza coherencia total)
   useEffect(() => {
     executeReload();
   }, [selectedYear, executeReload]);
 
-  // Dynamic Lists from Config
-  const listFaculties = config.faculties?.length ? config.faculties : FACULTY_LIST;
-  const listDepts = config.departments?.length ? config.departments : DEPARTMENT_LIST;
-  const listCareers = config.careers?.length ? config.careers : CAREER_LIST;
-  const listContracts = config.contractTypes?.length ? config.contractTypes : CONTRACT_TYPE_LIST;
-  const listRoles = config.academicRoles?.length ? config.academicRoles : ACADEMIC_ROLES;
-  const listSemesters = config.semesters?.length ? config.semesters : ["1er Semestre", "2do Semestre", "TAV Invierno", "TAV Verano", "Anual"];
-
-  // --- STATES FOR STUDENT SEARCH (KIOSK MODE) ---
-  const [kioskRut, setKioskRut] = useState('');
-  const [activeSearchRut, setActiveSearchRut] = useState<string | null>(null);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string | null>(null);
-
-  // --- STATE FOR STUDENT SELF-ENROLLMENT MODAL ---
-  const [showStudentEnrollModal, setShowStudentEnrollModal] = useState(false);
-  const [targetEnrollActivity, setTargetEnrollActivity] = useState<Activity | null>(null);
-  const [enrollSuccessMsg, setEnrollSuccessMsg] = useState<string | null>(null);
-
-  // --- STATE FOR ADMIN CATALOG ---
-  const [catalogYear, setCatalogYear] = useState<number>(new Date().getFullYear() - 1);
-  
-  // --- FORM STATE (13 Fields Base Maestra) ---
-  const [enrollForm, setEnrollForm] = useState({
-      rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '',
-      campus: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', academicRole: ''
-  });
-  const [formErrors, setFormErrors] = useState<string[]>([]);
-  const [rutFound, setRutFound] = useState(false); 
-
-  // --- AUTO-INIT: ASESORÍAS ---
-  useEffect(() => {
-      if (user.systemRole === UserRole.ASESOR && activities.length > 0) {
-          const advisoryId = `ADVISORY-GENERAL-${new Date().getFullYear()}`;
-          const hasAdvisory = activities.some(a => a.category === 'ADVISORY' || a.id === advisoryId);
-          
-          if (!hasAdvisory) {
-              const initAdvisory = async () => {
-                  await addActivity({
-                      id: advisoryId,
-                      category: 'ADVISORY',
-                      name: `Asesorías y Acompañamiento ${new Date().getFullYear()}`,
-                      modality: 'Presencial/Virtual',
-                      hours: 0,
-                      year: new Date().getFullYear(),
-                      isPublic: false,
-                      internalCode: 'ASE-GEN',
-                      startDate: new Date().toISOString().split('T')[0]
-                  });
-              };
-              initAdvisory();
-          }
-      }
-  }, [user.systemRole, activities, addActivity]);
+  // --- Dashboard Courses Sorting Logic ---
+  const sortedDashboardCourses = useMemo(() => {
+    return activities
+      .filter(a => a.category === 'ACADEMIC' && a.year === selectedYear)
+      .sort((a, b) => {
+        const periodA = a.academicPeriod || '';
+        const periodB = b.academicPeriod || '';
+        
+        // Identificar si es Segundo Semestre
+        const isSecondA = periodA.endsWith('-2') || periodA.toLowerCase().includes('2do') || periodA.toLowerCase().includes('segundo');
+        const isSecondB = periodB.endsWith('-2') || periodB.toLowerCase().includes('2do') || periodB.toLowerCase().includes('segundo');
+        
+        // Priorizar Segundo Semestre (-2) sobre Primero (-1)
+        if (isSecondA && !isSecondB) return -1;
+        if (!isSecondA && isSecondB) return 1;
+        
+        // Si son del mismo semestre, ordenar por nombre alfabético
+        return a.name.localeCompare(b.name);
+      });
+  }, [activities, selectedYear]);
 
   // --- General KPIs Calculation (FILTERED BY SELECTED YEAR) ---
   const activeCoursesCount = activities.filter(a => a.category === 'ACADEMIC' && a.year === selectedYear).length;
@@ -267,7 +239,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     const minAtt = config.minAttendancePercentage || 75;
     const now = new Date();
     const hoyStr = now.toISOString().split('T')[0];
-    const month = now.getMonth();
 
     // 1. POOL DE REFERENCIA: Todas las actividades académicas y postítulos del año (ABIERTO o CERRADO)
     const yearAcademicActivities = activities.filter(a => a.year === selectedYear && (a.category === 'ACADEMIC' || a.category === 'POSTGRADUATE'));
@@ -347,11 +318,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
         return { name: a.name, count };
     }).filter(c => c.count < 5).sort((a,b) => a.count - b.count);
     
-    // 7. Cursos Finalizados (Solo referencial)
+    // 7. Cursos Finalizados (Lógica refinada: Basada en fecha de término real)
     const finalizadosList = yearAcademicActivities.map(a => {
         if (a.endDate && a.endDate < hoyStr) return { name: a.name, date: a.endDate, finished: true };
-        const isFirstSem = a.academicPeriod?.endsWith("-1") || a.academicPeriod?.toLowerCase().includes("1er");
-        if (isFirstSem && month >= 7) return { name: a.name, date: `${a.year}-07-31`, finished: true };
+        // Fallback: Si no tiene fecha, solo si el año es menor al actual
+        if (!a.endDate && (a.year || 0) < new Date().getFullYear()) return { name: a.name, date: `${a.year}-12-31`, finished: true };
         return { name: a.name, date: a.endDate || '', finished: false };
     }).filter(item => item.finished);
 
@@ -641,25 +612,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                       </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-100">
-                                      {activities.filter(a => a.category === 'ACADEMIC' && a.year === selectedYear).map(act => {
+                                      {sortedDashboardCourses.map(act => {
                                           const { count, progress } = getCourseMetrics(act.id, act.evaluationCount);
                                           const hoy = new Date().toISOString().split('T')[0];
-                                          const mes = new Date().getMonth();
-                                          const isFinished = (act.endDate && act.endDate < hoy) || 
-                                                            ((act.academicPeriod?.endsWith("-1") || act.academicPeriod?.toLowerCase().includes("1er")) && mes >= 7);
+                                          
+                                          // Lógica de "Abierto/Cerrado" revisada: Basada estrictamente en endDate si existe
+                                          const isFinished = act.endDate ? (act.endDate < hoy) : ((act.year || 0) < new Date().getFullYear());
+                                          
+                                          // Verificación para destacar segundo semestre
+                                          const isSecondSemester = act.academicPeriod?.endsWith("-2") || act.academicPeriod?.toLowerCase().includes("2do") || act.academicPeriod?.toLowerCase().includes("segundo");
 
                                           return (
-                                              <tr key={act.id} className="hover:bg-indigo-50/30 transition-colors group">
+                                              <tr key={act.id} className={`transition-colors group ${isSecondSemester ? 'bg-indigo-50/40 hover:bg-indigo-100/50' : 'bg-white hover:bg-slate-50'} border-l-4 ${!isFinished ? 'border-emerald-500' : 'border-transparent opacity-80'}`}>
                                                   <td className="px-6 py-4">
-                                                      <div className="font-bold text-slate-800 break-words leading-tight max-w-sm">{act.name}</div>
-                                                      <div className="text-xs text-slate-500 font-mono mt-1">{act.internalCode || act.id} | {act.academicPeriod}</div>
+                                                      <div className={`font-bold break-words leading-tight max-w-sm ${isFinished ? 'text-slate-400 font-medium' : 'text-emerald-700'}`}>{act.name}</div>
+                                                      <div className="text-[10px] text-slate-400 font-mono mt-1 uppercase">{act.internalCode || act.id} | {act.academicPeriod}</div>
                                                   </td>
                                                   <td className="px-6 py-4">
-                                                      <span className={`px-3 py-1.5 rounded-full text-xs font-black border flex items-center justify-center gap-2 w-fit ${isFinished ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-indigo-100 text-indigo-700 border-indigo-200'}`}>
+                                                      <span className={`px-3 py-1.5 rounded-full text-xs font-black border flex items-center justify-center gap-2 w-fit ${isFinished ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200'}`}>
                                                           {isFinished ? (
                                                               <svg className="w-3.5 h-3.5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" title="Curso Cerrado"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                                                           ) : (
-                                                              <svg className="w-3.5 h-3.5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" title="Curso Abierto"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
+                                                              <svg className="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" title="Curso Abierto"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
                                                           )}
                                                           {count}
                                                       </span>
