@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useData } from '../context/DataContext';
-import { Enrollment, User, UserRole, Activity, SessionLog } from '../types';
+import { Enrollment, User, UserRole, Activity, SessionLog, ActivityState } from '../types';
 import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST } from '../constants';
 import { SmartSelect } from './SmartSelect';
 import { supabase } from '../services/supabaseClient';
@@ -82,7 +82,6 @@ const ExpandableText: React.FC<{ text: string }> = ({ text }) => {
 
 // --- COMPONENTE DE VERIFICACIÓN PÚBLICA (VISTA QR) ---
 export const PublicVerification: React.FC<{ code: string }> = ({ code }) => {
-    // ... (Keep implementation unchanged)
     const [loading, setLoading] = useState(true);
     const [verifiedData, setVerifiedData] = useState<{log: SessionLog, student: any} | null>(null);
     const [error, setError] = useState('');
@@ -151,6 +150,8 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const listContracts = config.contractTypes?.length ? config.contractTypes : CONTRACT_TYPE_LIST;
     const listRoles = config.academicRoles?.length ? config.academicRoles : ACADEMIC_ROLES;
     const listSemesters = config.semesters?.length ? config.semesters : ["1er Semestre", "2do Semestre", "Anual"];
+
+    const isAdmin = currentUser?.systemRole === UserRole.ADMIN;
 
     // Lista de Asesores (para el desplegable)
     const advisorsList = useMemo(() => users.filter(u => u.systemRole === UserRole.ASESOR), [users]);
@@ -338,9 +339,42 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
         
         await updateEnrollment(selectedEnrollmentId, { sessionLogs: [...(enrollment?.sessionLogs || []), newLog] });
-        // NOTE: No ejecutamos executeReload() aquí, solo al firmar como se solicitó.
-        
         setSignatureStep('qr-wait');
+    };
+
+    // --- NUEVA FUNCIÓN: GUARDAR SIN FIRMA (SF) PARA ADMINISTRADOR ---
+    const handleSaveSF = async () => {
+        if (!sessionForm.date || !sessionForm.observation) { alert("Por favor complete fecha y observaciones."); return; }
+        if (!selectedEnrollmentId) return;
+        
+        const sessionId = `SES-SF-${Date.now()}`;
+        const newLog: SessionLog = {
+            id: sessionId,
+            date: sessionForm.date,
+            duration: sessionForm.duration,
+            observation: sessionForm.observation,
+            advisorName: currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : 'Administrador',
+            verified: true,
+            authorizedByAdmin: true, // Marcado como autorizado manualmente
+            verificationCode: `ADMIN-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+            signedAt: new Date().toISOString(),
+            location: sessionForm.location,
+            modality: sessionForm.modality,
+            tags: sessionForm.tags
+        };
+
+        const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
+        try {
+            await updateEnrollment(selectedEnrollmentId, { sessionLogs: [...(enrollment?.sessionLogs || []), newLog] });
+            await executeReload(); // DIRECTIVA_RECARGA
+            if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId);
+            
+            setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [] });
+            setSignatureStep('form');
+            alert("Registro guardado exitosamente (Autorizado por ADMIN).");
+        } catch (err) {
+            alert("Error al guardar registro.");
+        }
     };
 
     const handleCancelSession = () => { if(sessionForm.observation || sessionForm.tags.length > 0) { if(!window.confirm("¿Desea cancelar el registro?")) return; } setEditingLogId(null); setEditingLogIndex(null); setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [] }); setTagInput(''); setSignatureStep('form'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
@@ -369,15 +403,13 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
 
     const handleCancelEdit = () => { handleCancelSession(); };
 
-    // --- FIX: ROBUST DELETE HANDLER (EVENT DRIVEN) ---
     const handleDeleteSession = async (e: React.MouseEvent, logId: string | undefined, originalIndex: number) => {
         e.preventDefault();
-        e.stopPropagation(); // CRITICAL: Stop bubbling to card click
+        e.stopPropagation(); 
 
         if (!selectedEnrollmentId) return;
         
         if (window.confirm("¿Confirma que desea eliminar este registro de sesión del historial?")) {
-            // 1. Get Source Truth
             const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
             const currentLogs = realtimeLogs || enrollment?.sessionLogs || [];
             
@@ -389,19 +421,14 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                 updatedLogs = currentLogs.filter((_, i) => i !== originalIndex);
             }
             
-            // 2. Optimistic Update (Visual)
             setRealtimeLogs(updatedLogs);
             
-            // 3. Persist in DB
             try {
                 await updateEnrollment(selectedEnrollmentId, { sessionLogs: updatedLogs });
-                // 4. Force Sync via Directive
                 await executeReload(); 
-                // 5. Force specific sync for this manager
                 if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId);
             } catch (err) {
                 alert("Error al eliminar. Verifique su conexión.");
-                // Revert optimistic update if needed
                 fetchLatestLogs(selectedEnrollmentId);
             }
         }
@@ -421,9 +448,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                     if (logs.find(l => l.id === currentSessionId && l.verified)) {
                         clearInterval(interval);
                         await updateEnrollment(selectedEnrollmentId, { sessionLogs: logs });
-                        
-                        await executeReload(); // DIRECTIVA_RECARGA (Applied HERE as requested)
-
+                        await executeReload(); 
                         setSignatureStep('success');
                         setTimeout(() => { setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [] }); setSignatureStep('form'); }, 3000);
                     }
@@ -513,7 +538,15 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                                     {editingLogId || editingLogIndex !== null ? (
                                                         <button onClick={handleSaveEdit} className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 transition-colors shadow-md text-sm flex items-center gap-2">Guardar Cambios</button>
                                                     ) : (
-                                                        <button onClick={handleStartSignature} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-md text-sm flex items-center gap-2">Generar QR para Firma</button>
+                                                        <div className="flex gap-2">
+                                                            {isAdmin && (
+                                                                <button onClick={handleSaveSF} className="bg-amber-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-amber-700 transition-colors shadow-md text-sm flex items-center gap-2">
+                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                                    Guardar SF
+                                                                </button>
+                                                            )}
+                                                            <button onClick={handleStartSignature} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-md text-sm flex items-center gap-2">Generar QR para Firma</button>
+                                                        </div>
                                                     )}
                                                 </div>
                                             </div>
@@ -526,29 +559,14 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                                         <div className="w-40 h-0.5 bg-red-500/30 animate-pulse"></div>
                                                     </div>
                                                 </div>
-                                                
                                                 <div className="w-full max-w-sm">
                                                     <p className="text-xs text-slate-500 font-bold uppercase tracking-wide text-center mb-2">O comparte el enlace para firma remota:</p>
                                                     <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-lg border border-slate-200">
-                                                        <input 
-                                                            type="text" 
-                                                            readOnly 
-                                                            value={getQrUrl()} 
-                                                            className="flex-1 bg-transparent text-xs text-slate-600 font-mono outline-none px-1"
-                                                        />
-                                                        <button 
-                                                            onClick={handleCopyLink}
-                                                            className="bg-white hover:bg-indigo-50 text-indigo-600 border border-slate-200 p-1.5 rounded-md transition-colors"
-                                                            title="Copiar Enlace"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-                                                        </button>
+                                                        <input type="text" readOnly value={getQrUrl()} className="flex-1 bg-transparent text-xs text-slate-600 font-mono outline-none px-1"/>
+                                                        <button onClick={handleCopyLink} className="bg-white hover:bg-indigo-50 text-indigo-600 border border-slate-200 p-1.5 rounded-md transition-colors" title="Copiar Enlace"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg></button>
                                                     </div>
                                                 </div>
-
-                                                <button onClick={() => setSignatureStep('form')} className="px-4 py-2 text-xs text-red-500 font-bold hover:text-red-700 hover:underline">
-                                                    Cancelar Espera
-                                                </button>
+                                                <button onClick={() => setSignatureStep('form')} className="px-4 py-2 text-xs text-red-500 font-bold hover:text-red-700 hover:underline">Cancelar Espera</button>
                                             </div>
                                         )}
                                         {signatureStep === 'success' && (<div className="animate-fadeIn flex flex-col items-center justify-center py-10 text-center"><h4 className="text-xl font-bold text-slate-800">Sesión Firmada Correctamente</h4></div>)}
@@ -569,8 +587,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                                     return (
                                                     <div key={log.id || originalIndex} className={`bg-white p-4 rounded-lg border shadow-sm relative pl-6 group transition-all ${isEditing ? 'border-amber-400 ring-2 ring-amber-100' : 'border-slate-200'}`}>
                                                         <div className={`absolute left-0 top-0 bottom-0 w-1 ${log.verified ? 'bg-green-500' : 'bg-amber-300'} rounded-l-lg`}></div>
-                                                        
-                                                        {/* FIXED: Actions Layout with z-index and isolated event handlers */}
                                                         <div className="flex justify-between items-start mb-2">
                                                             <div>
                                                                 <span className="text-sm font-bold text-indigo-700 block">{new Date(log.date).toLocaleDateString()}</span>
@@ -579,14 +595,20 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                                                     {(log.modality || log.location) && (<span className="text-[10px] text-slate-500 mt-0.5">{log.modality} {log.location ? `• ${log.location}` : ''}</span>)}
                                                                 </div>
                                                             </div>
-                                                            
                                                             <div className="flex flex-col items-end gap-1.5 relative z-50">
                                                                 <div className="flex items-center gap-1">
                                                                     <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEditLog(log, originalIndex); }} className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Editar"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
                                                                     <button type="button" onClick={(e) => handleDeleteSession(e, log.id, originalIndex)} className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Eliminar"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                                                                 </div>
                                                                 <span className="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-100">{log.duration} min</span>
-                                                                {log.verified ? <span className="text-[10px] text-green-600 font-bold flex items-center gap-1 bg-green-50 px-2 py-0.5 rounded border border-green-100">Firma Digital</span> : <span className="text-[10px] text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-100">Pendiente</span>}
+                                                                {log.verified ? (
+                                                                    <div className="flex flex-col items-end">
+                                                                        <span className="text-[10px] text-green-600 font-bold flex items-center gap-1 bg-green-50 px-2 py-0.5 rounded border border-green-100">Firma Digital</span>
+                                                                        {log.authorizedByAdmin && <span className="text-[8px] font-black text-indigo-500 uppercase mt-0.5">Autorizado por ADMIN</span>}
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="text-[10px] text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-100">Pendiente</span>
+                                                                )}
                                                             </div>
                                                         </div>
                                                         {logTags.length > 0 && (<div className="flex flex-wrap gap-1 mb-2">{logTags.map((t: string, i: number) => (<span key={i} className={`text-[10px] px-1.5 py-0.5 rounded border ${getTagColor(t)} bg-opacity-50`}>{t}</span>))}</div>)}
@@ -600,10 +622,8 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                 </div>
                             </div>
                         )}
-                        {/* Tracking tab omitted for brevity (unchanged) */}
                         {manageTab === 'tracking' && (
                             <div className="animate-fadeIn">
-                                {/* ... Tracking Content ... */}
                                 <div className="p-12 text-center bg-slate-50 border border-dashed border-slate-300 rounded-xl">
                                     <h3 className="text-xl font-bold text-slate-500 mb-2">Módulo de Seguimiento Avanzado</h3>
                                     <p className="text-slate-400">Próximamente: Gráficos de evolución y análisis de impacto.</p>
@@ -612,10 +632,8 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                         )}
                     </div>
                 </div>
-                {/* ... Modals ... */}
                 {showVerificationModal && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
-                        {/* ... Verification Modal Content ... */}
                         <div className="bg-white rounded-xl shadow-2xl p-6 relative w-full max-w-md text-center">
                             <button onClick={() => setShowVerificationModal(null)} className="absolute top-4 right-4 text-slate-400 font-bold">✕</button>
                             <h2 className="text-xl font-bold text-slate-800 mb-4">Código de Verificación</h2>
@@ -629,10 +647,8 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         );
     }
 
-    // List view omitted for brevity (unchanged)
     return (
         <div className="animate-fadeIn space-y-6">
-            {/* Header, Search and Table (Unchanged from original) */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-r from-slate-800 to-slate-700 p-6 rounded-xl shadow-lg text-white">
                 <div><h2 className="text-2xl font-bold">Bitácora de Asesorías</h2><p className="text-slate-300 text-sm mt-1">Gestión de acompañamiento individual docente.</p></div>
                 <div className="flex gap-4 text-center">
@@ -668,7 +684,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                             const user = users.find(u => u.rut === enr.rut);
                             const lastSession = enr.sessionLogs && enr.sessionLogs.length > 0 ? formatDateCL(enr.sessionLogs[enr.sessionLogs.length - 1].date) : '-';
                             const sessionCount = enr.sessionLogs?.length || 0;
-                            // Display logic: Responsible Field -> First Session Advisor -> 'Sin Asignar'
                             const advisorDisplay = enr.responsible || (enr.sessionLogs && enr.sessionLogs.length > 0 ? enr.sessionLogs[0].advisorName : 'Sin Asignar');
 
                             return (

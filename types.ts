@@ -80,7 +80,7 @@ export interface ProgramConfig {
 
 export interface Activity {
   id: string; // PK Compuesta (CODE-YEAR-SEM-VER)
-  category?: 'ACADEMIC' | 'GENERAL' | 'POSTGRADUATE' | 'ADVISORY'; // Nuevo: ADVISORY
+  category?: 'ACADEMIC' | 'POSTGRADUATE' | 'GENERAL' | 'ADVISORY'; // Nuevo: ADVISORY
   activityType?: string; // Nuevo: Charla, Taller, etc.
   internalCode?: string; 
   year?: number; 
@@ -119,8 +119,10 @@ export interface SessionLog {
 
   // Campos de Firma Digital
   verified?: boolean;
+  authorizedByAdmin?: boolean; // NUEVO: Autorizado por administrador sin firma QR
   verificationCode?: string; // Código Único "UPLA-XXXX"
   signedAt?: string; // ISO Timestamp de la firma
+  tags?: string[]; // Tags / Conceptos clave
 }
 
 export interface Enrollment {

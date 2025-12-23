@@ -20,7 +20,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'courses', label: 'Gestión Cursos', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] },
   { id: 'generalActivities', label: 'Gestión Actividades', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] }, 
   { id: 'postgraduate', label: 'Postítulos', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] }, 
-  { id: 'advisory', label: 'Asesorías', allowedRoles: [UserRole.ASESOR] }, 
+  { id: 'advisory', label: 'Asesorías', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] }, 
   { 
     id: 'dbCleaner', 
     label: 'Base de Datos', 
