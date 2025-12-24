@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useData } from '../context/DataContext';
+import { useData, normalizeRut } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole, ProgramModule, ProgramConfig } from '../types';
 import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST } from '../constants';
 import { SmartSelect } from './SmartSelect'; 
@@ -9,20 +9,10 @@ import { useReloadDirective } from '../hooks/useReloadDirective';
 
 // --- Utility Functions ---
 
-// Normaliza para comparación lógica (quita puntos, guiones, espacios y CEROS a la izquierda)
-const normalizeRut = (rut: string): string => {
-    if (!rut) return '';
-    // Elimina todo lo que no sea número o K, pasa a minúsculas, y quita ceros al inicio
-    return rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '').toLowerCase();
-};
-
-// Formatea para visualización (X-DV)
+// Formatea para visualización (X-DV) - Remueve ceros a la izquierda para estandarizar
 const cleanRutFormat = (rut: string): string => {
-    // 1. Limpieza base y quitar ceros a la izquierda para estandarizar visualmente
     let clean = rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '');
-    
     if (clean.length < 2) return rut; 
-    
     const body = clean.slice(0, -1);
     const dv = clean.slice(-1).toUpperCase();
     return `${body}-${dv}`;
@@ -53,11 +43,10 @@ interface PostgraduateManagerProps {
 
 export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ currentUser }) => {
   const { activities, addActivity, deleteActivity, users, enrollments, upsertUsers, enrollUser, bulkEnroll, updateEnrollment, deleteEnrollment, getUser, config, refreshData } = useData();
-  const { isSyncing, executeReload } = useReloadDirective(); // DIRECTIVA_RECARGA
+  const { isSyncing, executeReload } = useReloadDirective();
   
   const isAdmin = currentUser?.systemRole === UserRole.ADMIN;
   
-  // Dynamic lists from config
   const listFaculties = config.faculties?.length ? config.faculties : FACULTY_LIST;
   const listDepts = config.departments?.length ? config.departments : DEPARTMENT_LIST;
   const listCareers = config.careers?.length ? config.careers : CAREER_LIST;
@@ -66,56 +55,32 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const listModalities = config.modalities?.length ? config.modalities : ["Presencial", "B-Learning", "E-Learning", "Autoinstruccional", "Presencia Digital"];
   const listSemesters = config.semesters?.length ? config.semesters : ["1er Semestre", "2do Semestre", "TAV Invierno", "TAV Verano", "Anual"];
 
-  // FILTER: Only Postgraduate Activities
   const postgraduateActivities = activities.filter(a => a.category === 'POSTGRADUATE');
 
   const [view, setView] = useState<ViewState>('list');
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('enrollment');
   
-  // Main Form State
   const [formData, setFormData] = useState({
-    internalCode: '',
-    year: new Date().getFullYear(),
-    semester: 'ANUAL',
-    nombre: '', 
-    version: 'V1', 
-    modality: listModalities[0], 
-    horas: 0, 
-    relator: '', // Director del Programa
-    fechaInicio: '',
-    fechaTermino: '',
-    linkRecursos: '',
-    linkClase: '',
-    linkEvaluacion: ''
+    internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: ''
   });
 
-  // --- ACADEMIC CONFIGURATION STATE ---
   const [programConfig, setProgramConfig] = useState<ProgramConfig>({
-      programType: 'Diplomado',
-      modules: [],
-      globalAttendanceRequired: 75
+      programType: 'Diplomado', modules: [], globalAttendanceRequired: 75
   });
 
-  const selectedCourse = useMemo(() => 
-    postgraduateActivities.find(a => a.id === selectedCourseId), 
-  [postgraduateActivities, selectedCourseId]);
+  const selectedCourse = useMemo(() => postgraduateActivities.find(a => a.id === selectedCourseId), [postgraduateActivities, selectedCourseId]);
 
-  // CRITICAL FIX: Sync programConfig state when a course is selected
   useEffect(() => {
       if (selectedCourse && selectedCourse.programConfig) {
           setProgramConfig(selectedCourse.programConfig);
       } else if (selectedCourse) {
-          // Reset to default if no config exists but course exists
           setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75 });
       }
   }, [selectedCourse]);
 
-  // Manual Enrollment State (13 Fields Base Maestra)
   const [manualForm, setManualForm] = useState({
-      rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '',
-      academicRole: '', faculty: '', department: '', career: '', contractType: '',
-      teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE
+      rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE
   });
 
   const [suggestions, setSuggestions] = useState<User[]>([]);
@@ -128,32 +93,23 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const [isAlreadyEnrolled, setIsAlreadyEnrolled] = useState(false);
   const [enrollMsg, setEnrollMsg] = useState<{type: 'success'|'error'|'duplicate', text: string} | null>(null);
   
-  // --- BULK UPLOAD STATES ---
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [hasHeaders, setHasHeaders] = useState(true);
 
   const courseEnrollments = enrollments.filter(e => e.activityId === selectedCourseId);
 
-  // Sorting - Using Normalized RUT for robust comparison
   const sortedEnrollments = useMemo(() => {
       return [...courseEnrollments].sort((a, b) => {
-          // Buscamos usuario normalizando RUT para evitar mismatch por ceros a la izquierda
           const userA = users.find(u => normalizeRut(u.rut) === normalizeRut(a.rut));
           const userB = users.find(u => normalizeRut(u.rut) === normalizeRut(b.rut));
-          
           const surnameA = userA?.paternalSurname || '';
           const surnameB = userB?.paternalSurname || '';
-          
           const compareSurname = surnameA.localeCompare(surnameB, 'es', { sensitivity: 'base' });
           if (compareSurname !== 0) return compareSurname;
-          
-          const nameA = userA?.names || '';
-          const nameB = userB?.names || '';
-          return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
+          return (userA?.names || '').localeCompare(userB?.names || '', 'es', { sensitivity: 'base' });
       });
   }, [courseEnrollments, users]);
 
-  // Click outside suggestions
   useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
           if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
@@ -165,93 +121,38 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Handlers for Academic Configuration (Modules, Dates, etc)
   const handleAddModule = () => {
-      const newModule: ProgramModule = {
-          id: `MOD-${Date.now()}`,
-          name: `Nuevo Módulo ${programConfig.modules.length + 1}`,
-          evaluationCount: 1,
-          evaluationWeights: [100], // Default 100% for 1 note
-          weight: 0,
-          classDates: []
-      };
+      const newModule: ProgramModule = { id: `MOD-${Date.now()}`, name: `Nuevo Módulo ${programConfig.modules.length + 1}`, evaluationCount: 1, evaluationWeights: [100], weight: 0, classDates: [] };
       setProgramConfig(prev => ({ ...prev, modules: [...prev.modules, newModule] }));
   };
 
   const handleUpdateModule = (id: string, field: keyof ProgramModule, value: any) => {
-      setProgramConfig(prev => ({
-          ...prev,
-          modules: prev.modules.map(m => m.id === id ? { ...m, [field]: value } : m)
-      }));
+      setProgramConfig(prev => ({ ...prev, modules: prev.modules.map(m => m.id === id ? { ...m, [field]: value } : m) }));
   };
 
   const handleRemoveModule = (id: string) => {
-      if(confirm("¿Eliminar este módulo?")) {
-          setProgramConfig(prev => ({
-              ...prev,
-              modules: prev.modules.filter(m => m.id !== id)
-          }));
-      }
+      if(confirm("¿Eliminar este módulo?")) { setProgramConfig(prev => ({ ...prev, modules: prev.modules.filter(m => m.id !== id) })); }
   };
 
   const handleAddClassDate = (moduleId: string, date: string) => {
       if (!date) return;
-      setProgramConfig(prev => ({
-          ...prev,
-          modules: prev.modules.map(m => {
-              if (m.id === moduleId) {
-                  const currentDates = m.classDates || [];
-                  if (!currentDates.includes(date)) {
-                      return { ...m, classDates: [...currentDates, date].sort() };
-                  }
-              }
-              return m;
-          })
-      }));
+      setProgramConfig(prev => ({ ...prev, modules: prev.modules.map(m => { if (m.id === moduleId) { const currentDates = m.classDates || []; if (!currentDates.includes(date)) { return { ...m, classDates: [...currentDates, date].sort() }; } } return m; }) }));
   };
 
   const handleRemoveClassDate = (moduleId: string, date: string) => {
-      setProgramConfig(prev => ({
-          ...prev,
-          modules: prev.modules.map(m => m.id === moduleId ? { ...m, classDates: (m.classDates || []).filter(d => d !== date) } : m)
-      }));
+      setProgramConfig(prev => ({ ...prev, modules: prev.modules.map(m => m.id === moduleId ? { ...m, classDates: (m.classDates || []).filter(d => d !== date) } : m) }));
   };
 
-  // Main Submit Handler (Create/Update General)
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = formData.internalCode.trim().toUpperCase().replace(/\s+/g, '-');
     const academicPeriodText = `${formData.year}-${formData.semester}`;
     const generatedId = `${cleanCode}-${academicPeriodText}-${formData.version}`;
     const finalId = (view === 'edit' && selectedCourseId) ? selectedCourseId : generatedId;
-    
     const totalModules = programConfig.modules.length;
-    
-    const newActivity: Activity = {
-        id: finalId, 
-        category: 'POSTGRADUATE', 
-        internalCode: formData.internalCode, 
-        year: formData.year, 
-        academicPeriod: academicPeriodText, 
-        name: formData.nombre, 
-        version: formData.version, 
-        modality: formData.modality, 
-        hours: formData.horas, 
-        moduleCount: totalModules, 
-        evaluationCount: totalModules,
-        relator: formData.relator, 
-        startDate: formData.fechaInicio, 
-        endDate: formData.fechaTermino, 
-        linkResources: formData.linkResources, 
-        classLink: formData.classLink, 
-        evaluationLink: formData.linkEvaluacion, 
-        isPublic: true,
-        programConfig: programConfig 
-    };
-    
+    const newActivity: Activity = { id: finalId, category: 'POSTGRADUATE', internalCode: formData.internalCode, year: formData.year, academicPeriod: academicPeriodText, name: formData.nombre, version: formData.version, modality: formData.modality, hours: formData.horas, moduleCount: totalModules, evaluationCount: totalModules, relator: formData.relator, startDate: formData.fechaInicio, endDate: formData.fechaTermino, linkResources: formData.linkRecursos, classLink: formData.linkClase, evaluationLink: formData.linkEvaluacion, isPublic: true, programConfig: programConfig };
     await addActivity(newActivity);
-    await executeReload(); // DIRECTIVA_RECARGA
-
+    await executeReload();
     if (view === 'edit') { setView('details'); } else {
         setFormData({ internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '' });
         setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75 });
@@ -259,63 +160,35 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
     }
   };
 
-  // --- SAVE HANDLER FOR CONFIG TAB ---
   const handleSaveConfig = async () => {
       if (!selectedCourseId || !selectedCourse) return;
-      
-      const updatedActivity: Activity = {
-          ...selectedCourse,
-          programConfig: programConfig // Ensure this uses the latest state
-      };
-
+      const updatedActivity: Activity = { ...selectedCourse, programConfig: programConfig };
       try {
           await addActivity(updatedActivity);
-          await executeReload(); // DIRECTIVA_RECARGA
+          await executeReload();
           alert("Configuración Académica guardada exitosamente.");
       } catch (err) {
           alert("Error al guardar configuración. Revise su conexión.");
-          console.error(err);
       }
   };
 
   const handleEditCourse = () => {
     if (!selectedCourse) return;
     const sem = selectedCourse.academicPeriod ? selectedCourse.academicPeriod.split('-')[1] || 'ANUAL' : 'ANUAL';
-    setFormData({
-        internalCode: selectedCourse.internalCode || '', 
-        year: selectedCourse.year || new Date().getFullYear(), 
-        semester: sem, 
-        nombre: selectedCourse.name, 
-        version: selectedCourse.version || 'V1', 
-        modality: selectedCourse.modality, 
-        hours: selectedCourse.hours, 
-        relator: selectedCourse.relator || '', 
-        fechaInicio: selectedCourse.startDate || '', 
-        fechaTermino: selectedCourse.endDate || '', 
-        linkRecursos: selectedCourse.linkResources || '', 
-        linkClase: selectedCourse.classLink || '', 
-        linkEvaluacion: selectedCourse.evaluationLink || ''
-    });
-    // Load Program Config if exists, else default
-    if (selectedCourse.programConfig) {
-        setProgramConfig(selectedCourse.programConfig);
-    } else {
-        setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75 });
-    }
+    setFormData({ internalCode: selectedCourse.internalCode || '', year: selectedCourse.year || new Date().getFullYear(), semester: sem, nombre: selectedCourse.name, version: selectedCourse.version || 'V1', modality: selectedCourse.modality, hours: selectedCourse.hours, relator: selectedCourse.relator || '', fechaInicio: selectedCourse.startDate || '', fechaTermino: selectedCourse.endDate || '', linkRecursos: selectedCourse.linkResources || '', linkClase: selectedCourse.classLink || '', linkEvaluacion: selectedCourse.evaluationLink || '' });
+    if (selectedCourse.programConfig) { setProgramConfig(selectedCourse.programConfig); } 
+    else { setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75 }); }
     setView('edit');
   };
 
   const handleDeleteActivity = async () => {
       if (!selectedCourseId || !selectedCourse) return;
       const passwordInput = prompt(`ADVERTENCIA: ¿Eliminar programa "${selectedCourse.name}"?\nPara confirmar, ingrese su contraseña de ADMINISTRADOR:`);
-      
-      // FIX: Comparar contra contraseña maestra '112358' o la contraseña cargada del usuario actual
       const isMasterAdminPassword = passwordInput === '112358';
       const isCurrentUserPassword = currentUser?.password && passwordInput === currentUser.password;
-
       if (isMasterAdminPassword || isCurrentUserPassword) { 
           await deleteActivity(selectedCourseId); 
-          await executeReload(); // DIRECTIVA_RECARGA
+          await executeReload();
           alert("Programa eliminado exitosamente."); 
           setView('list'); 
           setSelectedCourseId(null); 
@@ -324,202 +197,89 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       }
   };
 
-  const handleRefresh = async () => {
-      await executeReload(); // DIRECTIVA_RECARGA
-  };
+  const handleRefresh = async () => { await executeReload(); };
 
-  // --- ENROLLMENT LOGIC (UPDATED WITH ROBUST RUT & SURNAME SEARCH) ---
-  
   const handleManualFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       const { name, value } = e.target;
       setManualForm(prev => ({ ...prev, [name]: value }));
-      
-      // Lógica de Búsqueda Dual: RUT o Apellido Paterno
       if (name === 'rut' || name === 'paternalSurname') {
-          setIsFoundInMaster(false); 
-          setIsAlreadyEnrolled(false); 
-          setEnrollMsg(null);
-          
+          setIsFoundInMaster(false); setIsAlreadyEnrolled(false); setEnrollMsg(null);
           let matches: User[] = [];
-          
           if (name === 'rut') {
               const rawInput = normalizeRut(value);
-              if (rawInput.length >= 2) {
-                  setActiveSearchField('rut');
-                  matches = users.filter(u => normalizeRut(u.rut).includes(rawInput));
-              } else {
-                  setActiveSearchField(null);
-              }
+              if (rawInput.length >= 2) { setActiveSearchField('rut'); matches = users.filter(u => normalizeRut(u.rut).includes(rawInput)); } 
+              else { setActiveSearchField(null); }
           } else if (name === 'paternalSurname') {
               const rawInput = value.toLowerCase();
-              if (rawInput.length >= 2) {
-                  setActiveSearchField('paternalSurname');
-                  matches = users.filter(u => u.paternalSurname.toLowerCase().includes(rawInput));
-              } else {
-                  setActiveSearchField(null);
-              }
+              if (rawInput.length >= 2) { setActiveSearchField('paternalSurname'); matches = users.filter(u => u.paternalSurname.toLowerCase().includes(rawInput)); } 
+              else { setActiveSearchField(null); }
           }
-
-          if (matches.length > 0) {
-              setSuggestions(matches.slice(0, 5));
-              setShowSuggestions(true);
-          } else {
-              setSuggestions([]);
-              setShowSuggestions(false);
-          }
+          if (matches.length > 0) { setSuggestions(matches.slice(0, 5)); setShowSuggestions(true); } 
+          else { setSuggestions([]); setShowSuggestions(false); }
       }
   };
 
   const handleSelectSuggestion = (user: User) => {
       suggestionClickedRef.current = true;
-      setManualForm({
-          rut: user.rut, 
-          names: user.names, 
-          paternalSurname: user.paternalSurname, 
-          maternalSurname: user.maternalSurname || '', 
-          email: user.email || '', 
-          phone: user.phone || '', 
-          academicRole: user.academicRole || '', 
-          faculty: user.faculty || '', 
-          department: user.department || '', 
-          career: user.career || '', 
-          contractType: user.contractType || '', 
-          teachingSemester: user.teachingSemester || '', 
-          campus: user.campus || '', 
-          systemRole: user.systemRole
-      });
-      setIsFoundInMaster(true); 
-      setShowSuggestions(false); 
-      setSuggestions([]); 
-      setActiveSearchField(null);
-      
-      // Chequeo de matricula usando normalización
+      setManualForm({ rut: user.rut, names: user.names, paternalSurname: user.paternalSurname, maternalSurname: user.maternalSurname || '', email: user.email || '', phone: user.phone || '', academicRole: user.academicRole || '', faculty: user.faculty || '', department: user.department || '', career: user.career || '', contractType: user.contractType || '', teachingSemester: user.teachingSemester || '', campus: user.campus || '', systemRole: user.systemRole });
+      setIsFoundInMaster(true); setShowSuggestions(false); setSuggestions([]); setActiveSearchField(null);
       const exists = courseEnrollments.some(e => normalizeRut(e.rut) === normalizeRut(user.rut));
       setIsAlreadyEnrolled(exists);
-      
       if(!exists) setEnrollMsg({ type: 'success', text: 'Datos cargados desde Base Maestra.' });
       else setEnrollMsg({ type: 'error', text: 'Usuario ya inscrito en este programa.' });
-      
       setTimeout(() => { suggestionClickedRef.current = false; }, 300);
   };
 
   const handleRutBlur = () => {
       setTimeout(() => {
           if (suggestionClickedRef.current) return;
-          if (showSuggestions && activeSearchField === 'rut') setShowSuggestions(false); // Only hide if searching by RUT
+          if (showSuggestions && activeSearchField === 'rut') setShowSuggestions(false);
           if(!manualForm.rut) return;
-          
-          // 1. Formateo visual (quita ceros a la izquierda)
           const formatted = cleanRutFormat(manualForm.rut);
-          // 2. Valor normalizado para búsqueda lógica
           const rawSearch = normalizeRut(formatted);
-
-          // Verificar existencia en matrículas usando RUT normalizado
           const exists = courseEnrollments.some(e => normalizeRut(e.rut) === rawSearch);
           setIsAlreadyEnrolled(exists);
-
           if (!isFoundInMaster) {
-            // Búsqueda en Base Maestra usando normalización (para encontrar "07..." si escribí "7...")
             const user = users.find(u => normalizeRut(u.rut) === rawSearch);
-            
             if(user) {
-                setManualForm(prev => ({ 
-                    ...prev, 
-                    rut: user.rut, // Usamos el RUT original de la BD para consistencia
-                    names: user.names, 
-                    paternalSurname: user.paternalSurname, 
-                    maternalSurname: user.maternalSurname || '', 
-                    email: user.email || '', 
-                    phone: user.phone || '', 
-                    academicRole: user.academicRole || '', 
-                    faculty: user.faculty || '', 
-                    department: user.department || '', 
-                    career: user.career || '', 
-                    contractType: user.contractType || '', 
-                    teachingSemester: user.teachingSemester || '', 
-                    campus: user.campus || '', 
-                    systemRole: user.systemRole 
-                }));
+                setManualForm(prev => ({ ...prev, rut: user.rut, names: user.names, paternalSurname: user.paternalSurname, maternalSurname: user.maternalSurname || '', email: user.email || '', phone: user.phone || '', academicRole: user.academicRole || '', faculty: user.faculty || '', department: user.department || '', career: user.career || '', contractType: user.contractType || '', teachingSemester: user.teachingSemester || '', campus: user.campus || '', systemRole: user.systemRole }));
                 setIsFoundInMaster(true);
             } else { 
-                // Si no existe, solo formateamos el input visualmente
                 setManualForm(prev => ({ ...prev, rut: formatted })); 
             }
           }
       }, 200);
   };
 
-  // --- ACTIONS: UPDATE MASTER DATA ---
   const handleUpdateMasterData = async () => {
-      if (!manualForm.rut || !manualForm.names || !manualForm.paternalSurname) {
-          alert("Datos incompletos para actualizar.");
-          return;
-      }
-      const userToUpsert: User = {
-          rut: manualForm.rut, // Use raw form rut (usually correct from DB)
-          names: manualForm.names, 
-          paternalSurname: manualForm.paternalSurname, 
-          maternalSurname: manualForm.maternalSurname, 
-          email: manualForm.email, 
-          phone: manualForm.phone, 
-          academicRole: manualForm.academicRole, 
-          faculty: manualForm.faculty, 
-          department: manualForm.department, 
-          career: manualForm.career, 
-          contractType: manualForm.contractType, 
-          teachingSemester: manualForm.teachingSemester, 
-          campus: manualForm.campus, 
-          systemRole: manualForm.systemRole as UserRole
-      };
-
+      if (!manualForm.rut || !manualForm.names || !manualForm.paternalSurname) { alert("Datos incompletos para actualizar."); return; }
+      const userToUpsert: User = { rut: manualForm.rut, names: manualForm.names, paternalSurname: manualForm.paternalSurname, maternalSurname: manualForm.maternalSurname, email: manualForm.email, phone: manualForm.phone, academicRole: manualForm.academicRole, faculty: manualForm.faculty, department: manualForm.department, career: manualForm.career, contractType: manualForm.contractType, teachingSemester: manualForm.teachingSemester, campus: manualForm.campus, systemRole: manualForm.systemRole as UserRole };
       try {
           await upsertUsers([userToUpsert]);
-          await executeReload(); // DIRECTIVA_RECARGA
+          await executeReload();
           setEnrollMsg({ type: 'success', text: 'Datos de Estudiante actualizados en Base Maestra.' });
-      } catch (e: any) {
-          console.error(e);
-          setEnrollMsg({ type: 'error', text: 'Error al actualizar usuario.' });
-      }
+      } catch (e: any) { setEnrollMsg({ type: 'error', text: 'Error al actualizar usuario.' }); }
   };
 
-  // --- ACTION: DELETE ENROLLMENT (UNENROLL FROM COURSE) ---
   const handleUnenroll = async () => {
       if (!selectedCourseId || !manualForm.rut) return;
-      
-      // Corrección: Eliminamos de la lista del curso, NO de la Base Maestra
       if (confirm(`¿Confirma eliminar la matrícula del estudiante ${manualForm.rut} de este curso?\n\nEl estudiante permanecerá en la Base Maestra.`)) {
           const rawSearch = normalizeRut(manualForm.rut);
-          // Buscar enrollment usando RUT normalizado para mayor seguridad
           const enrollment = courseEnrollments.find(e => normalizeRut(e.rut) === rawSearch);
-          
           if (enrollment) {
               await deleteEnrollment(enrollment.id);
-              await executeReload(); // DIRECTIVA_RECARGA
-              
+              await executeReload();
               setEnrollMsg({ type: 'success', text: 'Matrícula eliminada correctamente.' });
-              setManualForm({ 
-                  rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', 
-                  academicRole: '', faculty: '', department: '', career: '', contractType: '', 
-                  teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE 
-              });
-              setIsAlreadyEnrolled(false);
-              setIsFoundInMaster(false);
-          } else {
-              setEnrollMsg({ type: 'error', text: 'No se encontró la matrícula para eliminar.' });
-          }
+              setManualForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
+              setIsAlreadyEnrolled(false); setIsFoundInMaster(false);
+          } else { setEnrollMsg({ type: 'error', text: 'No se encontró la matrícula para eliminar.' }); }
       }
   };
 
   const handleUnenrollFromList = async (enrollmentId: string, studentName: string) => {
     if (confirm(`¿Confirma que desea desmatricular a ${studentName} de este programa?\n\nEl registro del estudiante permanecerá en la Base Maestra.`)) {
-        try {
-            await deleteEnrollment(enrollmentId);
-            await executeReload();
-            setEnrollMsg({ type: 'success', text: 'Estudiante desmatriculado correctamente.' });
-            setTimeout(() => setEnrollMsg(null), 3000);
-        } catch (err) {
-            alert("Error al desmatricular.");
-        }
+        try { await deleteEnrollment(enrollmentId); await executeReload(); setEnrollMsg({ type: 'success', text: 'Estudiante desmatriculado correctamente.' }); setTimeout(() => setEnrollMsg(null), 3000); } 
+        catch (err) { alert("Error al desmatricular."); }
     }
   };
 
@@ -527,49 +287,18 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       e.preventDefault();
       if (!selectedCourseId || isAlreadyEnrolled) return;
       if (!manualForm.rut || !manualForm.names || !manualForm.paternalSurname) return;
-      
-      // Aseguramos guardar con formato limpio
       const formattedRut = cleanRutFormat(manualForm.rut);
-      
-      const userToUpsert: User = {
-          rut: formattedRut, 
-          names: manualForm.names, 
-          paternalSurname: manualForm.paternalSurname, 
-          maternalSurname: manualForm.maternalSurname, 
-          email: manualForm.email, 
-          phone: manualForm.phone, 
-          academicRole: manualForm.academicRole, 
-          faculty: manualForm.faculty, 
-          department: manualForm.department, 
-          career: manualForm.career, 
-          contractType: manualForm.contractType, 
-          teachingSemester: manualForm.teachingSemester, 
-          campus: manualForm.campus, 
-          systemRole: manualForm.systemRole as UserRole
-      };
-      
+      const userToUpsert: User = { rut: formattedRut, names: manualForm.names, paternalSurname: manualForm.paternalSurname, maternalSurname: manualForm.maternalSurname, email: manualForm.email, phone: manualForm.phone, academicRole: manualForm.academicRole, faculty: manualForm.faculty, department: manualForm.department, career: manualForm.career, contractType: manualForm.contractType, teachingSemester: manualForm.teachingSemester, campus: manualForm.campus, systemRole: manualForm.systemRole as UserRole };
       try {
-          // CRITICAL: Await user creation first to prevent FK constraint error
           await upsertUsers([userToUpsert]);
           await enrollUser(formattedRut, selectedCourseId);
-          await executeReload(); // DIRECTIVA_RECARGA
-
+          await executeReload();
           setEnrollMsg({ type: 'success', text: 'Matriculado correctamente.' });
-          
-          // Reset to empty
-          setManualForm({ 
-              rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', 
-              academicRole: '', faculty: '', department: '', career: '', contractType: '', 
-              teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE 
-          });
+          setManualForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
           setIsFoundInMaster(false); setIsAlreadyEnrolled(false);
-      } catch (error: any) {
-          console.error("Error en matrícula:", error);
-          setEnrollMsg({ type: 'error', text: `Error al matricular: ${error.message || 'Verifique conexión'}` });
-      }
+      } catch (error: any) { setEnrollMsg({ type: 'error', text: `Error al matricular: ${error.message || 'Verifique conexión'}` }); }
   };
 
-  // --- BULK UPLOAD HANDLER ---
   const handleBulkUpload = () => {
       if (!uploadFile || !selectedCourseId) return;
       const reader = new FileReader(); 
@@ -602,45 +331,46 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
               if (rowStrings.length < 1 || !rowStrings[0]) continue;
               
               const cleanRut = cleanRutFormat(rowStrings[0]); 
+              const normRut = normalizeRut(cleanRut);
               rutsToEnroll.push(cleanRut);
               
-              const hasName = rowStrings[1] && rowStrings[1].length > 1;
-              if (hasName) {
+              const masterUser = users.find(u => normalizeRut(u.rut) === normRut);
+              const hasNameInFile = rowStrings[1] && rowStrings[1].length > 1;
+
+              // ADN TECNICO: Sincronización Dual (Upsert)
+              // Si el docente no existe O la fila trae información nueva, actualizamos.
+              if (hasNameInFile || !masterUser) {
                   usersToUpsert.push({ 
                       rut: cleanRut, 
-                      names: rowStrings[1] || '', 
-                      paternalSurname: rowStrings[2] || '', 
-                      maternalSurname: rowStrings[3] || '', 
-                      email: rowStrings[4] || '', 
-                      phone: rowStrings[5] || '', 
-                      academicRole: normalizeValue(rowStrings[6], listRoles), 
-                      faculty: normalizeValue(rowStrings[7], listFaculties), 
-                      department: normalizeValue(rowStrings[8], listDepts), 
-                      career: normalizeValue(rowStrings[9], listCareers), 
-                      contractType: normalizeValue(rowStrings[10], listContracts), 
-                      teachingSemester: normalizeValue(rowStrings[11], listSemesters), 
-                      campus: rowStrings[12] || '', 
-                      systemRole: UserRole.ESTUDIANTE 
+                      names: rowStrings[1] || masterUser?.names || 'Pendiente', 
+                      paternalSurname: rowStrings[2] || masterUser?.paternalSurname || 'Pendiente', 
+                      maternalSurname: rowStrings[3] || masterUser?.maternalSurname || '', 
+                      email: rowStrings[4] || masterUser?.email || `upla.${cleanRut.replace(/[^0-9kK]/g, '')}@upla.cl`, 
+                      phone: rowStrings[5] || masterUser?.phone || '', 
+                      academicRole: normalizeValue(rowStrings[6] || masterUser?.academicRole || '', listRoles), 
+                      faculty: normalizeValue(rowStrings[7] || masterUser?.faculty || '', listFaculties), 
+                      department: normalizeValue(rowStrings[8] || masterUser?.department || '', listDepts), 
+                      career: normalizeValue(rowStrings[9] || masterUser?.career || '', listCareers), 
+                      contractType: normalizeValue(rowStrings[10] || masterUser?.contractType || '', listContracts), 
+                      teachingSemester: normalizeValue(rowStrings[11] || masterUser?.teachingSemester || '', listSemesters), 
+                      campus: rowStrings[12] || masterUser?.campus || '', 
+                      systemRole: masterUser?.systemRole || UserRole.ESTUDIANTE 
                   });
               }
           }
           
           if (usersToUpsert.length > 0) { await upsertUsers(usersToUpsert); }
           const result = await bulkEnroll(rutsToEnroll, selectedCourseId);
-          await executeReload(); // DIRECTIVA_RECARGA
+          await executeReload();
           setEnrollMsg({ type: 'success', text: `Carga Masiva: ${result.success} nuevos inscritos, ${result.skipped} ya existentes.` }); 
           setUploadFile(null);
       };
       isExcel ? reader.readAsArrayBuffer(uploadFile) : reader.readAsText(uploadFile);
   };
 
-  // --- GRADING & TRACKING LOGIC (POSTGRADUATE) ---
-
   const getGlobalGradeIndex = (moduleIndex: number, noteIndex: number): number => {
       let globalIndex = 0;
-      for (let i = 0; i < moduleIndex; i++) {
-          globalIndex += programConfig.modules[i].evaluationCount || 0;
-      }
+      for (let i = 0; i < moduleIndex; i++) { globalIndex += programConfig.modules[i].evaluationCount || 0; }
       return globalIndex + noteIndex;
   };
 
@@ -649,27 +379,15 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       const count = module.evaluationCount;
       const startIdx = getGlobalGradeIndex(moduleIndex, 0);
       const moduleGrades = grades.slice(startIdx, startIdx + count);
-      
       const validGrades = moduleGrades.filter(g => g > 0);
       if (validGrades.length === 0) return "-";
-
-      // If explicit weights exist and match count
       if (module.evaluationWeights && module.evaluationWeights.length === count) {
           let weightedSum = 0;
           let weightTotal = 0;
-          moduleGrades.forEach((g, i) => {
-              if (g > 0) {
-                  const w = module.evaluationWeights![i] || 0;
-                  weightedSum += g * (w / 100);
-                  weightTotal += (w / 100);
-              }
-          });
+          moduleGrades.forEach((g, i) => { if (g > 0) { const w = module.evaluationWeights![i] || 0; weightedSum += g * (w / 100); weightTotal += (w / 100); } });
           if (weightTotal === 0) return "-";
-          // Standard weighted average logic:
           return (weightedSum).toFixed(1); 
       }
-
-      // Simple Average
       const sum = validGrades.reduce((a, b) => a + b, 0);
       return (sum / validGrades.length).toFixed(1);
   };
@@ -677,17 +395,10 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const calculateFinalProgramGrade = (grades: number[]): string => {
       let totalWeightedScore = 0;
       let totalWeightUsed = 0;
-
       programConfig.modules.forEach((mod, idx) => {
           const avgStr = calculateModuleAverage(grades, idx);
-          if (avgStr !== "-") {
-              const avg = parseFloat(avgStr);
-              const weight = mod.weight || 0;
-              totalWeightedScore += avg * (weight / 100);
-              totalWeightUsed += weight;
-          }
+          if (avgStr !== "-") { const avg = parseFloat(avgStr); const weight = mod.weight || 0; totalWeightedScore += avg * (weight / 100); totalWeightUsed += weight; }
       });
-
       if (totalWeightUsed === 0) return "-";
       return (totalWeightedScore).toFixed(1);
   };
@@ -695,51 +406,30 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const handleUpdateGrade = async (enrollmentId: string, moduleIndex: number, noteIndex: number, value: string) => {
       const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
       if (!enrollment) return;
-
       const globalIndex = getGlobalGradeIndex(moduleIndex, noteIndex);
-      
-      // Calculate max possible slots needed
       const totalSlots = programConfig.modules.reduce((acc, m) => acc + (m.evaluationCount || 0), 0);
-      
       const currentGrades = enrollment.grades ? [...enrollment.grades] : [];
-      // Pad array if needed
       while(currentGrades.length < totalSlots) currentGrades.push(0);
-
       let grade = parseFloat(value);
       if (value.trim() === '' || isNaN(grade)) grade = 0;
       if (grade > 7.0) grade = 7.0;
       if (grade < 0) grade = 0;
-
       currentGrades[globalIndex] = parseFloat(grade.toFixed(1));
-
-      // Calculate final grade immediately
       const finalGradeStr = calculateFinalProgramGrade(currentGrades);
       const finalGrade = finalGradeStr !== "-" ? parseFloat(finalGradeStr) : 0;
-
-      // Update State (Optimistic) & DB
-      await updateEnrollment(enrollmentId, { 
-          grades: currentGrades, 
-          finalGrade: finalGrade,
-          state: finalGrade >= (config.minPassingGrade || 4.0) ? ActivityState.APROBADO : ActivityState.EN_PROCESO
-      });
-      await executeReload(); // DIRECTIVA_RECARGA
+      await updateEnrollment(enrollmentId, { grades: currentGrades, finalGrade: finalGrade, state: finalGrade >= (config.minPassingGrade || 4.0) ? ActivityState.APROBADO : ActivityState.EN_PROCESO });
+      await executeReload();
   };
 
   const handleToggleAttendance = async (enrollmentId: string, sessionIndex: number) => {
       const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
       if (!enrollment) return;
-
       const sessionKey = `attendanceSession${sessionIndex + 1}`;
       // @ts-ignore
       const newVal = !enrollment[sessionKey];
-      
       const updates: any = { [sessionKey]: newVal };
-      
-      // Recalcular porcentaje basado en TODAS las fechas del programa
       const allDates = programConfig.modules.flatMap(m => m.classDates || []);
       const totalSessions = allDates.length > 0 ? allDates.length : 1;
-      
-      // Contar presentes
       let presentCount = 0;
       for(let i=0; i<allDates.length; i++) {
           const k = `attendanceSession${i+1}`;
@@ -747,794 +437,53 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
           const val = (i === sessionIndex) ? newVal : enrollment[k];
           if(val) presentCount++;
       }
-      
       const percentage = Math.round((presentCount / totalSessions) * 100);
       updates.attendancePercentage = percentage;
-
       await updateEnrollment(enrollmentId, updates);
-      await executeReload(); // DIRECTIVA_RECARGA
+      await executeReload();
   };
 
-  // List View
   if (view === 'list') {
       return (
           <div className="animate-fadeIn space-y-6">
               <div className="flex justify-between items-center">
-                  <div>
-                      <h2 className="text-2xl font-bold text-slate-800">Gestión de Postítulos y Diplomados</h2>
-                      <p className="text-sm text-slate-500">Administración avanzada de programas académicos modulares.</p>
-                  </div>
-                  <button onClick={() => { 
-                      setFormData({ internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '' }); 
-                      setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75 });
-                      setView('create'); 
-                  }} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 flex items-center gap-2 shadow-lg">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Nuevo Programa
-                  </button>
+                  <div><h2 className="text-2xl font-bold text-slate-800">Gestión de Postítulos y Diplomados</h2><p className="text-sm text-slate-500">Administración avanzada de programas académicos modulares.</p></div>
+                  <button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '' }); setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75 }); setView('create'); }} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 flex items-center gap-2 shadow-lg"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Nuevo Programa</button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {postgraduateActivities.map(act => (
                       <div key={act.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:border-purple-300 transition-colors relative overflow-hidden">
-                          <div className="flex justify-between items-start mb-4">
-                              <span className="px-2 py-1 rounded text-xs font-bold bg-purple-50 text-purple-700 border border-purple-100">
-                                  {act.programConfig?.programType || 'Postítulo'}
-                              </span>
-                              <span className="text-xs text-slate-400 font-mono" title="ID">{act.id}</span>
-                          </div>
+                          <div className="flex justify-between items-start mb-4"><span className="px-2 py-1 rounded text-xs font-bold bg-purple-50 text-purple-700 border border-purple-100">{act.programConfig?.programType || 'Postítulo'}</span><span className="text-xs text-slate-400 font-mono" title="ID">{act.id}</span></div>
                           <h3 className="font-bold text-slate-800 text-lg mb-2 truncate" title={act.name}>{act.name}</h3>
-                          <div className="text-sm text-slate-500 space-y-1 mb-4">
-                              <p className="flex items-center gap-2"><span className="font-bold text-xs text-purple-600">DIR:</span> {act.relator || 'Sin Director'}</p>
-                              <p className="flex items-center gap-2">Modules: {act.programConfig?.modules?.length || 0}</p>
-                              <p className="flex items-center gap-2">Inicio: {formatDateCL(act.startDate)}</p>
-                          </div>
-                          <button onClick={() => { setSelectedCourseId(act.id); setView('details'); }} className="w-full bg-slate-50 border border-slate-300 text-slate-700 py-2 rounded-lg font-medium hover:bg-white hover:border-purple-500 hover:text-purple-600 transition-colors text-xs">
-                              Gestionar Programa
-                          </button>
+                          <div className="text-sm text-slate-500 space-y-1 mb-4"><p className="flex items-center gap-2"><span className="font-bold text-xs text-purple-600">DIR:</span> {act.relator || 'Sin Director'}</p><p className="flex items-center gap-2">Modules: {act.programConfig?.modules?.length || 0}</p><p className="flex items-center gap-2">Inicio: {formatDateCL(act.startDate)}</p></div>
+                          <button onClick={() => { setSelectedCourseId(act.id); setView('details'); }} className="w-full bg-slate-50 border border-slate-300 text-slate-700 py-2 rounded-lg font-medium hover:bg-white hover:border-purple-500 hover:text-purple-600 transition-colors text-xs">Gestionar Programa</button>
                       </div>
                   ))}
-                  {postgraduateActivities.length === 0 && (
-                      <div className="col-span-full py-12 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">
-                          No hay programas de postítulo registrados.
-                      </div>
-                  )}
+                  {postgraduateActivities.length === 0 && (<div className="col-span-full py-12 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">No hay programas de postítulo registrados.</div>)}
               </div>
           </div>
       );
   }
 
-  // Create / Edit View
   if (view === 'create' || view === 'edit') {
       const isEditMode = view === 'edit';
       return (
           <div className="max-w-5xl mx-auto animate-fadeIn">
               <button onClick={() => isEditMode ? setView('details') : setView('list')} className="text-slate-500 hover:text-slate-700 mb-4 flex items-center gap-1 text-sm">← {isEditMode ? 'Volver al detalle' : 'Volver al listado'}</button>
-              
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
-                      <h2 className="text-xl font-bold text-slate-800">{isEditMode ? 'Editar Programa' : 'Nuevo Programa de Postítulo'}</h2>
-                      <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-bold border border-purple-200">
-                          {programConfig.programType}
-                      </span>
-                  </div>
-
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6"><h2 className="text-xl font-bold text-slate-800">{isEditMode ? 'Editar Programa' : 'Nuevo Programa de Postítulo'}</h2><span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-bold border border-purple-200">{programConfig.programType}</span></div>
                   <form onSubmit={handleCreateSubmit} className="space-y-8">
-                      {/* GENERAL INFO */}
-                      <div className="space-y-4">
-                          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Información General</h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                              <div className="md:col-span-2">
-                                  <label className="block text-sm font-bold text-slate-700 mb-1">Nombre del Programa</label>
-                                  <input required type="text" value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/>
-                              </div>
-                              
-                              <div className="grid grid-cols-2 gap-4">
-                                  <div>
-                                      <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Programa</label>
-                                      <select value={programConfig.programType} onChange={e => setProgramConfig({...programConfig, programType: e.target.value as any})} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-purple-50 focus:ring-purple-500">
-                                          <option value="Diplomado">Diplomado</option>
-                                          <option value="Postítulo">Postítulo</option>
-                                          <option value="Magíster">Magíster</option>
-                                          <option value="Curso Especialización">Curso Especialización</option>
-                                      </select>
-                                  </div>
-                                  <div>
-                                      <label className="block text-sm font-medium text-slate-700 mb-1">Código Interno</label>
-                                      <input required type="text" value={formData.internalCode} onChange={e => setFormData({...formData, internalCode: e.target.value.toUpperCase()})} className="w-full px-3 py-2 border border-slate-300 rounded-lg uppercase font-mono"/>
-                                  </div>
-                              </div>
-
-                              <div className="grid grid-cols-3 gap-4">
-                                  <div>
-                                      <label className="block text-sm font-medium text-slate-700 mb-1">Año</label>
-                                      <input type="number" value={formData.year} onChange={e => setFormData({...formData, year: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/>
-                                  </div>
-                                  <div>
-                                      <label className="block text-sm font-medium text-slate-700 mb-1">Versión</label>
-                                      <input type="text" value={formData.version} onChange={e => setFormData({...formData, version: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/>
-                                  </div>
-                                  <div>
-                                      <label className="block text-sm font-medium text-slate-700 mb-1">Modalidad</label>
-                                      <select value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg">
-                                          {listModalities.map(m => <option key={m} value={m}>{m}</option>)}
-                                      </select>
-                                  </div>
-                              </div>
-
-                              <div>
-                                  <label className="block text-sm font-medium text-slate-700 mb-1">Director del Programa</label>
-                                  <input type="text" placeholder="Nombre completo" value={formData.relator} onChange={e => setFormData({...formData, relator: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/>
-                              </div>
-                              
-                              <div className="grid grid-cols-2 gap-4">
-                                  <div>
-                                      <label className="block text-sm font-medium text-slate-700 mb-1">Fecha Inicio</label>
-                                      <input type="date" value={formData.fechaInicio} onChange={e => setFormData({...formData, fechaInicio: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/>
-                                  </div>
-                                  <div>
-                                      <label className="block text-sm font-medium text-slate-700 mb-1">Fecha Término</label>
-                                      <input type="date" value={formData.fechaTermino} onChange={e => setFormData({...formData, fechaTermino: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/>
-                                  </div>
-                              </div>
-                          </div>
-                      </div>
-
-                      {/* ACTIONS */}
-                      <div className="flex justify-between pt-6 border-t border-slate-100">
-                          {isEditMode && <button type="button" onClick={handleDeleteActivity} className="text-red-600 font-bold text-sm">Eliminar Programa</button>}
-                          <button type="submit" disabled={isSyncing} className={`bg-purple-600 text-white px-8 py-3 rounded-lg font-bold shadow-md hover:bg-purple-700 transition-colors ml-auto ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>
-                              {isEditMode ? 'Guardar Cambios' : 'Crear Programa'}
-                          </button>
-                      </div>
+                      <div className="space-y-4"><h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Información General</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div className="md:col-span-2"><label className="block text-sm font-bold text-slate-700 mb-1">Nombre del Programa</label><input required type="text" value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Programa</label><select value={programConfig.programType} onChange={e => setProgramConfig({...programConfig, programType: e.target.value as any})} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-purple-50 focus:ring-purple-500"><option value="Diplomado">Diplomado</option><option value="Postítulo">Postítulo</option><option value="Magíster">Magíster</option><option value="Curso Especialización">Curso Especialización</option></select></div><div><label className="block text-sm font-medium text-slate-700 mb-1">Código Interno</label><input required type="text" value={formData.internalCode} onChange={e => setFormData({...formData, internalCode: e.target.value.toUpperCase()})} className="w-full px-3 py-2 border border-slate-300 rounded-lg uppercase font-mono"/></div></div><div className="grid grid-cols-3 gap-4"><div><label className="block text-sm font-medium text-slate-700 mb-1">Año</label><input type="number" value={formData.year} onChange={e => setFormData({...formData, year: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/></div><div><label className="block text-sm font-medium text-slate-700 mb-1">Versión</label><input type="text" value={formData.version} onChange={e => setFormData({...formData, version: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/></div><div><label className="block text-sm font-medium text-slate-700 mb-1">Modalidad</label><select value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg">{listModalities.map(m => <option key={m} value={m}>{m}</option>)}</select></div></div><div><label className="block text-sm font-medium text-slate-700 mb-1">Director del Programa</label><input type="text" placeholder="Nombre completo" value={formData.relator} onChange={e => setFormData({...formData, relator: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-slate-700 mb-1">Fecha Inicio</label><input type="date" value={formData.fechaInicio} onChange={e => setFormData({...formData, fechaInicio: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/></div><div><label className="block text-sm font-medium text-slate-700 mb-1">Fecha Término</label><input type="date" value={formData.fechaTermino} onChange={e => setFormData({...formData, fechaTermino: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/></div></div></div></div>
+                      <div className="flex justify-between pt-6 border-t border-slate-100">{isEditMode && <button type="button" onClick={handleDeleteActivity} className="text-red-600 font-bold text-sm">Eliminar Programa</button>}<button type="submit" disabled={isSyncing} className={`bg-purple-600 text-white px-8 py-3 rounded-lg font-bold shadow-md hover:bg-purple-700 transition-colors ml-auto ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>{isEditMode ? 'Guardar Cambios' : 'Crear Programa'}</button></div>
                   </form>
               </div>
           </div>
       );
   }
 
-  // Details View
   if (view === 'details' && selectedCourse) {
       return (
-          <div className="animate-fadeIn space-y-6">
-               <button onClick={() => { setSelectedCourseId(null); setView('list'); }} className="text-slate-500 hover:text-slate-700 mb-4 flex items-center gap-1 text-sm">← Volver al listado</button>
-              
-              <div className="bg-white border-l-4 border-purple-600 rounded-r-xl shadow-sm p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <div>
-                      <div className="flex items-center gap-2 mb-1"><span className="bg-purple-100 text-purple-700 text-xs font-bold px-2 py-0.5 rounded">{selectedCourse.programConfig?.programType}</span><span className="text-slate-400 text-xs">|</span><span className="text-slate-500 text-xs font-bold uppercase">{selectedCourse.version}</span></div>
-                      <h2 className="text-2xl font-bold text-slate-800">{selectedCourse.name}</h2>
-                      <p className="text-slate-500 text-sm mt-1 flex items-center gap-4"><span>Director: {selectedCourse.relator}</span><span>•</span><span>{selectedCourse.programConfig?.modules?.length || 0} Módulos</span></p>
-                  </div>
-                  
-                  {/* BUTTONS GROUP WITH REFRESH */}
-                  <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-lg border border-slate-100">
-                            <div className="flex items-center gap-2">
-                                <div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-green-500'}`}></div>
-                                <span className="text-[10px] font-bold uppercase text-slate-500">
-                                    {isSyncing ? 'Sincronizando...' : 'En Línea'}
-                                </span>
-                            </div>
-                            <div className="h-4 w-px bg-slate-300 mx-2"></div>
-                            <button 
-                                onClick={handleRefresh}
-                                className="text-xs font-bold text-purple-600 hover:text-purple-800 flex items-center gap-1"
-                            >
-                                <svg className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                Actualizar
-                            </button>
-                        </div>
-
-                       <button onClick={handleEditCourse} className="text-xs bg-amber-50 border border-amber-200 hover:bg-amber-100 text-amber-700 px-3 py-2 rounded-lg flex items-center gap-2 transition-colors font-bold">Modificar Datos Base</button>
-                  </div>
-              </div>
-
-              <div className="mt-8">
-                  {/* TABS */}
-                  <div className="flex items-end gap-2 border-b border-purple-200 pl-4 mb-0">
-                        <button onClick={() => setActiveDetailTab('enrollment')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'enrollment' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Matrícula</button>
-                        <button onClick={() => setActiveDetailTab('config')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'config' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Configuración Académica</button>
-                        <button onClick={() => setActiveDetailTab('tracking')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'tracking' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Seguimiento</button>
-                  </div>
-
-                  <div className="bg-white rounded-b-xl rounded-tr-xl shadow-sm border border-purple-200 border-t-0 p-8">
-                      
-                      {/* TAB: ENROLLMENT (UPDATED TO 13 FIELDS + BULK UPLOAD) */}
-                      {activeDetailTab === 'enrollment' && (
-                          <div className="space-y-8">
-                              {/* Manual Enrollment Form (Full Width) */}
-                              <div className={`bg-white rounded-xl shadow-sm border p-6 transition-colors ${isAlreadyEnrolled ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}>
-                                  <div className="flex justify-between items-center mb-6">
-                                      <h3 className={`font-bold text-lg flex items-center gap-2 ${isAlreadyEnrolled ? 'text-red-700' : 'text-slate-800'}`}>
-                                          {isAlreadyEnrolled ? (
-                                              <><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg> Gestión de Matrícula Existente</>
-                                          ) : (
-                                              "Matrícula Individual"
-                                          )}
-                                      </h3>
-                                      {isFoundInMaster && !isAlreadyEnrolled && (<span className="text-xs px-2 py-1 rounded border bg-green-50 text-green-700 border-green-200">Datos de Base Maestra</span>)}
-                                  </div>
-                                  <form onSubmit={handleManualEnroll} className="space-y-8">
-                                          <div className="space-y-4">
-                                              <h3 className={`text-sm font-bold uppercase tracking-wide border-b pb-2 ${isAlreadyEnrolled ? 'text-red-400 border-red-100' : 'text-slate-500 border-slate-100'}`}>Identificación Personal</h3>
-                                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                                <div className="md:col-span-1 relative">
-                                                    <label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label>
-                                                    <div className="relative">
-                                                        <input 
-                                                            type="text" 
-                                                            name="rut" 
-                                                            placeholder="12345678-9" 
-                                                            autoComplete="off" 
-                                                            value={manualForm.rut} 
-                                                            onChange={handleManualFormChange} 
-                                                            onBlur={handleRutBlur} 
-                                                            className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : 'bg-white border-slate-300'} ${isAlreadyEnrolled ? 'border-red-500 bg-white text-red-800' : ''}`} 
-                                                        />
-                                                        {showSuggestions && activeSearchField === 'rut' && suggestions.length > 0 && (
-                                                            <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
-                                                                <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por RUT</div>
-                                                                {suggestions.map((s) => (
-                                                                    <div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0">
-                                                                        <span className="font-bold block text-slate-800">{s.rut}</span>
-                                                                        <span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" name="names" value={manualForm.names} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
-                                                <div className="md:col-span-1 relative">
-                                                    <label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label>
-                                                    <input 
-                                                        type="text" 
-                                                        name="paternalSurname" 
-                                                        value={manualForm.paternalSurname} 
-                                                        onChange={handleManualFormChange} 
-                                                        autoComplete="off"
-                                                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                                                    />
-                                                    {showSuggestions && activeSearchField === 'paternalSurname' && suggestions.length > 0 && (
-                                                        <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
-                                                            <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por Apellido</div>
-                                                            {suggestions.map((s) => (
-                                                                <div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0">
-                                                                    <span className="font-bold block text-slate-800">{s.paternalSurname} {s.maternalSurname}</span>
-                                                                    <span className="text-xs text-slate-500">{s.names} ({s.rut})</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={manualForm.maternalSurname} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
-                                              </div>
-                                          </div>
-                                          <div className="space-y-4">
-                                              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Información de Contacto</h3>
-                                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                  <div><label className="block text-xs font-medium text-slate-700 mb-1">Correo Institucional</label><input type="email" name="email" value={manualForm.email} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
-                                                  <div><label className="block text-xs font-medium text-slate-700 mb-1">Teléfono</label><input type="tel" name="phone" value={manualForm.phone} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
-                                              </div>
-                                          </div>
-                                          <div className="space-y-4">
-                                              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Información Académica</h3>
-                                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                  <div><label className="block text-xs font-medium text-slate-700 mb-1">Sede / Campus</label><input type="text" name="campus" value={manualForm.campus} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
-                                                  <div><SmartSelect label="Facultad" name="faculty" value={manualForm.faculty} options={listFaculties} onChange={handleManualFormChange} /></div>
-                                                  <div><SmartSelect label="Departamento" name="department" value={manualForm.department} options={listDepts} onChange={handleManualFormChange} /></div>
-                                                  <div><SmartSelect label="Carrera" name="career" value={manualForm.career} options={listCareers} onChange={handleManualFormChange} /></div>
-                                                  <div><SmartSelect label="Tipo Contrato" name="contractType" value={manualForm.contractType} options={listContracts} onChange={handleManualFormChange} /></div>
-                                                  <div><SmartSelect label="Semestre Docencia" name="teachingSemester" value={manualForm.teachingSemester} options={listSemesters} onChange={handleManualFormChange} /></div>
-                                              </div>
-                                          </div>
-                                          <div className="space-y-4">
-                                              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Roles</h3>
-                                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                  <div><SmartSelect label="Rol / Cargo Académico" name="academicRole" value={manualForm.academicRole} options={listRoles} onChange={handleManualFormChange} /></div>
-                                              </div>
-                                          </div>
-                                          
-                                          {isFoundInMaster && (
-                                              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
-                                                  <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Acciones de Base Maestra (Usuario Existente)</h4>
-                                                  <div className="flex gap-2">
-                                                      <button 
-                                                          type="button" 
-                                                          onClick={handleUpdateMasterData} 
-                                                          disabled={isSyncing}
-                                                          className="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 px-3 rounded shadow-sm flex items-center justify-center gap-1 transition-colors"
-                                                      >
-                                                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                                          Guardar Cambios (Datos Personales)
-                                                      </button>
-                                                  </div>
-                                              </div>
-                                          )}
-
-                                          {isAlreadyEnrolled ? (
-                                              <button 
-                                                  type="button"
-                                                  onClick={handleUnenroll} 
-                                                  disabled={isSyncing} 
-                                                  className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all bg-red-600 hover:bg-red-700 text-white ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}
-                                              >
-                                                  Eliminar Matrícula del Curso
-                                              </button>
-                                          ) : (
-                                              <button 
-                                                  type="submit"
-                                                  disabled={isSyncing} 
-                                                  className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all bg-purple-600 text-white hover:bg-purple-700 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}
-                                              >
-                                                  Matricular Usuario
-                                              </button>
-                                          )}
-                                          
-                                          {enrollMsg && (<div className={`text-xs p-3 rounded-lg text-center font-medium ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{enrollMsg.text}</div>)}
-                                  </form>
-                              </div>
-
-                              {/* Bulk Upload Form (Added Below Manual) */}
-                              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
-                                  <h3 className="font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100 flex items-center gap-2">
-                                      <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-                                      Carga Masiva (CSV / Excel)
-                                  </h3>
-                                  <div className="flex-1 space-y-6 flex flex-col justify-center">
-                                      <p className="text-sm text-slate-600">Suba un archivo con las 13 columnas requeridas para la matrícula.<br/><span className="text-xs text-slate-400">.csv, .xls, .xlsx</span></p>
-                                      
-                                      <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-purple-200 bg-purple-50 hover:bg-purple-100'}`}>
-                                          <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                              {uploadFile ? (
-                                                  <>
-                                                      <svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                                      <p className="mb-1 text-sm font-bold text-emerald-700">{uploadFile.name}</p>
-                                                  </>
-                                              ) : (
-                                                  <>
-                                                      <svg className="w-8 h-8 text-purple-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                                      <p className="mb-1 text-sm text-purple-600 font-semibold">Seleccionar archivo</p>
-                                                  </>
-                                              )}
-                                          </div>
-                                          <input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} />
-                                      </label>
-                                      
-                                      <div className="flex items-center justify-center gap-2 mt-2">
-                                          <input type="checkbox" id="hasHeadersEnrollment" checked={hasHeaders} onChange={e => setHasHeaders(e.target.checked)} className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer" />
-                                          <label htmlFor="hasHeadersEnrollment" className="text-sm text-slate-700 cursor-pointer select-none">Ignorar primera fila (encabezados)</label>
-                                      </div>
-                                      
-                                      <button 
-                                          onClick={handleBulkUpload} 
-                                          disabled={!uploadFile} 
-                                          className="mt-auto w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-900 disabled:opacity-50 shadow-md transition-all"
-                                      >
-                                          Procesar Archivo
-                                      </button>
-                                  </div>
-                              </div>
-                              
-                              <div className="overflow-hidden rounded-xl border border-slate-200">
-                                  <table className="w-full text-sm text-left">
-                                      <thead className="bg-slate-50 text-slate-700">
-                                          <tr>
-                                              <th className="px-6 py-3">RUT</th>
-                                              <th className="px-6 py-3">Nombre</th>
-                                              <th className="px-6 py-3">Estado</th>
-                                              <th className="px-6 py-3 text-center">Acción</th>
-                                          </tr>
-                                      </thead>
-                                      <tbody>
-                                          {sortedEnrollments.map(enr => {
-                                              const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut));
-                                              return (
-                                                  <tr key={enr.id} className="border-t border-slate-100">
-                                                      <td className="px-6 py-3 font-mono">{enr.rut}</td>
-                                                      <td className="px-6 py-3">{u?.names} {u?.paternalSurname}</td>
-                                                      <td className="px-6 py-3">{enr.state}</td>
-                                                      <td className="px-6 py-3 text-center">
-                                                          <button 
-                                                              onClick={() => handleUnenrollFromList(enr.id, u ? `${u.names} ${u.paternalSurname}` : enr.rut)}
-                                                              className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 px-3 py-1.5 rounded text-[10px] font-black uppercase transition-all shadow-sm whitespace-nowrap"
-                                                          >
-                                                              DESMATRICULAR
-                                                          </button>
-                                                      </td>
-                                                  </tr>
-                                              );
-                                          })}
-                                          {sortedEnrollments.length === 0 && (
-                                              <tr>
-                                                  <td colSpan={4} className="px-6 py-8 text-center text-slate-400 italic">No hay estudiantes matriculados en este programa.</td>
-                                              </tr>
-                                          )}
-                                      </tbody>
-                                  </table>
-                              </div>
-                          </div>
-                      )}
-
-                      {/* TAB: ACADEMIC CONFIGURATION (NEW) */}
-                      {activeDetailTab === 'config' && (
-                          <div className="space-y-8 animate-fadeIn">
-                              <div className="flex justify-between items-center">
-                                  <h3 className="font-bold text-slate-800 text-lg">Estructura Curricular del Programa</h3>
-                                  <button onClick={handleAddModule} className="bg-purple-100 text-purple-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-purple-200 flex items-center gap-2">
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                                      Agregar Módulo
-                                  </button>
-                              </div>
-
-                              <div className="space-y-6">
-                                  {programConfig.modules.map((module, idx) => (
-                                      <div key={module.id} className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm hover:border-purple-300 transition-colors">
-                                          <div className="flex justify-between items-start mb-4 border-b border-slate-100 pb-4">
-                                              <div className="flex-1">
-                                                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Nombre del Módulo {idx + 1}</label>
-                                                  <input 
-                                                      type="text" 
-                                                      value={module.name} 
-                                                      onChange={(e) => handleUpdateModule(module.id, 'name', e.target.value)}
-                                                      className="w-full font-bold text-slate-800 text-lg border-none focus:ring-0 p-0 placeholder-slate-300"
-                                                      placeholder="Nombre del Módulo..."
-                                                  />
-                                              </div>
-                                              <button onClick={() => handleRemoveModule(module.id)} className="text-red-400 hover:text-red-600 p-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
-                                          </div>
-
-                                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                              {/* Academic & Evaluation */}
-                                              <div className="space-y-4">
-                                                  <div>
-                                                      <label className="block text-xs font-bold text-slate-600 mb-1">Académico a Cargo</label>
-                                                      <select 
-                                                          value={module.relatorRut || ''} 
-                                                          onChange={(e) => handleUpdateModule(module.id, 'relatorRut', e.target.value)}
-                                                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"
-                                                      >
-                                                          <option value="">Seleccione Académico...</option>
-                                                          {users.filter(u => u.systemRole === UserRole.ASESOR).map(u => (
-                                                              <option key={u.rut} value={u.rut}>{u.names} {u.paternalSurname}</option>
-                                                          ))}
-                                                      </select>
-                                                  </div>
-                                                  
-                                                  <div className="grid grid-cols-2 gap-4">
-                                                      <div>
-                                                          <label className="block text-xs font-bold text-slate-600 mb-1">Cant. Notas (0-6)</label>
-                                                          <select 
-                                                              value={module.evaluationCount} 
-                                                              onChange={(e) => {
-                                                                  const count = Number(e.target.value);
-                                                                  setProgramConfig(prev => ({
-                                                                      ...prev,
-                                                                      modules: prev.modules.map(m => {
-                                                                          if (m.id === module.id) {
-                                                                              const current = m.evaluationWeights || [];
-                                                                              const nextWeights = Array.from({length: count}, (_, i) => current[i] || 0);
-                                                                              return { ...m, evaluationCount: count, evaluationWeights: nextWeights };
-                                                                          }
-                                                                          return m;
-                                                                      })
-                                                                  }));
-                                                              }}
-                                                              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-slate-50"
-                                                          >
-                                                              {[0,1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
-                                                          </select>
-                                                      </div>
-                                                      <div>
-                                                          <label className="block text-xs font-bold text-slate-600 mb-1">Ponderación Módulo %</label>
-                                                          <input type="number" min="0" max="100" value={module.weight} onChange={(e) => handleUpdateModule(module.id, 'weight', Number(e.target.value))} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"/>
-                                                      </div>
-                                                  </div>
-
-                                                  {/* Dynamic Grade Weights */}
-                                                  {module.evaluationCount > 0 && (
-                                                      <div className="col-span-full mt-3 p-3 bg-purple-50 rounded-lg border border-purple-100">
-                                                          <label className="block text-[10px] font-bold text-purple-700 uppercase mb-2">Ponderación de cada Nota (Total 100%)</label>
-                                                          <div className="flex flex-wrap gap-2">
-                                                              {Array.from({length: module.evaluationCount}).map((_, i) => (
-                                                                  <div key={i} className="flex flex-col w-20">
-                                                                      <span className="text-[10px] text-purple-500 mb-0.5 font-bold">Nota {i+1}</span>
-                                                                      <div className="relative">
-                                                                          <input 
-                                                                              type="number" 
-                                                                              min="0" 
-                                                                              max="100" 
-                                                                              placeholder="%"
-                                                                              value={module.evaluationWeights?.[i] || 0}
-                                                                              onChange={(e) => {
-                                                                                  const val = Number(e.target.value);
-                                                                                  setProgramConfig(prev => ({
-                                                                                      ...prev,
-                                                                                      modules: prev.modules.map(m => {
-                                                                                          if(m.id === module.id) {
-                                                                                              const w = [...(m.evaluationWeights || [])];
-                                                                                              w[i] = val;
-                                                                                              return { ...m, evaluationWeights: w };
-                                                                                          }
-                                                                                          return m;
-                                                                                      })
-                                                                                  }));
-                                                                              }}
-                                                                              className="w-full px-2 py-1 text-sm border border-purple-200 rounded text-center font-bold text-purple-800 focus:ring-purple-500 focus:border-purple-500"
-                                                                          />
-                                                                          <span className="absolute right-1 top-1 text-[10px] text-purple-300">%</span>
-                                                                      </div>
-                                                                  </div>
-                                                              ))}
-                                                          </div>
-                                                      </div>
-                                                  )}
-                                              </div>
-
-                                              {/* Date Range */}
-                                              <div className="space-y-4">
-                                                  <div>
-                                                      <label className="block text-xs font-bold text-slate-600 mb-1">Fecha Inicio Módulo</label>
-                                                      <input type="date" value={module.startDate || ''} onChange={(e) => handleUpdateModule(module.id, 'startDate', e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"/>
-                                                  </div>
-                                                  <div>
-                                                      <label className="block text-xs font-bold text-slate-600 mb-1">Fecha Término Módulo</label>
-                                                      <input type="date" value={module.endDate || ''} onChange={(e) => handleUpdateModule(module.id, 'endDate', e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"/>
-                                                  </div>
-                                              </div>
-
-                                              {/* Specific Class Calendar */}
-                                              <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
-                                                  <label className="block text-xs font-bold text-purple-800 mb-2">Calendario de Clases (Días Específicos)</label>
-                                                  <div className="flex gap-2 mb-2">
-                                                      <input type="date" id={`date-${module.id}`} className="flex-1 px-2 py-1 text-xs border border-purple-200 rounded"/>
-                                                      <button 
-                                                          type="button" 
-                                                          onClick={() => {
-                                                              const input = document.getElementById(`date-${module.id}`) as HTMLInputElement;
-                                                              if(input) handleAddClassDate(module.id, input.value);
-                                                          }}
-                                                          className="bg-purple-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-purple-700"
-                                                      >
-                                                          +
-                                                      </button>
-                                                  </div>
-                                                  <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto custom-scrollbar">
-                                                      {module.classDates?.map(date => (
-                                                          <span key={date} className="bg-white border border-purple-200 text-purple-700 px-2 py-1 rounded text-[10px] flex items-center gap-1 shadow-sm">
-                                                              {formatDateCL(date)}
-                                                              <button onClick={() => handleRemoveClassDate(module.id, date)} className="text-red-400 hover:text-red-600 font-bold">×</button>
-                                                          </span>
-                                                      ))}
-                                                      {(!module.classDates || module.classDates.length === 0) && <span className="text-[10px] text-purple-400 italic">Sin fechas asignadas</span>}
-                                                  </div>
-                                              </div>
-                                          </div>
-                                      </div>
-                                  ))}
-                                  {programConfig.modules.length === 0 && (
-                                      <div className="text-center py-12 bg-slate-50 border border-dashed border-slate-300 rounded-xl text-slate-400">
-                                          Agregue módulos para configurar la estructura académica.
-                                      </div>
-                                  )}
-                              </div>
-                              
-                              <div className="flex justify-end pt-4 border-t border-slate-200">
-                                  <button onClick={handleSaveConfig} className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold shadow hover:bg-green-700 transition-colors">
-                                      Guardar Configuración Académica
-                                  </button>
-                              </div>
-                          </div>
-                      )}
-
-                      {/* TAB: TRACKING (MODULAR ACADEMIC TRACKING) */}
-                      {activeDetailTab === 'tracking' && (
-                          <div className="animate-fadeIn space-y-4">
-                              <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-center gap-4">
-                                  <div>
-                                      <h3 className="font-bold text-purple-800 text-lg">Seguimiento Académico Modular</h3>
-                                      <p className="text-xs text-purple-600">Gestión de calificaciones por módulo y cálculo de promedio final.</p>
-                                  </div>
-                                  <div className="flex gap-4 text-center">
-                                      <div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm">
-                                          <span className="block text-xl font-bold text-slate-700">{sortedEnrollments.length}</span>
-                                          <span className="text-[10px] font-bold text-slate-400 uppercase">Matriculados</span>
-                                      </div>
-                                      <div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm">
-                                          <span className="block text-xl font-bold text-slate-700">{programConfig.modules.length}</span>
-                                          <span className="text-[10px] font-bold text-slate-400 uppercase">Módulos</span>
-                                      </div>
-                                  </div>
-                              </div>
-
-                              {programConfig.modules.length === 0 ? (
-                                  <div className="text-center py-12 border border-dashed border-slate-300 rounded-xl bg-slate-50 text-slate-500">
-                                      Debe configurar los Módulos en la pestaña "Configuración Académica" antes de ingresar notas.
-                                  </div>
-                              ) : (
-                                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                                      <div className="overflow-x-auto custom-scrollbar">
-                                          <table className="w-full text-sm text-left whitespace-nowrap">
-                                              <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
-                                                  {(() => {
-                                                      const allProgramDates = programConfig.modules.flatMap(mod => 
-                                                          (mod.classDates || []).map(date => ({
-                                                              date,
-                                                              moduleId: mod.id,
-                                                              moduleName: mod.name,
-                                                              relatorRut: mod.relatorRut
-                                                          }))
-                                                      ).sort((a, b) => a.date.localeCompare(b.date));
-
-                                                      return (
-                                                          <>
-                                                              <tr>
-                                                                  <th className="px-2 py-3 bg-white sticky left-0 z-20 border-r border-slate-200 w-[200px] min-w-[200px] truncate">Estudiante</th>
-                                                                  {programConfig.modules.map((mod, idx) => (
-                                                                      <th key={mod.id} colSpan={(mod.evaluationCount || 0) + 1} className={`px-2 py-2 text-center border-r border-slate-200 ${idx % 2 === 0 ? 'bg-purple-50/50' : 'bg-white'}`}>
-                                                                          <div className="flex flex-col">
-                                                                              <span className="text-xs uppercase text-purple-700 mb-1 truncate max-w-[150px]" title={mod.name}>{mod.name}</span>
-                                                                              <span className="text-[10px] bg-white border border-purple-100 rounded px-1 w-fit mx-auto text-slate-400">{mod.weight}%</span>
-                                                                          </div>
-                                                                      </th>
-                                                                  ))}
-                                                                  <th className="px-4 py-3 text-center min-w-[80px] bg-slate-100">Final</th>
-                                                                  <th className="px-4 py-3 text-center min-w-[100px]">Estado</th>
-                                                                  
-                                                                  {/* Columnas Dinámicas para Fechas */}
-                                                                  {allProgramDates.map((d, i) => {
-                                                                      const academic = users.find(u => u.rut === d.relatorRut);
-                                                                      const surname = academic?.paternalSurname || 'S/D';
-                                                                      const dateDisplay = formatDateCL(d.date).split('-').slice(0,2).join('-');
-
-                                                                      return (
-                                                                          <th key={`${d.moduleId}-${d.date}`} className="px-1 py-2 text-center border-r border-slate-200 w-[60px] min-w-[60px]">
-                                                                              <div className="flex flex-col items-center justify-center">
-                                                                                  <span className="text-[9px] font-bold text-slate-600 uppercase truncate max-w-[55px]" title={surname}>
-                                                                                      {surname}
-                                                                                  </span>
-                                                                                  <span className="text-[9px] text-slate-400">
-                                                                                      {dateDisplay}
-                                                                                  </span>
-                                                                              </div>
-                                                                          </th>
-                                                                      );
-                                                                  })}
-                                                                  
-                                                                  {/* NUEVA COLUMNA DE PORCENTAJE */}
-                                                                  <th className="px-2 py-3 text-center min-w-[80px] bg-slate-100 border-l border-slate-200">% Asist.</th>
-                                                              </tr>
-                                                              {/* Sub-header for specific notes */}
-                                                              <tr className="bg-slate-100 text-xs text-slate-500 border-b border-slate-200">
-                                                                  <th className="bg-slate-50 sticky left-0 z-20 border-r border-slate-200"></th>
-                                                                  {programConfig.modules.map((mod, modIdx) => (
-                                                                      <React.Fragment key={`sub-${mod.id}`}>
-                                                                          {Array.from({ length: mod.evaluationCount }).map((_, noteIdx) => (
-                                                                              <th key={`${mod.id}-n${noteIdx}`} className="px-1 py-1 text-center w-[50px] min-w-[50px] font-normal border-r border-slate-100">
-                                                                                  N{noteIdx + 1} <span className="text-[8px] text-slate-300 block">{mod.evaluationWeights?.[noteIdx] || '-'}%</span>
-                                                                              </th>
-                                                                          ))}
-                                                                          <th className="px-2 py-1 text-center w-[50px] min-w-[50px] font-bold text-purple-700 bg-purple-50/30 border-r border-slate-200">Prom</th>
-                                                                      </React.Fragment>
-                                                                  ))}
-                                                                  <th className="bg-slate-100"></th>
-                                                                  <th></th>
-                                                                  {/* Spacer for Dates Subheader */}
-                                                                  {allProgramDates.map((d) => <th key={`sub-${d.date}`} className="bg-slate-50"></th>)}
-                                                                  <th className="bg-slate-100 border-l border-slate-200"></th> {/* Spacer for Percentage */}
-                                                              </tr>
-                                                          </>
-                                                      );
-                                                  })()}
-                                              </thead>
-                                              <tbody className="divide-y divide-slate-100">
-                                                  {sortedEnrollments.map((enr) => {
-                                                      const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut));
-                                                      const finalGrade = calculateFinalProgramGrade(enr.grades || []);
-                                                      
-                                                      // Calculate dates again for row mapping
-                                                      const allProgramDates = programConfig.modules.flatMap(mod => 
-                                                          (mod.classDates || []).map(date => ({ date, moduleId: mod.id }))
-                                                      ).sort((a, b) => a.date.localeCompare(b.date));
-
-                                                      // CALCULATE PERCENTAGE
-                                                      const totalDates = allProgramDates.length;
-                                                      let presentCount = 0;
-                                                      allProgramDates.forEach((_, idx) => {
-                                                          // @ts-ignore
-                                                          if (enr[`attendanceSession${idx + 1}`]) presentCount++;
-                                                      });
-                                                      const dynamicPercentage = totalDates > 0 ? Math.round((presentCount / totalDates) * 100) : 0;
-
-                                                      return (
-                                                          <tr key={enr.id} className="hover:bg-purple-50/20 transition-colors">
-                                                              <td className="px-2 py-2 font-medium text-slate-700 sticky left-0 bg-white border-r border-slate-200 z-10 w-[200px] min-w-[200px] truncate">
-                                                                  <div className="flex flex-col truncate">
-                                                                      <span className="truncate" title={`${student?.names} ${student?.paternalSurname}`}>
-                                                                          {student ? `${student.paternalSurname} ${student.maternalSurname || ''}, ${student.names}` : enr.rut}
-                                                                      </span>
-                                                                      <span className="text-[10px] text-slate-400 font-mono">{enr.rut}</span>
-                                                                  </div>
-                                                              </td>
-                                                              
-                                                              {programConfig.modules.map((mod, modIdx) => (
-                                                                  <React.Fragment key={`row-${enr.id}-${mod.id}`}>
-                                                                      {Array.from({ length: mod.evaluationCount }).map((_, noteIdx) => {
-                                                                          // Calculate global index in flat array
-                                                                          const globalIdx = getGlobalGradeIndex(modIdx, noteIdx);
-                                                                          const gradeVal = enr.grades?.[globalIdx];
-                                                                          
-                                                                          return (
-                                                                              <td key={`${enr.id}-${mod.id}-${noteIdx}`} className="px-1 py-2 text-center border-r border-slate-50">
-                                                                                  <input 
-                                                                                      type="number" 
-                                                                                      step="0.1" 
-                                                                                      min="1" 
-                                                                                      max="7" 
-                                                                                      className={`w-full min-w-[40px] text-center border border-slate-200 rounded py-1 text-sm font-bold px-0 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none
-                                                                                          ${gradeVal && gradeVal < 4.0 ? 'text-red-500' : 'text-slate-700'}
-                                                                                      `}
-                                                                                      value={gradeVal || ''} 
-                                                                                      onChange={(e) => handleUpdateGrade(enr.id, modIdx, noteIdx, e.target.value)} 
-                                                                                  />
-                                                                              </td>
-                                                                          );
-                                                                      })}
-                                                                      <td className="px-2 py-2 text-center border-r border-slate-200 bg-purple-50/10">
-                                                                          <span className={`text-xs font-bold ${parseFloat(calculateModuleAverage(enr.grades || [], modIdx)) < 4.0 ? 'text-red-500' : 'text-purple-700'}`}>
-                                                                              {calculateModuleAverage(enr.grades || [], modIdx)}
-                                                                          </span>
-                                                                      </td>
-                                                                  </React.Fragment>
-                                                              ))}
-
-                                                              <td className="px-4 py-3 text-center font-bold text-slate-800 bg-slate-50 border-l border-slate-200">
-                                                                  <span className={parseFloat(finalGrade) < 4.0 && finalGrade !== '-' ? 'text-red-600' : ''}>{finalGrade}</span>
-                                                              </td>
-                                                              <td className="px-4 py-3 text-center">
-                                                                  <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${enr.state === ActivityState.APROBADO ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                                                                      {enr.state}
-                                                                  </span>
-                                                              </td>
-
-                                                              {/* Asistencia por Fecha */}
-                                                              {allProgramDates.map((d, i) => {
-                                                                  // Map index to attendanceSession1...N
-                                                                  // Eliminado el límite de 6 para permitir visualización
-                                                                  const sessionKey = `attendanceSession${i + 1}`;
-                                                                  // @ts-ignore
-                                                                  const isChecked = enr[sessionKey];
-
-                                                                  return (
-                                                                      <td key={`att-${enr.id}-${i}`} className="px-1 py-2 text-center border-r border-slate-100">
-                                                                          <input 
-                                                                              type="checkbox" 
-                                                                              checked={!!isChecked} 
-                                                                              onChange={() => handleToggleAttendance(enr.id, i)}
-                                                                              className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer w-4 h-4"
-                                                                          />
-                                                                      </td>
-                                                                  );
-                                                              })}
-                                                              
-                                                              {/* NUEVA CELDA DE PORCENTAJE */}
-                                                              <td className="px-2 py-2 text-center font-bold text-slate-700 bg-slate-50 border-l border-slate-200">
-                                                                  <span className={dynamicPercentage < 75 ? 'text-red-500' : 'text-green-600'}>
-                                                                      {dynamicPercentage}%
-                                                                  </span>
-                                                              </td>
-                                                          </tr>
-                                                      );
-                                                  })}
-                                              </tbody>
-                                          </table>
-                                      </div>
-                                  </div>
-                              )}
-                          </div>
-                      )}
-                  </div>
-              </div>
-          </div>
-      );
+          <div className="animate-fadeIn space-y-6"><button onClick={() => { setSelectedCourseId(null); setView('list'); }} className="text-slate-500 hover:text-slate-700 mb-4 flex items-center gap-1 text-sm">← Volver al listado</button><div className="bg-white border-l-4 border-purple-600 rounded-r-xl shadow-sm p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"><div><div className="flex items-center gap-2 mb-1"><span className="bg-purple-100 text-purple-700 text-xs font-bold px-2 py-0.5 rounded">{selectedCourse.programConfig?.programType}</span><span className="text-slate-400 text-xs">|</span><span className="text-slate-500 text-xs font-bold uppercase">{selectedCourse.version}</span></div><h2 className="text-2xl font-bold text-slate-800">{selectedCourse.name}</h2><p className="text-slate-500 text-sm mt-1 flex items-center gap-4"><span>Director: {selectedCourse.relator}</span><span>•</span><span>{selectedCourse.programConfig?.modules?.length || 0} Módulos</span></p></div><div className="flex items-center gap-4"><div className="flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-lg border border-slate-100"><div className="flex items-center gap-2"><div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-green-500'}`}></div><span className="text-[10px] font-bold uppercase text-slate-500">{isSyncing ? 'Sincronizando...' : 'En Línea'}</span></div><div className="h-4 w-px bg-slate-300 mx-2"></div><button onClick={handleRefresh} className="text-xs font-bold text-purple-600 hover:text-purple-800 flex items-center gap-1"><svg className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Actualizar</button></div><button onClick={handleEditCourse} className="text-xs bg-amber-50 border border-amber-200 hover:bg-amber-100 text-amber-700 px-3 py-2 rounded-lg flex items-center gap-2 transition-colors font-bold">Modificar Datos Base</button></div></div><div className="mt-8"><div className="flex items-end gap-2 border-b border-purple-200 pl-4 mb-0"><button onClick={() => setActiveDetailTab('enrollment')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'enrollment' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Matrícula</button><button onClick={() => setActiveDetailTab('config')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'config' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Configuración Académica</button><button onClick={() => setActiveDetailTab('tracking')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'tracking' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Seguimiento</button></div><div className="bg-white rounded-b-xl rounded-tr-xl shadow-sm border border-purple-200 border-t-0 p-8">{activeDetailTab === 'enrollment' && (<div className="space-y-8"><div className={`bg-white rounded-xl shadow-sm border p-6 transition-colors ${isAlreadyEnrolled ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}><div className="flex justify-between items-center mb-6"><h3 className={`font-bold text-lg flex items-center gap-2 ${isAlreadyEnrolled ? 'text-red-700' : 'text-slate-800'}`}>{isAlreadyEnrolled ? (<><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg> Gestión de Matrícula Existente</>) : ("Matrícula Individual")}</h3>{isFoundInMaster && !isAlreadyEnrolled && (<span className="text-xs px-2 py-1 rounded border bg-green-50 text-green-700 border-green-200">Datos de Base Maestra</span>)}</div><form onSubmit={handleManualEnroll} className="space-y-8"><div className="space-y-4"><h3 className={`text-sm font-bold uppercase tracking-wide border-b pb-2 ${isAlreadyEnrolled ? 'text-red-400 border-red-100' : 'text-slate-500 border-slate-100'}`}>Identificación Personal</h3><div className="grid grid-cols-1 md:grid-cols-4 gap-4"><div className="md:col-span-1 relative"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><div className="relative"><input type="text" name="rut" placeholder="12345678-9" autoComplete="off" value={manualForm.rut} onChange={handleManualFormChange} onBlur={handleRutBlur} className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : 'bg-white border-slate-300'} ${isAlreadyEnrolled ? 'border-red-500 bg-white text-red-800' : ''}`}/>{showSuggestions && activeSearchField === 'rut' && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0"><div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por RUT</div>{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div></div><div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" name="names" value={manualForm.names} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div><div className="md:col-span-1 relative"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label><input type="text" name="paternalSurname" value={manualForm.paternalSurname} onChange={handleManualFormChange} autoComplete="off" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/>{showSuggestions && activeSearchField === 'paternalSurname' && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0"><div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por Apellido</div>{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.paternalSurname} {s.maternalSurname}</span><span className="text-xs text-slate-500">{s.names} ({s.rut})</span></div>))}</div>)}</div><div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={manualForm.maternalSurname} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div></div></div><div className="space-y-4"><h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Información de Contacto</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-xs font-medium text-slate-700 mb-1">Correo Institucional</label><input type="email" name="email" value={manualForm.email} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div><div><label className="block text-xs font-medium text-slate-700 mb-1">Teléfono</label><input type="tel" name="phone" value={manualForm.phone} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div></div></div><div className="space-y-4"><h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Información Académica</h3><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label className="block text-xs font-medium text-slate-700 mb-1">Sede / Campus</label><input type="text" name="campus" value={manualForm.campus} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div><div><SmartSelect label="Facultad" name="faculty" value={manualForm.faculty} options={listFaculties} onChange={handleManualFormChange} /></div><div><SmartSelect label="Departamento" name="department" value={manualForm.department} options={listDepts} onChange={handleManualFormChange} /></div><div><SmartSelect label="Carrera" name="career" value={manualForm.career} options={listCareers} onChange={handleManualFormChange} /></div><div><SmartSelect label="Tipo Contrato" name="contractType" value={manualForm.contractType} options={listContracts} onChange={handleManualFormChange} /></div><div><SmartSelect label="Semestre Docencia" name="teachingSemester" value={manualForm.teachingSemester} options={listSemesters} onChange={handleManualFormChange} /></div></div></div><div className="space-y-4"><h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Roles</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><SmartSelect label="Rol / Cargo Académico" name="academicRole" value={manualForm.academicRole} options={listRoles} onChange={handleManualFormChange} /></div></div></div>{isFoundInMaster && (<div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4"><h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Acciones de Base Maestra (Usuario Existente)</h4><div className="flex gap-2"><button type="button" onClick={handleUpdateMasterData} disabled={isSyncing} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 px-3 rounded shadow-sm flex items-center justify-center gap-1 transition-colors"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Guardar Cambios (Datos Personales)</button></div></div>)}{isAlreadyEnrolled ? (<button type="button" onClick={handleUnenroll} disabled={isSyncing} className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all bg-red-600 hover:bg-red-700 text-white ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>Eliminar Matrícula del Curso</button>) : (<button type="submit" disabled={isSyncing} className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all bg-purple-600 text-white hover:bg-purple-700 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>Matricular Usuario</button>)}{enrollMsg && (<div className={`text-xs p-3 rounded-lg text-center font-medium ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{enrollMsg.text}</div>)}</form></div><div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col"><h3 className="font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100 flex items-center gap-2"><svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>Carga Masiva (CSV / Excel)</h3><div className="flex-1 space-y-6 flex flex-col justify-center"><p className="text-sm text-slate-600">Suba un archivo con las 13 columnas requeridas para la matrícula.<br/><span className="text-xs text-slate-400">.csv, .xls, .xlsx</span></p><label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-purple-200 bg-purple-50 hover:bg-purple-100'}`}><div className="flex flex-col items-center justify-center pt-5 pb-6">{uploadFile ? (<><svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="mb-1 text-sm font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-8 h-8 text-purple-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg><p className="mb-1 text-sm text-purple-600 font-semibold">Seleccionar archivo</p></>)}</div><input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} /></label><div className="flex items-center justify-center gap-2 mt-2"><input type="checkbox" id="hasHeadersEnrollment" checked={hasHeaders} onChange={e => setHasHeaders(e.target.checked)} className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer" /><label htmlFor="hasHeadersEnrollment" className="text-sm text-slate-700 cursor-pointer select-none">Ignorar primera fila (encabezados)</label></div><button onClick={handleBulkUpload} disabled={!uploadFile} className="mt-auto w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-900 disabled:opacity-50 shadow-md transition-all">Procesar Archivo</button></div></div><div className="overflow-hidden rounded-xl border border-slate-200"><table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-700"><tr><th className="px-6 py-3">RUT</th><th className="px-6 py-3">Nombre</th><th className="px-6 py-3">Estado</th><th className="px-6 py-3 text-center">Acción</th></tr></thead><tbody>{sortedEnrollments.map(enr => { const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut)); return (<tr key={enr.id} className="border-t border-slate-100"><td className="px-6 py-3 font-mono">{enr.rut}</td><td className="px-6 py-3">{u?.names} {u?.paternalSurname}</td><td className="px-6 py-3">{enr.state}</td><td className="px-6 py-3 text-center"><button onClick={() => handleUnenrollFromList(enr.id, u ? `${u.names} ${u.paternalSurname}` : enr.rut)} className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 px-3 py-1.5 rounded text-[10px] font-black uppercase transition-all shadow-sm whitespace-nowrap">DESMATRICULAR</button></td></tr>);})}{sortedEnrollments.length === 0 && (<tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400 italic">No hay estudiantes matriculados en este programa.</td></tr>)}</tbody></table></div></div>)} {activeDetailTab === 'config' && (<div className="space-y-8 animate-fadeIn"><div className="flex justify-between items-center"><h3 className="font-bold text-slate-800 text-lg">Estructura Curricular del Programa</h3><button onClick={handleAddModule} className="bg-purple-100 text-purple-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-purple-200 flex items-center gap-2"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Agregar Módulo</button></div><div className="space-y-6">{programConfig.modules.map((module, idx) => (<div key={module.id} className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm hover:border-purple-300 transition-colors"><div className="flex justify-between items-start mb-4 border-b border-slate-100 pb-4"><div className="flex-1"><label className="block text-xs font-bold text-slate-400 uppercase mb-1">Nombre del Módulo {idx + 1}</label><input type="text" value={module.name} onChange={(e) => handleUpdateModule(module.id, 'name', e.target.value)} className="w-full font-bold text-slate-800 text-lg border-none focus:ring-0 p-0 placeholder-slate-300" placeholder="Nombre del Módulo..."/></div><button onClick={() => handleRemoveModule(module.id)} className="text-red-400 hover:text-red-600 p-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button></div><div className="grid grid-cols-1 md:grid-cols-3 gap-6"><div className="space-y-4"><div><label className="block text-xs font-bold text-slate-600 mb-1">Académico a Cargo</label><select value={module.relatorRut || ''} onChange={(e) => handleUpdateModule(module.id, 'relatorRut', e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"><option value="">Seleccione Académico...</option>{users.filter(u => u.systemRole === UserRole.ASESOR).map(u => (<option key={u.rut} value={u.rut}>{u.names} {u.paternalSurname}</option>))}</select></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-600 mb-1">Cant. Notas (0-6)</label><select value={module.evaluationCount} onChange={(e) => { const count = Number(e.target.value); setProgramConfig(prev => ({ ...prev, modules: prev.modules.map(m => { if (m.id === module.id) { const current = m.evaluationWeights || []; const nextWeights = Array.from({length: count}, (_, i) => current[i] || 0); return { ...m, evaluationCount: count, evaluationWeights: nextWeights }; } return m; }) })); }} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-slate-50">{[0,1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}</select></div><div><label className="block text-xs font-bold text-slate-600 mb-1">Ponderación Módulo %</label><input type="number" min="0" max="100" value={module.weight} onChange={(e) => handleUpdateModule(module.id, 'weight', Number(e.target.value))} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"/></div></div>{module.evaluationCount > 0 && (<div className="col-span-full mt-3 p-3 bg-purple-50 rounded-lg border border-purple-100"><label className="block text-[10px] font-bold text-purple-700 uppercase mb-2">Ponderación de cada Nota (Total 100%)</label><div className="flex flex-wrap gap-2">{Array.from({length: module.evaluationCount}).map((_, i) => (<div key={i} className="flex flex-col w-20"><span className="text-[10px] text-purple-500 mb-0.5 font-bold">Nota {i+1}</span><div className="relative"><input type="number" min="0" max="100" placeholder="%" value={module.evaluationWeights?.[i] || 0} onChange={(e) => { const val = Number(e.target.value); setProgramConfig(prev => ({ ...prev, modules: prev.modules.map(m => { if(m.id === module.id) { const w = [...(m.evaluationWeights || [])]; w[i] = val; return { ...m, evaluationWeights: w }; } return m; }) })); }} className="w-full px-2 py-1 text-sm border border-purple-200 rounded text-center font-bold text-purple-800 focus:ring-purple-500 focus:border-purple-500"/><span className="absolute right-1 top-1 text-[10px] text-purple-300">%</span></div></div>))}</div></div>)}</div><div className="space-y-4"><div><label className="block text-xs font-bold text-slate-600 mb-1">Fecha Inicio Módulo</label><input type="date" value={module.startDate || ''} onChange={(e) => handleUpdateModule(module.id, 'startDate', e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"/></div><div><label className="block text-xs font-bold text-slate-600 mb-1">Fecha Término Módulo</label><input type="date" value={module.endDate || ''} onChange={(e) => handleUpdateModule(module.id, 'endDate', e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"/></div></div><div className="bg-purple-50 p-4 rounded-lg border border-purple-100"><label className="block text-xs font-bold text-purple-800 mb-2">Calendario de Clases (Días Específicos)</label><div className="flex gap-2 mb-2"><input type="date" id={`date-${module.id}`} className="flex-1 px-2 py-1 text-xs border border-purple-200 rounded"/><button type="button" onClick={() => { const input = document.getElementById(`date-${module.id}`) as HTMLInputElement; if(input) handleAddClassDate(module.id, input.value); }} className="bg-purple-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-purple-700">+</button></div><div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto custom-scrollbar">{module.classDates?.map(date => (<span key={date} className="bg-white border border-purple-200 text-purple-700 px-2 py-1 rounded text-[10px] flex items-center gap-1 shadow-sm">{formatDateCL(date)}<button onClick={() => handleRemoveClassDate(module.id, date)} className="text-red-400 hover:text-red-600 font-bold">×</button></span>))}{(!module.classDates || module.classDates.length === 0) && <span className="text-[10px] text-purple-400 italic">Sin fechas asignadas</span>}</div></div></div></div>))} {programConfig.modules.length === 0 && (<div className="text-center py-12 bg-slate-50 border border-dashed border-slate-300 rounded-xl text-slate-400">Agregue módulos para configurar la estructura académica.</div>)}</div><div className="flex justify-end pt-4 border-t border-slate-200"><button onClick={handleSaveConfig} className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold shadow hover:bg-green-700 transition-colors">Guardar Configuración Académica</button></div></div>)} {activeDetailTab === 'tracking' && (<div className="animate-fadeIn space-y-4"><div className="bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-center gap-4"><div><h3 className="font-bold text-purple-800 text-lg">Seguimiento Académico Modular</h3><p className="text-xs text-purple-600">Gestión de calificaciones por módulo y cálculo de promedio final.</p></div><div className="flex gap-4 text-center"><div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm"><span className="block text-xl font-bold text-slate-700">{sortedEnrollments.length}</span><span className="text-[10px] font-bold text-slate-400 uppercase">Matriculados</span></div><div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm"><span className="block text-xl font-bold text-slate-700">{programConfig.modules.length}</span><span className="text-[10px] font-bold text-slate-400 uppercase">Módulos</span></div></div></div> {programConfig.modules.length === 0 ? (<div className="text-center py-12 border border-dashed border-slate-300 rounded-xl bg-slate-50 text-slate-500">Debe configurar los Módulos en la pestaña "Configuración Académica" antes de ingresar notas.</div>) : (<div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"><div className="overflow-x-auto custom-scrollbar"><table className="w-full text-sm text-left whitespace-nowrap"><thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">{(() => { const allProgramDates = programConfig.modules.flatMap(mod => (mod.classDates || []).map(date => ({ date, moduleId: mod.id, moduleName: mod.name, relatorRut: mod.relatorRut })) ).sort((a, b) => a.date.localeCompare(b.date)); return (<><tr><th className="px-2 py-3 bg-white sticky left-0 z-20 border-r border-slate-200 w-[200px] min-w-[200px] truncate">Estudiante</th>{programConfig.modules.map((mod, idx) => (<th key={mod.id} colSpan={(mod.evaluationCount || 0) + 1} className={`px-2 py-2 text-center border-r border-slate-200 ${idx % 2 === 0 ? 'bg-purple-50/50' : 'bg-white'}`}><div className="flex flex-col"><span className="text-xs uppercase text-purple-700 mb-1 truncate max-w-[150px]" title={mod.name}>{mod.name}</span><span className="text-[10px] bg-white border border-purple-100 rounded px-1 w-fit mx-auto text-slate-400">{mod.weight}%</span></div></th>))}<th className="px-4 py-3 text-center min-w-[80px] bg-slate-100">Final</th><th className="px-4 py-3 text-center min-w-[100px]">Estado</th>{allProgramDates.map((d, i) => { const academic = users.find(u => u.rut === d.relatorRut); const surname = academic?.paternalSurname || 'S/D'; const dateDisplay = formatDateCL(d.date).split('-').slice(0,2).join('-'); return (<th key={`${d.moduleId}-${d.date}`} className="px-1 py-2 text-center border-r border-slate-200 w-[60px] min-w-[60px]"><div className="flex flex-col items-center justify-center"><span className="text-[9px] font-bold text-slate-600 uppercase truncate max-w-[55px]" title={surname}>{surname}</span><span className="text-[9px] text-slate-400">{dateDisplay}</span></div></th>); })} <th className="px-2 py-3 text-center min-w-[80px] bg-slate-100 border-l border-slate-200">% Asist.</th></tr><tr className="bg-slate-100 text-xs text-slate-500 border-b border-slate-200"><th className="bg-slate-50 sticky left-0 z-20 border-r border-slate-200"></th>{programConfig.modules.map((mod, modIdx) => (<React.Fragment key={`sub-${mod.id}`}>{Array.from({ length: mod.evaluationCount }).map((_, noteIdx) => (<th key={`${mod.id}-n${noteIdx}`} className="px-1 py-1 text-center w-[50px] min-w-[50px] font-normal border-r border-slate-100">N{noteIdx + 1} <span className="text-[8px] text-slate-300 block">{mod.evaluationWeights?.[noteIdx] || '-'}%</span></th>))}<th className="px-2 py-1 text-center w-[50px] min-w-[50px] font-bold text-purple-700 bg-purple-50/30 border-r border-slate-200">Prom</th></React.Fragment>))}{<th className="bg-slate-100"></th>}{<th></th>}{allProgramDates.map((d) => <th key={`sub-${d.date}`} className="bg-slate-50"></th>)}{<th className="bg-slate-100 border-l border-slate-200"></th>}</tr></>); })()}</thead><tbody className="divide-y divide-slate-100">{sortedEnrollments.map((enr) => { const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut)); const finalGrade = calculateFinalProgramGrade(enr.grades || []); const allProgramDates = programConfig.modules.flatMap(mod => (mod.classDates || []).map(date => ({ date, moduleId: mod.id })) ).sort((a, b) => a.date.localeCompare(b.date)); const totalDates = allProgramDates.length; let presentCount = 0; allProgramDates.forEach((_, idx) => { if (enr[`attendanceSession${idx + 1}` as keyof Enrollment]) presentCount++; }); const dynamicPercentage = totalDates > 0 ? Math.round((presentCount / totalDates) * 100) : 0; return (<tr key={enr.id} className="hover:bg-purple-50/20 transition-colors"><td className="px-2 py-2 font-medium text-slate-700 sticky left-0 bg-white border-r border-slate-200 z-10 w-[200px] min-w-[200px] truncate"><div className="flex flex-col truncate"><span className="truncate" title={`${student?.names} ${student?.paternalSurname}`}>{student ? `${student.paternalSurname} ${student.maternalSurname || ''}, ${student.names}` : enr.rut}</span><span className="text-[10px] text-slate-400 font-mono">{enr.rut}</span></div></td>{programConfig.modules.map((mod, modIdx) => (<React.Fragment key={`row-${enr.id}-${mod.id}`}>{Array.from({ length: mod.evaluationCount }).map((_, noteIdx) => { const globalIdx = getGlobalGradeIndex(modIdx, noteIdx); const gradeVal = enr.grades?.[globalIdx]; return (<td key={`${enr.id}-${mod.id}-${noteIdx}`} className="px-1 py-2 text-center border-r border-slate-50"><input type="number" step="0.1" min="1" max="7" className={`w-full min-w-[40px] text-center border border-slate-200 rounded py-1 text-sm font-bold px-0 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal && gradeVal < 4.0 ? 'text-red-500' : 'text-slate-700'}`} value={gradeVal || ''} onChange={(e) => handleUpdateGrade(enr.id, modIdx, noteIdx, e.target.value)} /></td>); })}<td className="px-2 py-2 text-center border-r border-slate-200 bg-purple-50/10"><span className={`text-xs font-bold ${parseFloat(calculateModuleAverage(enr.grades || [], modIdx)) < 4.0 ? 'text-red-500' : 'text-purple-700'}`}>{calculateModuleAverage(enr.grades || [], modIdx)}</span></td></React.Fragment>))}<td className="px-4 py-3 text-center font-bold text-slate-800 bg-slate-50 border-l border-slate-200"><span className={parseFloat(finalGrade) < 4.0 && finalGrade !== '-' ? 'text-red-600' : ''}>{finalGrade}</span></td><td className="px-4 py-3 text-center"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${enr.state === ActivityState.APROBADO ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{enr.state}</span></td>{allProgramDates.map((d, i) => { const sessionKey = `attendanceSession${i + 1}` as keyof Enrollment; const isChecked = enr[sessionKey]; return (<td key={`att-${enr.id}-${i}`} className="px-1 py-2 text-center border-r border-slate-100"><input type="checkbox" checked={!!isChecked} onChange={() => handleToggleAttendance(enr.id, i)} className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer w-4 h-4"/></td>); })} <td className="px-2 py-2 text-center font-bold text-slate-700 bg-slate-50 border-l border-slate-200"><span className={dynamicPercentage < 75 ? 'text-red-500' : 'text-green-600'}>{dynamicPercentage}%</span></td></tr>); })}</tbody></table></div></div>)}</div>)}</div></div></div>);
   }
 
   return <div>Estado desconocido</div>;
