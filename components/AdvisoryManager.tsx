@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Enrollment, User, UserRole, Activity, SessionLog, ActivityState } from '../types';
@@ -127,7 +128,7 @@ export const PublicVerification: React.FC<{ code: string }> = ({ code }) => {
                     <div className="w-full text-left bg-slate-50 rounded-lg border border-slate-200 p-5 space-y-4 text-sm">
                         <div className="flex justify-between border-b border-slate-200 pb-2"><span className="text-slate-500 font-medium text-xs uppercase">Código Único</span><span className="font-mono font-bold text-slate-800 bg-slate-200 px-2 rounded">{log.verificationCode}</span></div>
                         <div className="flex justify-between border-b border-slate-200 pb-2"><span className="text-slate-500 font-medium text-xs uppercase">Docente</span><div className="text-right"><span className="font-bold text-slate-800 block">{student?.names} {student?.paternal_surname}</span></div></div>
-                        <div className="flex justify-between border-b border-slate-200 pb-2"><span className="text-slate-500 font-medium text-xs uppercase">Fecha</span><span className="font-bold text-slate-800">{new Date(log.date + 'T12:00:00').toLocaleDateString()}</span></div>
+                        <div className="flex justify-between border-b border-slate-200 pb-2"><span className="text-slate-500 font-medium text-xs uppercase">Fecha</span><span className="font-bold text-slate-800">{formatDateCL(log.date)}</span></div>
                         <div className="flex justify-between"><span className="text-slate-500 font-medium text-xs uppercase">Asesor</span><span className="font-bold text-indigo-700 text-right">{log.advisorName}</span></div>
                     </div>
                 </div>
@@ -448,7 +449,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
 
     const handleEditLog = (log: any, index: number) => {
         if (log.id) { setEditingLogId(log.id); setEditingLogIndex(null); } else { setEditingLogId(null); setEditingLogIndex(index); }
-        setSessionForm({ date: log.date, duration: log.duration, observation: log.observation, location: log.location || '', modality: log.modality || 'Presencial', tags: log.tags || [], advisorName: log.advisorName || '' }); setTagInput(''); setSignatureStep('form'); window.scrollTo({ top: 0, behavior: 'smooth' });
+        setSessionForm({ date: log.date, duration: log.duration, observation: log.observation, location: log.location || '', modality: log.modality || 'Presencial', tags: log.tags || [] , advisorName: log.advisorName || '' }); setTagInput(''); setSignatureStep('form'); window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleSaveEdit = async () => {
@@ -678,7 +679,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                                         <div className={`absolute left-0 top-0 bottom-0 w-1 ${log.verified ? 'bg-green-500' : 'bg-amber-300'} rounded-l-lg`}></div>
                                                         <div className="flex justify-between items-start mb-2">
                                                             <div>
-                                                                <span className="text-sm font-bold text-indigo-700 block">{new Date(log.date).toLocaleDateString()}</span>
+                                                                <span className="text-sm font-bold text-indigo-700 block">{formatDateCL(log.date)}</span>
                                                                 <div className="flex flex-col">
                                                                     <span className="text-xs text-slate-400">Atendido por: {log.advisorName || 'Asesor'}</span>
                                                                     {(log.modality || log.location) && (<span className="text-[10px] text-slate-500 mt-0.5">{log.modality} {log.location ? `• ${log.location}` : ''}</span>)}
