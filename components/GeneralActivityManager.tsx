@@ -53,7 +53,7 @@ const normalizeValue = (val: string, masterList: string[]): string => {
 };
 
 export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ currentUser }) => {
-    const { activities, addActivity, deleteActivity, enrollments, users, getUser, upsertUsers, enrollUser, bulkEnroll, config } = useData();
+    const { activities, addActivity, deleteActivity, enrollments, users, getUser, upsertUsers, enrollUser, bulkEnroll, updateEnrollment, deleteEnrollment, config, refreshData } = useData();
     const { isSyncing, executeReload } = useReloadDirective();
     
     // Lists needed for enrollment form
@@ -228,7 +228,6 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         setIsProcessing(true);
         const formattedRut = cleanRutFormat(enrollForm.rut);
         
-        // FIX: Garantizar que el email nunca sea null para evitar crash en Supabase (Netlify)
         const userToUpsert: User = {
             rut: formattedRut, 
             names: enrollForm.names, 
@@ -257,6 +256,19 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
             setEnrollMsg({ type: 'error', text: `Error al registrar: ${error.message || 'Verifique conexión.'}` });
         } finally {
             setIsProcessing(false);
+        }
+    };
+
+    const handleUnenrollFromList = async (enrollmentId: string, studentName: string) => {
+        if (confirm(`¿Confirma que desea retirar a ${studentName} de esta actividad?\n\nEl registro del estudiante permanecerá en la Base Maestra.`)) {
+            try {
+                await deleteEnrollment(enrollmentId);
+                await executeReload();
+                setEnrollMsg({ type: 'success', text: 'Estudiante retirado correctamente.' });
+                setTimeout(() => setEnrollMsg(null), 3000);
+            } catch (err) {
+                alert("Error al retirar al estudiante.");
+            }
         }
     };
 
@@ -314,8 +326,8 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                     const masterUser = users.find(u => normalizeRut(u.rut) === normRut);
                     const hasNameInFile = rowStrings[1] && rowStrings[1].length > 1;
 
-                    if (hasNameInFile) {
-                        // FIX: Fallback de Email para evitar error NOT NULL en ambiente Netlify
+                    // OPTIMIZACIÓN: Si el usuario es nuevo O la planilla trae información de nombre, actualizamos/creamos
+                    if (hasNameInFile || !masterUser) {
                         const excelEmail = rowStrings[4];
                         const masterEmail = masterUser?.email;
                         const fallbackEmail = `upla.${cleanRut.replace(/[^0-9kK]/g, '')}@universidad.cl`;
@@ -620,16 +632,32 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                             <div className="overflow-x-auto max-h-96">
                                 <table className="w-full text-sm text-left">
                                     <thead className="bg-white text-slate-500 font-bold border-b border-slate-100 sticky top-0">
-                                        <tr><th className="px-6 py-3">Participante</th><th className="px-6 py-3">RUT</th><th className="px-6 py-3">Email</th><th className="px-6 py-3">Unidad</th><th className="px-6 py-3 text-center">Estado</th></tr>
+                                        <tr><th className="px-6 py-3">Participante</th><th className="px-6 py-3">RUT</th><th className="px-6 py-3">Email</th><th className="px-6 py-3">Unidad</th><th className="px-6 py-3">Estado</th><th className="px-6 py-3 text-center">Acción</th></tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
                                         {sortedActivityEnrollments.map(enr => {
                                             const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut));
                                             return (
-                                                <tr key={enr.id} className="hover:bg-slate-50"><td className="px-6 py-3 font-medium text-slate-700">{u ? `${u.names} ${u.paternalSurname}` : 'Usuario No en Base Maestra'}</td><td className="px-6 py-3 font-mono text-xs text-slate-500">{enr.rut}</td><td className="px-6 py-3 text-xs text-slate-500">{u?.email || '-'}</td><td className="px-6 py-3 text-xs text-slate-500">{u?.faculty || '-'}</td><td className="px-6 py-3 text-center"><span className="bg-green-100 text-green-700 text-[10px] px-2 py-1 rounded-full font-bold uppercase">{enr.state}</span></td></tr>
+                                                <tr key={enr.id} className="hover:bg-slate-50">
+                                                    <td className="px-6 py-3 font-medium text-slate-700">{u ? `${u.names} ${u.paternalSurname}` : 'Usuario No en Base Maestra'}</td>
+                                                    <td className="px-6 py-3 font-mono text-xs text-slate-500">{enr.rut}</td>
+                                                    <td className="px-6 py-3 text-xs text-slate-500">{u?.email || '-'}</td>
+                                                    <td className="px-6 py-3 text-xs text-slate-500">{u?.faculty || '-'}</td>
+                                                    <td className="px-6 py-3">
+                                                        <span className="bg-green-100 text-green-700 text-[10px] px-2 py-1 rounded-full font-bold uppercase">{enr.state}</span>
+                                                    </td>
+                                                    <td className="px-6 py-3 text-center">
+                                                        <button 
+                                                            onClick={() => handleUnenrollFromList(enr.id, u ? `${u.names} ${u.paternalSurname}` : enr.rut)}
+                                                            className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 px-3 py-1.5 rounded text-[10px] font-black uppercase transition-all shadow-sm whitespace-nowrap"
+                                                        >
+                                                            DAR DE BAJA
+                                                        </button>
+                                                    </td>
+                                                </tr>
                                             );
                                         })}
-                                        {sortedActivityEnrollments.length === 0 && (<tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">No hay participantes registrados aún.</td></tr>)}
+                                        {sortedActivityEnrollments.length === 0 && (<tr><td colSpan={6} className="px-6 py-8 text-center text-slate-400 italic">No hay participantes registrados aún.</td></tr>)}
                                     </tbody>
                                 </table>
                             </div>
