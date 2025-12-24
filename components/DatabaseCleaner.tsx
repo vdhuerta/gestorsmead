@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useData } from '../context/DataContext';
 // @ts-ignore
@@ -14,19 +13,23 @@ const normalizeString = (str: string): string => {
         .trim();
 };
 
-// --- Utility: RUT Normalization with 0 Padding ---
+// --- Utility: RUT Normalization (Preservando/Agregando 0 inicial para 7 dígitos + DV) ---
 const formatRutWithPadding = (raw: string): string => {
+    // Limpiar caracteres no permitidos
     let clean = raw.replace(/[^0-9kK]/g, '');
     if (clean.length < 7) return raw;
 
-    // Caso: 7 dígitos + DV (Total 8) -> Agrega 0 inicial
+    // NORMA: Si tiene 8 caracteres (7 dígitos + DV), agregar el 0 a la izquierda
+    // para estandarizar a 9 caracteres (8 dígitos + DV)
     if (clean.length === 8) {
-        return `0${clean.substring(0, 7)}-${clean.substring(7).toUpperCase()}`;
+        clean = '0' + clean;
     }
 
-    // Caso: 8 dígitos + DV (Total 9) -> Formato estándar
+    // Si tiene 9 caracteres, se asume que ya viene con el 0 o es un RUT de 8 dígitos + DV
     if (clean.length === 9) {
-        return `${clean.substring(0, 8)}-${clean.substring(8).toUpperCase()}`;
+        const body = clean.substring(0, 8);
+        const dv = clean.substring(8).toUpperCase();
+        return `${body}-${dv}`;
     }
 
     return raw;
