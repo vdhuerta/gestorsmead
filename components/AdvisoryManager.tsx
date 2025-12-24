@@ -183,7 +183,18 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const [editingLogId, setEditingLogId] = useState<string | null>(null);
     const [editingLogIndex, setEditingLogIndex] = useState<number | null>(null);
     const [isGeneratingTags, setIsGeneratingTags] = useState(false);
-    const [sessionForm, setSessionForm] = useState<{ date: string; duration: number; observation: string; location: string; modality: string; tags: string[]; }>({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [] });
+    
+    // Updated Session Form to include advisorName for admins
+    const [sessionForm, setSessionForm] = useState<{ date: string; duration: number; observation: string; location: string; modality: string; tags: string[]; advisorName: string; }>({ 
+        date: new Date().toISOString().split('T')[0], 
+        duration: 60, 
+        observation: '', 
+        location: '', 
+        modality: 'Presencial', 
+        tags: [],
+        advisorName: ''
+    });
+
     const [tagInput, setTagInput] = useState('');
     const [manageTab, setManageTab] = useState<'management' | 'tracking'>('management');
 
@@ -308,7 +319,24 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         } catch (err: any) { setEnrollMsg({ type: 'error', text: `Error: ${err.message || 'No se pudo guardar'}` }); setIsProcessing(false); }
     };
 
-    const handleManageStudent = (enrollmentId: string) => { setSelectedEnrollmentId(enrollmentId); setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [] }); setTagInput(''); setSignatureStep('form'); setManageTab('management'); setEditingLogId(null); setEditingLogIndex(null); setView('manage'); };
+    const handleManageStudent = (enrollmentId: string) => { 
+        setSelectedEnrollmentId(enrollmentId); 
+        setSessionForm({ 
+            date: new Date().toISOString().split('T')[0], 
+            duration: 60, 
+            observation: '', 
+            location: '', 
+            modality: 'Presencial', 
+            tags: [],
+            advisorName: '' // Se resetea al abrir expediente
+        }); 
+        setTagInput(''); 
+        setSignatureStep('form'); 
+        setManageTab('management'); 
+        setEditingLogId(null); 
+        setEditingLogIndex(null); 
+        setView('manage'); 
+    };
 
     const handleDeleteBitacora = async (id: string, name: string) => { 
         if(window.confirm(`ADVERTENCIA: ¿Está seguro que desea eliminar la bitácora completa de ${name}?`)) {
@@ -334,8 +362,25 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const handleStartSignature = async () => {
         if (!sessionForm.date || !sessionForm.observation) { alert("Por favor complete fecha y observaciones."); return; }
         if (!selectedEnrollmentId) return;
+
+        // Logic for advisor name selection
+        const advisorToUse = isAdmin && sessionForm.advisorName 
+            ? sessionForm.advisorName 
+            : (currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : 'Asesor');
+
         const sessionId = `SES-${Date.now()}`; setCurrentSessionId(sessionId);
-        const newLog: any = { id: sessionId, date: sessionForm.date, duration: sessionForm.duration, observation: sessionForm.observation, advisorName: currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : 'Asesor', verified: false, signedAt: undefined, location: sessionForm.location, modality: sessionForm.modality, tags: sessionForm.tags };
+        const newLog: any = { 
+            id: sessionId, 
+            date: sessionForm.date, 
+            duration: sessionForm.duration, 
+            observation: sessionForm.observation, 
+            advisorName: advisorToUse, 
+            verified: false, 
+            signedAt: undefined, 
+            location: sessionForm.location, 
+            modality: sessionForm.modality, 
+            tags: sessionForm.tags 
+        };
         const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
         
         await updateEnrollment(selectedEnrollmentId, { sessionLogs: [...(enrollment?.sessionLogs || []), newLog] });
@@ -347,13 +392,18 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         if (!sessionForm.date || !sessionForm.observation) { alert("Por favor complete fecha y observaciones."); return; }
         if (!selectedEnrollmentId) return;
         
+        // Logic for advisor name selection
+        const advisorToUse = isAdmin && sessionForm.advisorName 
+            ? sessionForm.advisorName 
+            : (currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : 'Administrador');
+
         const sessionId = `SES-SF-${Date.now()}`;
         const newLog: SessionLog = {
             id: sessionId,
             date: sessionForm.date,
             duration: sessionForm.duration,
             observation: sessionForm.observation,
-            advisorName: currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : 'Administrador',
+            advisorName: advisorToUse,
             verified: true,
             authorizedByAdmin: true, // Marcado como autorizado manualmente
             verificationCode: `ADMIN-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
@@ -369,7 +419,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             await executeReload(); // DIRECTIVA_RECARGA
             if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId);
             
-            setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [] });
+            setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [], advisorName: '' });
             setSignatureStep('form');
             alert("Registro guardado exitosamente (Autorizado por ADMIN).");
         } catch (err) {
@@ -377,11 +427,11 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         }
     };
 
-    const handleCancelSession = () => { if(sessionForm.observation || sessionForm.tags.length > 0) { if(!window.confirm("¿Desea cancelar el registro?")) return; } setEditingLogId(null); setEditingLogIndex(null); setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [] }); setTagInput(''); setSignatureStep('form'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    const handleCancelSession = () => { if(sessionForm.observation || sessionForm.tags.length > 0) { if(!window.confirm("¿Desea cancelar el registro?")) return; } setEditingLogId(null); setEditingLogIndex(null); setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [], advisorName: '' }); setTagInput(''); setSignatureStep('form'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
     const handleEditLog = (log: any, index: number) => {
         if (log.id) { setEditingLogId(log.id); setEditingLogIndex(null); } else { setEditingLogId(null); setEditingLogIndex(index); }
-        setSessionForm({ date: log.date, duration: log.duration, observation: log.observation, location: log.location || '', modality: log.modality || 'Presencial', tags: log.tags || [] }); setTagInput(''); setSignatureStep('form'); window.scrollTo({ top: 0, behavior: 'smooth' });
+        setSessionForm({ date: log.date, duration: log.duration, observation: log.observation, location: log.location || '', modality: log.modality || 'Presencial', tags: log.tags || [], advisorName: log.advisorName || '' }); setTagInput(''); setSignatureStep('form'); window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleSaveEdit = async () => {
@@ -390,7 +440,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         if (!enrollment) return;
         const updatedLogs = (enrollment.sessionLogs || []).map((log, i) => {
             const isTarget = (editingLogId && log.id === editingLogId) || (editingLogIndex !== null && i === editingLogIndex);
-            if (isTarget) return { ...log, id: log.id || `SES-LEGACY-${Date.now()}`, date: sessionForm.date, duration: sessionForm.duration, observation: sessionForm.observation, location: sessionForm.location, modality: sessionForm.modality, tags: sessionForm.tags };
+            if (isTarget) return { ...log, id: log.id || `SES-LEGACY-${Date.now()}`, date: sessionForm.date, duration: sessionForm.duration, observation: sessionForm.observation, location: sessionForm.location, modality: sessionForm.modality, tags: sessionForm.tags, advisorName: isAdmin && sessionForm.advisorName ? sessionForm.advisorName : log.advisorName };
             return log;
         });
         await updateEnrollment(selectedEnrollmentId, { sessionLogs: updatedLogs });
@@ -398,7 +448,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         await executeReload(); // DIRECTIVA_RECARGA
         if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId); // Refresh local logs specific
 
-        setEditingLogId(null); setEditingLogIndex(null); setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [] }); setSignatureStep('form'); alert("Registro actualizado.");
+        setEditingLogId(null); setEditingLogIndex(null); setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [], advisorName: '' }); setSignatureStep('form'); alert("Registro actualizado.");
     };
 
     const handleCancelEdit = () => { handleCancelSession(); };
@@ -450,7 +500,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                         await updateEnrollment(selectedEnrollmentId, { sessionLogs: logs });
                         await executeReload(); 
                         setSignatureStep('success');
-                        setTimeout(() => { setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [] }); setSignatureStep('form'); }, 3000);
+                        setTimeout(() => { setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [], advisorName: '' }); setSignatureStep('form'); }, 3000);
                     }
                 }
             };
@@ -525,6 +575,28 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                                     <div><label className="block text-xs font-bold text-slate-600 mb-1">Modalidad</label><select value={sessionForm.modality} onChange={e => setSessionForm({...sessionForm, modality: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"><option value="Presencial">Presencial</option><option value="Virtual">Virtual</option><option value="Correo Electrónico">Correo Electrónico</option></select></div>
                                                     <div><label className="block text-xs font-bold text-slate-600 mb-1">Lugar / Plataforma</label><input type="text" placeholder="Ej. Oficina 304, Zoom, Email..." value={sessionForm.location} onChange={e => setSessionForm({...sessionForm, location: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"/></div>
                                                 </div>
+
+                                                {/* NUEVO: CUADRO DESPLEGABLE DE ASESOR RESPONSABLE (SOLO ADMIN) */}
+                                                {isAdmin && (
+                                                    <div className="mb-4">
+                                                        <label className="block text-xs font-bold text-slate-600 mb-1">Asesor Responsable de la Sesión</label>
+                                                        <select 
+                                                            name="advisorName"
+                                                            value={sessionForm.advisorName} 
+                                                            onChange={e => setSessionForm({...sessionForm, advisorName: e.target.value})} 
+                                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                        >
+                                                            <option value="">Seleccionar Asesor...</option>
+                                                            {advisorsList.map(adv => (
+                                                                <option key={adv.rut} value={`${adv.names} ${adv.paternalSurname}`}>
+                                                                    {adv.names} {adv.paternalSurname}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                        <p className="text-[10px] text-slate-400 mt-1 italic">Si se deja vacío, se asignará su nombre automáticamente.</p>
+                                                    </div>
+                                                )}
+
                                                 <div className="mb-4"><label className="block text-xs font-bold text-slate-600 mb-1">Observaciones / Temática Tratada</label><textarea rows={6} value={sessionForm.observation} onChange={e => setSessionForm({...sessionForm, observation: e.target.value})} placeholder="Describa los puntos principales abordados en la sesión..." className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm resize-y"/></div>
                                                 <div className="mb-4">
                                                     <div className="flex justify-between items-center mb-1"><label className="block text-xs font-bold text-slate-600">Etiquetas (Conceptos Clave)</label><button type="button" onClick={handleSuggestTags} disabled={isGeneratingTags} className="text-[10px] bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded-full border border-indigo-200 flex items-center gap-1 transition-colors">{isGeneratingTags ? '...' : 'Sugerir Tags'}</button></div>
