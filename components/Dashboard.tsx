@@ -114,7 +114,7 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                             {dayActs.length > 0 && (
                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 bg-slate-800 text-white text-[10px] p-2 rounded z-20 shadow-xl pointer-events-none text-left">
                                     {dayActs.map(a => (
-                                        <div key={a.id} className="mb-1 last:mb-0 border-b border-slate-600 last:border-0 pb-1 last:pb-0">
+                                        <div key={a.id} className="mb-1 last:mb-0 border-b border-slate-600 last:pb-1">
                                             <span className={`font-bold ${a.category === 'ACADEMIC' ? 'text-indigo-300' : a.category === 'POSTGRADUATE' ? 'text-purple-300' : 'text-teal-300'}`}>
                                                 • {a.category === 'ACADEMIC' ? 'Curso' : a.category === 'POSTGRADUATE' ? 'Post.' : 'Ext.'}: 
                                             </span> {a.name}
@@ -136,6 +136,7 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
 };
 
 // --- KPI CARD COMPONENT for ASESOR with Tooltip Improved ---
+// Reducido el padding lateral (px-2) para permitir más columnas en una fila
 const KpiCardCompact: React.FC<{
     title: string;
     value: string | number;
@@ -146,12 +147,12 @@ const KpiCardCompact: React.FC<{
     const [isHovered, setIsHovered] = useState(false);
     return (
         <div 
-            className="text-center px-4 py-3 bg-white rounded-xl border border-slate-200 shadow-sm relative group cursor-help transition-all hover:border-[#647FBC]/30"
+            className="text-center px-2 py-3 bg-white rounded-xl border border-slate-200 shadow-sm relative group cursor-help transition-all hover:border-[#647FBC]/30"
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
-            <span className={`block text-2xl font-bold ${colorClass}`}>{value}<span className="text-lg">{suffix}</span></span>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-tight h-6 flex items-center justify-center">{title}</span>
+            <span className={`block text-xl font-bold ${colorClass}`}>{value}<span className="text-base">{suffix}</span></span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight leading-none h-6 flex items-center justify-center">{title}</span>
             
             {isHovered && tooltipContent && (
                 <div className="absolute z-[100] top-full left-1/2 -translate-x-1/2 mt-2 w-80 bg-white text-left p-0 rounded-xl shadow-2xl animate-fadeIn border border-indigo-200 overflow-hidden">
@@ -162,9 +163,7 @@ const KpiCardCompact: React.FC<{
                     <div className="max-h-[500px] overflow-y-auto custom-scrollbar p-3 space-y-2 overflow-x-hidden text-slate-600">
                         {tooltipContent}
                     </div>
-                    {/* Invisible bridge to prevent tooltip disappearing when moving mouse between card and tooltip */}
                     <div className="absolute -top-2 left-0 w-full h-2 bg-transparent"></div>
-                    {/* Tooltip Arrow pointing up */}
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-8 border-transparent border-b-white"></div>
                 </div>
             )}
@@ -178,51 +177,39 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
-  const { activities, users, enrollments, enrollUser, upsertUsers, addActivity, config, getUser } = useData();
+  const { activities, users, enrollments, config } = useData();
   const { isSyncing, executeReload } = useReloadDirective(); // DIRECTIVA_RECARGA
 
-  // --- STATE FOR YEAR SELECTION (ADMIN & ASESOR) ---
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
 
-  // --- STATE FOR KIOSK SEARCH (ESTUDIANTE) ---
   const [kioskRut, setKioskRut] = useState('');
   const [activeSearchRut, setActiveSearchRut] = useState<string | null>(null);
   const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
-  // EFECTO: RECARGA AL CAMBIAR AÑO (Garantiza coherencia total)
   useEffect(() => {
     executeReload();
   }, [selectedYear, executeReload]);
 
-  // --- Dashboard Courses Sorting Logic ---
   const sortedDashboardCourses = useMemo(() => {
     return activities
       .filter(a => a.category === 'ACADEMIC' && a.year === selectedYear)
       .sort((a, b) => {
         const periodA = a.academicPeriod || '';
         const periodB = b.academicPeriod || '';
-        
-        // Identificar si es Segundo Semestre
         const isSecondA = periodA.endsWith('-2') || periodA.toLowerCase().includes('2do') || periodA.toLowerCase().includes('segundo');
         const isSecondB = periodB.endsWith('-2') || periodB.toLowerCase().includes('2do') || periodB.toLowerCase().includes('segundo');
-        
-        // Priorizar Segundo Semestre (-2) sobre Primero (-1)
         if (isSecondA && !isSecondB) return -1;
         if (!isSecondA && isSecondB) return 1;
-        
-        // Si son del mismo semestre, ordenar por nombre alfabético
         return a.name.localeCompare(b.name);
       });
   }, [activities, selectedYear]);
 
-  // --- General KPIs Calculation (FILTERED BY SELECTED YEAR) ---
   const activeCoursesCount = activities.filter(a => a.category === 'ACADEMIC' && a.year === selectedYear).length;
   const activeGeneralCount = activities.filter(a => a.category === 'GENERAL' && a.year === selectedYear).length;
   const activePostgraduateCount = activities.filter(a => a.category === 'POSTGRADUATE' && a.year === selectedYear).length;
   
-  // Enrollments filtered by activities in selected year
   const yearEnrollments = enrollments.filter(e => {
       const act = activities.find(a => a.id === e.activityId);
       return act && act.year === selectedYear;
@@ -231,7 +218,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
   const totalEnrollmentsPeriod = yearEnrollments.length;
   const totalApprovedPeriod = yearEnrollments.filter(e => e.state === ActivityState.APROBADO).length;
 
-  // --- ASESOR / ADMIN KPIs Calculation (FILTERED EXCLUSIVELY BY SELECTED YEAR) ---
+  const totalConsolidatedPeriod = useMemo(() => {
+    return yearEnrollments.filter(enr => {
+        const act = activities.find(a => a.id === enr.activityId);
+        if (!act) return false;
+        if ((act.category === 'ACADEMIC' || act.category === 'POSTGRADUATE') && enr.state === ActivityState.APROBADO) return true;
+        if (act.category === 'GENERAL') return true;
+        if (act.category === 'ADVISORY') return true;
+        return false;
+    }).length;
+  }, [yearEnrollments, activities]);
+
   const advisorKpis = useMemo(() => {
     if (user.systemRole === UserRole.ESTUDIANTE) return null;
 
@@ -240,13 +237,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     const now = new Date();
     const hoyStr = now.toISOString().split('T')[0];
 
-    // 1. POOL DE REFERENCIA: Todas las actividades académicas y postítulos del año (ABIERTO o CERRADO)
     const yearAcademicActivities = activities.filter(a => a.year === selectedYear && (a.category === 'ACADEMIC' || a.category === 'POSTGRADUATE'));
-
-    // 2. MATRÍCULAS DEL UNIVERSO DE REFERENCIA
     const academicEnrollments = enrollments.filter(e => yearAcademicActivities.some(a => a.id === e.activityId));
     
-    // Tasa Aprobación
     const aprobados = academicEnrollments.filter(e => e.state === ActivityState.APROBADO).length;
     const tasaAprobacion = academicEnrollments.length > 0 ? Math.round((aprobados / academicEnrollments.length) * 100) : 0;
     
@@ -257,27 +250,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
         return { name: act.name, pct: count > 0 ? Math.round((approved / count) * 100) : 0, approved, count };
     }).sort((a,b) => b.pct - a.pct).slice(0, 10);
 
-    // 3. Estudiantes en Riesgo (Basado en el universo total del año)
     const estudiantesRiesgo: { name: string, course: string, reason: string }[] = [];
     academicEnrollments.forEach(e => {
         if (e.state === ActivityState.APROBADO) return;
-
         const activity = yearAcademicActivities.find(a => a.id === e.activityId);
         if (!activity) return;
-
         const expectedGrades = activity.evaluationCount || 1;
         const recordedGrades = (e.grades || []).filter(g => g !== undefined && g !== null && g > 0).length;
         const hasAllGrades = recordedGrades >= expectedGrades;
         const isFailingGrade = e.finalGrade !== undefined && e.finalGrade < minGrade && e.finalGrade > 0;
         const isFailingAttendance = e.attendancePercentage !== undefined && e.attendancePercentage < minAtt;
-
         let riskType = "";
         if (hasAllGrades && (isFailingGrade || isFailingAttendance)) {
             riskType = isFailingGrade && isFailingAttendance ? "Nota y Asistencia" : (isFailingGrade ? "Promedio bajo" : "Falta Asistencia");
         } else if (!hasAllGrades && recordedGrades > 0 && isFailingGrade) {
             riskType = "Tendencia reprobatoria";
         }
-
         if (riskType) {
             const student = users.find(u => u.rut === e.rut);
             estudiantesRiesgo.push({
@@ -288,7 +276,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
         }
     });
 
-    // 4. Avance de Calificaciones (Slots totales vs Slots llenos en el año)
     let totalSlots = 0;
     let filledSlots = 0;
     const avancePorCurso = yearAcademicActivities.map(act => {
@@ -302,7 +289,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
 
     const avanceCalificaciones = totalSlots > 0 ? Math.round((filledSlots / totalSlots) * 100) : 0;
 
-    // 5. Asistencia Promedio (Real de todo el período académico)
     const enrollmentsWithAttendance = academicEnrollments.filter(e => typeof e.attendancePercentage === 'number' && e.attendancePercentage > 0);
     const asistenciaPromedio = enrollmentsWithAttendance.length > 0 ? Math.round(enrollmentsWithAttendance.reduce((acc, e) => acc + (e.attendancePercentage || 0), 0) / enrollmentsWithAttendance.length) : 0;
     
@@ -312,16 +298,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
         return { name: act.name, avg };
     }).filter(a => a.avg > 0).sort((a,b) => a.avg - a.avg).slice(0, 10);
 
-    // 6. Cursos Críticos (<5 inscritos)
     const cursosCriticosList = yearAcademicActivities.map(a => {
         const count = academicEnrollments.filter(e => e.activityId === a.id).length;
         return { name: a.name, count };
     }).filter(c => c.count < 5).sort((a,b) => a.count - b.count);
     
-    // 7. Cursos Finalizados (Lógica refinada: Basada en fecha de término real)
     const finalizadosList = yearAcademicActivities.map(a => {
         if (a.endDate && a.endDate < hoyStr) return { name: a.name, date: a.endDate, finished: true };
-        // Fallback: Si no tiene fecha, solo si el año es menor al actual
         if (!a.endDate && (a.year || 0) < new Date().getFullYear()) return { name: a.name, date: `${a.year}-12-31`, finished: true };
         return { name: a.name, date: a.endDate || '', finished: false };
     }).filter(item => item.finished);
@@ -342,7 +325,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     };
   }, [user.systemRole, activities, enrollments, config, selectedYear, users]);
 
-  // --- HANDLERS ---
   const handleAdvisorNavigate = (act: Activity, targetTab: 'enrollment' | 'tracking' = 'tracking') => {
       if (act.category === 'GENERAL') {
           localStorage.setItem('jumpto_activity_id', act.id);
@@ -375,13 +357,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     <div className="animate-fadeIn space-y-8">
       
       {/* Welcome Section */}
-      <div className="bg-white rounded-xl p-8 border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
+      <div className="bg-white rounded-xl p-8 pr-10 border border-slate-200 shadow-sm flex flex-col md:flex-row items-start justify-between gap-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-[#647FBC]/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
           
           <div className="relative z-10 flex-1">
               <h1 className="text-3xl font-bold text-slate-800">Hola, {user.names}</h1>
               <p className="text-slate-500 mt-1 text-lg">Panel de Gestión Académica SMEAD.</p>
-              <div className="flex gap-2 mt-4 items-center">
+              
+              <div className="flex gap-2 mt-6 items-center">
                   <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border ${
                       user.systemRole === UserRole.ADMIN ? 'bg-blue-50 text-blue-700 border-blue-200' :
                       user.systemRole === UserRole.ASESOR ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
@@ -403,7 +386,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                 <option value={currentYear - 2}>{currentYear - 2}</option>
                             </select>
                             
-                            {/* INDICADOR DE SINCRONIZACIÓN DIRECTA */}
                             <div className="h-4 w-px bg-slate-200 mx-2"></div>
                             <div className="flex items-center gap-1.5">
                                 <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-amber-400 animate-pulse' : 'bg-green-500'}`}></div>
@@ -414,24 +396,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
               </div>
           </div>
 
-          <div className="flex flex-wrap justify-center gap-3 relative z-10 max-w-2xl">
-             <div className="text-center px-4 py-2.5 bg-white rounded-xl border border-slate-100 shadow-sm min-w-[100px]">
+          <div className="flex flex-wrap md:flex-nowrap justify-center md:justify-end gap-2 relative z-10 mr-2">
+             <div className="flex-shrink-0 text-center px-4 py-2.5 bg-white rounded-xl border border-slate-100 shadow-sm min-w-[100px]">
                   <span className="block text-2xl font-bold text-[#647FBC]">{activeCoursesCount}</span>
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Cursos UAD</span>
              </div>
-             <div className="text-center px-4 py-2.5 bg-white rounded-xl border border-slate-100 shadow-sm min-w-[100px]">
+             <div className="flex-shrink-0 text-center px-4 py-2.5 bg-white rounded-xl border border-slate-100 shadow-sm min-w-[100px]">
                   <span className="block text-2xl font-bold text-purple-600">{activePostgraduateCount}</span>
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Postítulos</span>
              </div>
-             <div className="text-center px-4 py-2.5 bg-white rounded-xl border border-slate-100 shadow-sm min-w-[100px]">
+             <div className="flex-shrink-0 text-center px-4 py-2.5 bg-white rounded-xl border border-slate-100 shadow-sm min-w-[100px]">
                   <span className="block text-2xl font-bold text-teal-600">{activeGeneralCount}</span>
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Extensión</span>
              </div>
-             <div className="text-center px-4 py-2.5 bg-white rounded-xl border border-slate-100 shadow-sm min-w-[100px]">
-                  <span className="block text-2xl font-bold text-emerald-600">{totalApprovedPeriod}</span>
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Aprobados</span>
+             
+             {/* CONSOLIDADO SIEMPRE A LA IZQUIERDA DE INSCRITOS */}
+             <div className="flex-shrink-0 text-center px-4 py-2.5 bg-indigo-600 rounded-xl border border-indigo-700 shadow-md min-w-[100px] transform hover:scale-105 transition-transform">
+                  <span className="block text-2xl font-black text-white">{totalConsolidatedPeriod}</span>
+                  <span className="text-[9px] font-black text-indigo-100 uppercase tracking-wide whitespace-nowrap">Consolidado</span>
              </div>
-             <div className="text-center px-4 py-2.5 bg-white rounded-xl border border-slate-100 shadow-sm min-w-[100px]">
+
+             <div className="flex-shrink-0 text-center px-4 py-2.5 bg-white rounded-xl border border-slate-100 shadow-sm min-w-[100px]">
                   <span className="block text-2xl font-bold text-slate-800">{totalEnrollmentsPeriod}</span>
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Inscritos</span>
              </div>
@@ -442,7 +427,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
       {(user.systemRole === UserRole.ASESOR || user.systemRole === UserRole.ADMIN) && advisorKpis && (
           <div className="space-y-12 animate-fadeIn">
               
-              {/* Indicadores Clave Section */}
+              {/* Indicadores Clave Section - Ajustado a 7 columnas para Asesor y Administrador */}
               <div>
                   <div className="flex justify-between items-center mb-4">
                       <h3 className="text-lg font-bold text-slate-600 flex items-center gap-2">
@@ -452,8 +437,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                       {isSyncing && <span className="text-[10px] font-black text-indigo-500 animate-pulse uppercase tracking-widest">Calculando KPIs en tiempo real...</span>}
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                      {/* 1. Tasa Aprobación */}
+                  {/* GRID RECONFIGURADO: 7 COLUMNAS PARA ASESOR Y ADMIN */}
+                  <div className={`grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3`}>
                       <KpiCardCompact 
                         title="Tasa Aprobación" 
                         value={advisorKpis.tasaAprobacion} 
@@ -476,7 +461,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                         }
                       />
 
-                      {/* 2. Alumnos Riesgo */}
                       <KpiCardCompact 
                         title="Alumnos en Riesgo" 
                         value={advisorKpis.totalEstudiantesRiesgo} 
@@ -499,7 +483,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                         }
                       />
 
-                      {/* 3. Avance Notas */}
                       <KpiCardCompact 
                         title="Avance Notas" 
                         value={advisorKpis.avanceCalificaciones} 
@@ -522,7 +505,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                         }
                       />
 
-                      {/* 4. Asistencia Media */}
                       <KpiCardCompact 
                         title="Asistencia Media" 
                         value={advisorKpis.asistenciaPromedio} 
@@ -545,7 +527,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                         }
                       />
 
-                      {/* 5. Cursos Críticos */}
                       <KpiCardCompact 
                         title="Cursos Críticos" 
                         value={advisorKpis.cursosCriticos} 
@@ -567,7 +548,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                         }
                       />
 
-                      {/* 6. Finalizados */}
                       <KpiCardCompact 
                         title="Finalizados" 
                         value={advisorKpis.cursosFinalizados} 
@@ -588,10 +568,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                             </div>
                         }
                       />
+
+                      {/* 7. APROBADOS (AHORA VISIBLE PARA ASESOR Y ADMIN EN ESTA SECCIÓN) */}
+                      {(user.systemRole === UserRole.ASESOR || user.systemRole === UserRole.ADMIN) && (
+                        <KpiCardCompact 
+                            title="Total Aprobados" 
+                            value={totalApprovedPeriod} 
+                            colorClass="text-emerald-700" 
+                            tooltipContent={
+                                <p className="text-[10px] text-slate-500">Número consolidado de estudiantes que han completado satisfactoriamente sus programas en el período {selectedYear}.</p>
+                            }
+                        />
+                      )}
                   </div>
               </div>
 
-              {/* LISTADOS DE SEGUIMIENTO (Mantienen su lógica de ordenación por semestre) */}
+              {/* LISTADOS DE SEGUIMIENTO */}
               <div className="space-y-10">
                   {/* SECCIÓN 1: CURSOS UAD */}
                   <div>
@@ -615,13 +607,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                       {sortedDashboardCourses.map(act => {
                                           const { count, progress } = getCourseMetrics(act.id, act.evaluationCount);
                                           const hoy = new Date().toISOString().split('T')[0];
-                                          
-                                          // Lógica de "Abierto/Cerrado" revisada: Basada estrictamente en endDate si existe
                                           const isFinished = act.endDate ? (act.endDate < hoy) : ((act.year || 0) < new Date().getFullYear());
-                                          
-                                          // Verificación para destacar segundo semestre
                                           const isSecondSemester = act.academicPeriod?.endsWith("-2") || act.academicPeriod?.toLowerCase().includes("2do") || act.academicPeriod?.toLowerCase().includes("segundo");
-
                                           return (
                                               <tr key={act.id} className={`transition-colors group ${isSecondSemester ? 'bg-indigo-50/40 hover:bg-indigo-100/50' : 'bg-white hover:bg-slate-50'} border-l-4 ${!isFinished ? 'border-emerald-500' : 'border-transparent opacity-80'}`}>
                                                   <td className="px-6 py-4">
@@ -762,7 +749,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
           </div>
       )}
       
-      {/* SECCIÓN KIOSK PARA ESTUDIANTE (Si aplica) */}
+      {/* SECCIÓN KIOSK PARA ESTUDIANTE */}
       {user.systemRole === UserRole.ESTUDIANTE && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fadeIn">
               <div className="lg:col-span-2 space-y-8">

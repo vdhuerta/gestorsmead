@@ -215,8 +215,21 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         checkAndCreateActivity();
     }, [activities, addActivity]);
 
-    // Data filtering
-    const advisoryEnrollments = useMemo(() => enrollments.filter(e => e.activityId === ADVISORY_ACTIVITY_ID), [enrollments]);
+    // Data filtering - UPDATED WITH SORTING BY LAST SESSION DATE (DESCENDING)
+    const advisoryEnrollments = useMemo(() => {
+        return enrollments
+            .filter(e => e.activityId === ADVISORY_ACTIVITY_ID)
+            .sort((a, b) => {
+                const dateA = a.sessionLogs && a.sessionLogs.length > 0 
+                    ? a.sessionLogs[a.sessionLogs.length - 1].date 
+                    : '0000-00-00';
+                const dateB = b.sessionLogs && b.sessionLogs.length > 0 
+                    ? b.sessionLogs[b.sessionLogs.length - 1].date 
+                    : '0000-00-00';
+                return dateB.localeCompare(dateA); // Más actual primero
+            });
+    }, [enrollments]);
+
     const stats = useMemo(() => {
         let totalSessions = 0, totalHours = 0;
         advisoryEnrollments.forEach(e => { const logs = e.sessionLogs || []; totalSessions += logs.length; totalHours += logs.reduce((acc, log) => acc + (log.duration / 60), 0); });
