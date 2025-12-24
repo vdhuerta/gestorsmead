@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useData } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole, ProgramModule, ProgramConfig } from '../types';
@@ -127,7 +126,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
   const [isFoundInMaster, setIsFoundInMaster] = useState(false);
   const [isAlreadyEnrolled, setIsAlreadyEnrolled] = useState(false);
-  const [enrollMsg, setEnrollMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
+  const [enrollMsg, setEnrollMsg] = useState<{type: 'success'|'error'|'duplicate', text: string} | null>(null);
   
   // --- BULK UPLOAD STATES ---
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -243,8 +242,8 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
         relator: formData.relator, 
         startDate: formData.fechaInicio, 
         endDate: formData.fechaTermino, 
-        linkResources: formData.linkRecursos, 
-        classLink: formData.linkClase, 
+        linkResources: formData.linkResources, 
+        classLink: formData.classLink, 
         evaluationLink: formData.linkEvaluacion, 
         isPublic: true,
         programConfig: programConfig 
@@ -509,6 +508,19 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
               setEnrollMsg({ type: 'error', text: 'No se encontró la matrícula para eliminar.' });
           }
       }
+  };
+
+  const handleUnenrollFromList = async (enrollmentId: string, studentName: string) => {
+    if (confirm(`¿Confirma que desea desmatricular a ${studentName} de este programa?\n\nEl registro del estudiante permanecerá en la Base Maestra.`)) {
+        try {
+            await deleteEnrollment(enrollmentId);
+            await executeReload();
+            setEnrollMsg({ type: 'success', text: 'Estudiante desmatriculado correctamente.' });
+            setTimeout(() => setEnrollMsg(null), 3000);
+        } catch (err) {
+            alert("Error al desmatricular.");
+        }
+    }
   };
 
   const handleManualEnroll = async (e: React.FormEvent) => {
@@ -1104,12 +1116,38 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                               
                               <div className="overflow-hidden rounded-xl border border-slate-200">
                                   <table className="w-full text-sm text-left">
-                                      <thead className="bg-slate-50 text-slate-700"><tr><th className="px-6 py-3">RUT</th><th className="px-6 py-3">Nombre</th><th className="px-6 py-3">Estado</th></tr></thead>
+                                      <thead className="bg-slate-50 text-slate-700">
+                                          <tr>
+                                              <th className="px-6 py-3">RUT</th>
+                                              <th className="px-6 py-3">Nombre</th>
+                                              <th className="px-6 py-3">Estado</th>
+                                              <th className="px-6 py-3 text-center">Acción</th>
+                                          </tr>
+                                      </thead>
                                       <tbody>
                                           {sortedEnrollments.map(enr => {
                                               const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut));
-                                              return <tr key={enr.id} className="border-t border-slate-100"><td className="px-6 py-3 font-mono">{enr.rut}</td><td className="px-6 py-3">{u?.names} {u?.paternalSurname}</td><td className="px-6 py-3">{enr.state}</td></tr>;
+                                              return (
+                                                  <tr key={enr.id} className="border-t border-slate-100">
+                                                      <td className="px-6 py-3 font-mono">{enr.rut}</td>
+                                                      <td className="px-6 py-3">{u?.names} {u?.paternalSurname}</td>
+                                                      <td className="px-6 py-3">{enr.state}</td>
+                                                      <td className="px-6 py-3 text-center">
+                                                          <button 
+                                                              onClick={() => handleUnenrollFromList(enr.id, u ? `${u.names} ${u.paternalSurname}` : enr.rut)}
+                                                              className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 px-3 py-1.5 rounded text-[10px] font-black uppercase transition-all shadow-sm whitespace-nowrap"
+                                                          >
+                                                              DESMATRICULAR
+                                                          </button>
+                                                      </td>
+                                                  </tr>
+                                              );
                                           })}
+                                          {sortedEnrollments.length === 0 && (
+                                              <tr>
+                                                  <td colSpan={4} className="px-6 py-8 text-center text-slate-400 italic">No hay estudiantes matriculados en este programa.</td>
+                                              </tr>
+                                          )}
                                       </tbody>
                                   </table>
                               </div>
