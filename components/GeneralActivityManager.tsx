@@ -272,6 +272,44 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         }
     };
 
+    // --- NUEVA FUNCIONALIDAD: LIMPIAR ASISTENCIA MASIVA ---
+    const handleClearAttendance = async () => {
+        if (!selectedActivity) return;
+        
+        const passwordInput = prompt(`¿Está seguro que desea ELIMINAR MASIVAMENTE a todos los participantes de "${selectedActivity.name}"?\n\nEsta acción es irreversible y borrará el historial de asistencia de esta actividad.\n\nIngrese su contraseña de ADMINISTRADOR para proceder:`);
+        
+        const isMasterAdminPassword = passwordInput === '112358';
+        const isCurrentUserPassword = currentUser.password && passwordInput === currentUser.password;
+
+        if (isMasterAdminPassword || isCurrentUserPassword) {
+            setIsProcessing(true);
+            try {
+                const toDelete = enrollments.filter(e => e.activityId === selectedActivity.id);
+                if (toDelete.length === 0) {
+                    alert("No hay participantes para eliminar.");
+                    setIsProcessing(false);
+                    return;
+                }
+                
+                // Borrado secuencial o por bloque para asegurar que Supabase procese correctamente
+                await Promise.all(toDelete.map(e => deleteEnrollment(e.id)));
+                
+                // Limpiamos memoria y refrescamos vía Directiva de Recarga
+                await executeReload();
+                
+                setEnrollMsg({ type: 'success', text: 'Listado de asistentes limpiado correctamente. Puede subir una nueva lista.' });
+                setTimeout(() => setEnrollMsg(null), 5000);
+            } catch (err) {
+                console.error("Error al limpiar asistentes:", err);
+                alert("Ocurrió un error al intentar vaciar el listado. Verifique su conexión.");
+            } finally {
+                setIsProcessing(false);
+            }
+        } else if (passwordInput !== null) {
+            alert("Contraseña incorrecta. Acción de limpieza cancelada.");
+        }
+    };
+
     const handleBulkUpload = () => {
         if (!uploadFile || !selectedActivity) return;
         setIsProcessing(true);
@@ -628,7 +666,17 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                         </div>
 
                         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                            <div className="bg-slate-50 px-6 py-3 border-b border-slate-200"><h4 className="font-bold text-slate-700 text-sm">Listado de Asistentes</h4></div>
+                            <div className="bg-slate-50 px-6 py-3 border-b border-slate-200 flex justify-between items-center">
+                                <h4 className="font-bold text-slate-700 text-sm">Listado de Asistentes</h4>
+                                <button 
+                                    onClick={handleClearAttendance}
+                                    disabled={isProcessing || isSyncing || sortedActivityEnrollments.length === 0}
+                                    className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    Limpiar Datos
+                                </button>
+                            </div>
                             <div className="overflow-x-auto max-h-96">
                                 <table className="w-full text-sm text-left">
                                     <thead className="bg-white text-slate-500 font-bold border-b border-slate-100 sticky top-0">
