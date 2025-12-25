@@ -731,7 +731,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                         <p className="text-sm text-slate-600">Suba un archivo con las 13 columnas requeridas para la matrícula.<br/><span className="text-xs text-slate-400">.csv, .xls, .xlsx</span></p>
                         <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-purple-200 bg-purple-50 hover:bg-purple-100'}`}>
                           <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                            {uploadFile ? (<><svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="mb-1 text-sm font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-8 h-8 text-purple-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg><p className="mb-1 text-sm text-purple-600 font-semibold">Seleccionar archivo</p></>)}
+                            {uploadFile ? (<><svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="mb-1 text-sm font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-sm text-purple-600 font-semibold">Seleccionar archivo</p></>)}
                           </div>
                           <input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} />
                         </label>
@@ -846,12 +846,13 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                     </td>
                                     <td className="px-2 py-2 text-center border-r border-slate-200">
                                       <button 
+                                        disabled={isSyncing}
                                         onClick={() => handleToggleSituation(enr.id, enr.situation)}
                                         className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${
                                           isInactive 
                                           ? 'bg-rose-50 text-rose-600 border-rose-100 shadow-sm' 
                                           : 'bg-emerald-50 text-emerald-600 border-emerald-100 shadow-sm'
-                                        }`}
+                                        } ${isSyncing ? 'opacity-50 cursor-wait' : ''}`}
                                       >
                                         {isInactive ? 'INACTIVO' : 'ACTIVO'}
                                       </button>

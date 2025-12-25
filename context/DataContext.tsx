@@ -1,4 +1,3 @@
-
 import { Activity, ActivityState, Enrollment, SystemConfig, User } from '../types';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
@@ -76,12 +75,14 @@ const mapActivityFromDB = (a: any): Activity => ({
     modality: a.modality,
     hours: a.hours,
     moduleCount: a.module_count,
+    // FIX: Changed evaluation_count to evaluationCount to match Activity interface
     evaluationCount: a.evaluation_count,
     startDate: a.start_date,
     endDate: a.end_date,
     relator: a.relator,
     linkResources: a.link_resources,
     classLink: a.class_link,
+    // FIX: Changed evaluation_link to evaluationLink to match Activity interface
     evaluationLink: a.evaluation_link, 
     isPublic: a.is_public,
     programConfig: a.program_config 
@@ -154,7 +155,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             fetchData();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, () => {
-            // FIX: Escuchar cambios en actividades para sincronizar entre perfiles/exploradores
             fetchData();
         })
         .subscribe();
@@ -174,7 +174,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         modality: activity.modality,
         hours: activity.hours,
         module_count: activity.moduleCount,
-        // FIX: Fixed evaluation_count value assignment to use evaluationCount property from Activity interface
         evaluation_count: activity.evaluationCount,
         start_date: activity.startDate || null,
         end_date: activity.endDate || null,
@@ -186,12 +185,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         program_config: activity.programConfig || null
     });
     if (error) throw error;
-    // No es necesario llamar a fetchData aquí ya que el listener Realtime lo hará
   };
 
   const deleteActivity = async (id: string) => {
-      // NOTA: Esto elimina la actividad y sus matrículas (si hay cascada en DB).
-      // BAJO NINGUNA CIRCUNSTANCIA elimina usuarios de la Base Maestra.
       await supabase.from('activities').delete().eq('id', id);
   };
 
@@ -210,7 +206,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const deduplicatedUsers = Array.from(uniqueMap.values());
 
       const dbPayloads = deduplicatedUsers.map(u => {
-          // Construcción dinámica del payload para evitar sobrescribir contraseñas con null
           const payload: any = {
               rut: u.rut,
               names: u.names,
@@ -230,8 +225,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               title: u.title || null
           };
 
-          // CRITICAL FIX: Solo incluir password si viene definido y tiene contenido.
-          // Esto evita que asesores pierdan su clave al ser inscritos como estudiantes en cursos.
           if (u.password !== undefined && u.password !== null && u.password !== '') {
               payload.password = u.password;
           }
@@ -272,6 +265,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (updates.finalGrade !== undefined) dbUpdates.final_grade = updates.finalGrade;
       if (updates.attendancePercentage !== undefined) dbUpdates.attendance_percentage = updates.attendancePercentage;
       if (updates.observation) dbUpdates.observation = updates.observation;
+      if (updates.situation) dbUpdates.situation = updates.situation;
       if (updates.sessionLogs) dbUpdates.session_logs = updates.sessionLogs;
       if (updates.certificateCode) dbUpdates.certificate_code = updates.certificateCode;
       if (updates.attendanceSession1 !== undefined) dbUpdates.attendance_session_1 = updates.attendanceSession1;
