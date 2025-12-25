@@ -408,15 +408,26 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       const moduleGrades = grades.slice(startIdx, startIdx + count);
       const validGrades = moduleGrades.filter(g => g > 0);
       if (validGrades.length === 0) return "-";
+      
       if (module.evaluationWeights && module.evaluationWeights.length === count) {
           let weightedSum = 0;
           let weightTotal = 0;
-          moduleGrades.forEach((g, i) => { if (g > 0) { const w = module.evaluationWeights![i] || 0; weightedSum += g * (w / 100); weightTotal += (w / 100); } });
+          moduleGrades.forEach((g, i) => { 
+              if (g > 0) { 
+                  const w = module.evaluationWeights![i] || 0; 
+                  weightedSum += g * (w / 100); 
+                  weightTotal += (w / 100); 
+              } 
+          });
           if (weightTotal === 0) return "-";
-          return (weightedSum).toFixed(1); 
+          
+          // REQUERIMIENTO: TRUNCAMIENTO A UN DECIMAL (PISO)
+          const rawAvg = weightedSum / weightTotal;
+          return (Math.floor(rawAvg * 10) / 10).toFixed(1); 
       }
       const sum = validGrades.reduce((a, b) => a + b, 0);
-      return (sum / validGrades.length).toFixed(1);
+      const rawAvgSimple = sum / validGrades.length;
+      return (Math.floor(rawAvgSimple * 10) / 10).toFixed(1);
   };
 
   const calculateFinalProgramGrade = (grades: number[]): string => {
@@ -424,10 +435,18 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       let totalWeightUsed = 0;
       programConfig.modules.forEach((mod, idx) => {
           const avgStr = calculateModuleAverage(grades, idx);
-          if (avgStr !== "-") { const avg = parseFloat(avgStr); const weight = mod.weight || 0; totalWeightedScore += avg * (weight / 100); totalWeightUsed += weight; }
+          if (avgStr !== "-") { 
+              const avg = parseFloat(avgStr); 
+              const weight = mod.weight || 0; 
+              totalWeightedScore += avg * (weight / 100); 
+              totalWeightUsed += (weight / 100); 
+          }
       });
       if (totalWeightUsed === 0) return "-";
-      return (totalWeightedScore).toFixed(1);
+      
+      // REQUERIMIENTO: TRUNCAMIENTO A UN DECIMAL (PISO)
+      const rawFinal = totalWeightedScore / totalWeightUsed;
+      return (Math.floor(rawFinal * 10) / 10).toFixed(1);
   };
 
   const handleUpdateGradeLocal = (enrollmentId: string, moduleIndex: number, noteIndex: number, value: string) => {
