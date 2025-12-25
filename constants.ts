@@ -1,4 +1,3 @@
-
 import { SchemaTable, SystemConfig, User, Activity, Enrollment, UserRole, ActivityState } from './types';
 
 // --- Lists for Dropdowns ---
@@ -96,7 +95,7 @@ export const CAREER_LIST = [
   "Ingeniería Civil Ambiental",
   "Ingeniería Civil Industrial",
   "Ingeniería Civil Informatica Licenciatura En Ciencias De La Ingeniería Bachillerato En Ingenieria",
-  "Ingeniería Comercial Licenciatura En Ciencias De La Administración Bachillerato En Administracion",
+  "Ingeniería Comercial Licenciatura En Ciencias De La Administración Bachillerato En Administacion",
   "Ingeniería En Informática",
   "Instituto Tecnológico",
   "Kinesiología",
@@ -204,6 +203,7 @@ export const SCHEMA_TABLES: SchemaTable[] = [
       { name: 'asistencia_json', type: 'JSONB', description: 'Registro de Asistencia' },
       { name: 'session_logs', type: 'JSONB', description: 'Historial de Sesiones de Asesoría' },
       { name: 'certificate_code', type: 'VARCHAR(50)', description: 'Código único para validación de certificados' },
+      { name: 'situation', type: 'TEXT', description: 'Estado actual del alumno (ACTIVO/INACTIVO)' },
     ]
   }
 ];
@@ -339,7 +339,7 @@ export const MOCK_ENROLLMENTS: Enrollment[] = [
     attendanceSession1: true,
     attendanceSession2: true,
     attendanceSession3: true,
-    situation: "Certificado Enviado",
+    situation: "ACTIVO",
     observation: "Participación destacada",
     responsible: "Coordinación Docente"
   }
@@ -379,6 +379,10 @@ ADD COLUMN IF NOT EXISTS session_logs jsonb DEFAULT '[]'::jsonb;
 
 ALTER TABLE public.enrollments 
 ADD COLUMN IF NOT EXISTS certificate_code text;
+
+-- NUEVO: Columna Situación para Postítulos
+ALTER TABLE public.enrollments 
+ADD COLUMN IF NOT EXISTS situation text DEFAULT 'ACTIVO';
 
 -- 2. CORREGIR PERMISOS (RLS - Row Level Security)
 -- Esto es lo que causa que los datos no se guarden.

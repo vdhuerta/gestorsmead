@@ -72,7 +72,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   });
 
   // --- NUEVA LÓGICA: BÚFER DE NOTAS LOCALES ---
-  // Estructura: { [enrollmentId]: number[] }
   const [pendingGrades, setPendingGrades] = useState<Record<string, number[]>>({});
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
 
@@ -84,7 +83,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       } else if (selectedCourse) {
           setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75 });
       }
-      // Limpiar búfer al cambiar de programa
       setPendingGrades({});
   }, [selectedCourse]);
 
@@ -432,10 +430,9 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       return (totalWeightedScore).toFixed(1);
   };
 
-  // --- NUEVA LÓGICA: ACTUALIZACIÓN DE GRADOS LOCAL (SIN ACTUALIZACIÓN DE APP POR TECLA) ---
   const handleUpdateGradeLocal = (enrollmentId: string, moduleIndex: number, noteIndex: number, value: string) => {
       const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
-      if (!enrollment) return;
+      if (!enrollment || enrollment.situation === 'INACTIVO') return;
       const globalIndex = getGlobalGradeIndex(moduleIndex, noteIndex);
       const totalSlots = programConfig.modules.reduce((acc, m) => acc + (m.evaluationCount || 0), 0);
       
@@ -455,7 +452,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       }));
   };
 
-  // --- NUEVA LÓGICA: DETECCIÓN DE CAMBIOS POR MÓDULO ---
   const hasChangesInModule = (moduleIndex: number) => {
       const start = getGlobalGradeIndex(moduleIndex, 0);
       const count = programConfig.modules[moduleIndex].evaluationCount || 0;
@@ -471,15 +467,13 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       });
   };
 
-  // --- NUEVA LÓGICA: GRABADO MASIVO POR MÓDULO ---
   const handleBatchCommitModule = async (moduleIndex: number) => {
       const start = getGlobalGradeIndex(moduleIndex, 0);
       const count = programConfig.modules[moduleIndex].evaluationCount || 0;
       
-      // Identificar qué matrículas tienen cambios en este módulo
       const toUpdate = Object.keys(pendingGrades).filter(eid => {
           const enr = courseEnrollments.find(e => e.id === eid);
-          if (!enr) return false;
+          if (!enr || enr.situation === 'INACTIVO') return false;
           const currentGrades = pendingGrades[eid];
           const currentSlice = currentGrades.slice(start, start + count);
           const originalSlice = (enr.grades || []).slice(start, start + count);
@@ -491,7 +485,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
       setIsProcessingBatch(true);
       try {
-          // ADN TECNICO: Actualización por lote sincronizada
           for (const eid of toUpdate) {
               const newGrades = pendingGrades[eid];
               const finalGradeStr = calculateFinalProgramGrade(newGrades);
@@ -504,14 +497,11 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
               });
           }
           await executeReload();
-          
-          // Limpiar el búfer para los registros actualizados
           setPendingGrades(prev => {
               const next = { ...prev };
               toUpdate.forEach(id => delete next[id]);
               return next;
           });
-          
           alert(`Éxito: Se han guardado las notas de ${toUpdate.length} estudiantes en el módulo.`);
       } catch (err) {
           alert("Error al intentar guardar el lote de notas. Verifique su conexión.");
@@ -522,7 +512,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
   const handleToggleAttendance = async (enrollmentId: string, sessionIndex: number) => {
       const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
-      if (!enrollment) return;
+      if (!enrollment || enrollment.situation === 'INACTIVO') return;
       const sessionKey = `attendanceSession${sessionIndex + 1}`;
       // @ts-ignore
       const newVal = !enrollment[sessionKey];
@@ -542,6 +532,12 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       await executeReload();
   };
 
+  const handleToggleSituation = async (enrollmentId: string, currentSituation: string | undefined) => {
+      const newSituation = (currentSituation === 'INACTIVO') ? 'ACTIVO' : 'INACTIVO';
+      await updateEnrollment(enrollmentId, { situation: newSituation });
+      await executeReload();
+  };
+
   if (view === 'list') {
       return (
           <div className="animate-fadeIn space-y-6">
@@ -555,7 +551,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                           <div className="flex justify-between items-start mb-4"><span className="px-2 py-1 rounded text-xs font-bold bg-purple-50 text-purple-700 border border-purple-100">{act.programConfig?.programType || 'Postítulo'}</span><span className="text-xs text-slate-400 font-mono" title="ID">{act.id}</span></div>
                           <h3 className="font-bold text-slate-800 text-lg mb-2 truncate" title={act.name}>{act.name}</h3>
                           <div className="text-sm text-slate-500 space-y-1 mb-4"><p className="flex items-center gap-2"><span className="font-bold text-xs text-purple-600">DIR:</span> {act.relator || 'Sin Director'}</p><p className="flex items-center gap-2">Modules: {act.programConfig?.modules?.length || 0}</p><p className="flex items-center gap-2">Inicio: {formatDateCL(act.startDate)}</p></div>
-                          <button onClick={() => { setSelectedCourseId(act.id); setView('details'); }} className="w-full bg-slate-50 border border-slate-300 text-slate-700 py-2 rounded-lg font-medium hover:bg-white hover:border-purple-500 hover:text-purple-600 transition-colors text-xs">Gestionar Programa</button>
+                          <button onClick={() => { setSelectedCourseId(act.id); setView('details'); }} className="w-full bg-slate-50 border border-slate-300 text-slate-700 py-2 rounded-lg font-medium hover:bg-white hover:border-purple-500 hover:text-purple-600 transition-colors text-sm">Gestionar Programa</button>
                       </div>
                   ))}
                   {postgraduateActivities.length === 0 && (<div className="col-span-full py-12 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">No hay programas de postítulo registrados.</div>)}
@@ -637,9 +633,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                     <span className="text-[10px] font-bold uppercase text-slate-500">{isSyncing ? 'Sincronizando...' : 'En Línea'}</span>
                   </div>
                   <div className="h-4 w-px bg-slate-300 mx-2"></div>
-                  <button onClick={handleRefresh} className="text-xs font-bold text-purple-600 hover:text-purple-800 flex items-center gap-1">
-                    <svg className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Actualizar
-                  </button>
+                  <button onClick={handleRefresh} className="text-xs font-bold text-purple-600 hover:text-purple-800 flex items-center gap-1"><svg className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Actualizar</button>
                 </div>
                 <button onClick={handleEditCourse} className="text-xs bg-amber-50 border border-amber-200 hover:bg-amber-100 text-amber-700 px-3 py-2 rounded-lg flex items-center gap-2 transition-colors font-bold">Modificar Datos Base</button>
               </div>
@@ -787,6 +781,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                   <>
                                     <tr>
                                       <th className="px-2 py-3 bg-white sticky left-0 z-20 border-r border-slate-200 w-[200px] min-w-[200px] truncate">Estudiante</th>
+                                      <th className="px-4 py-3 text-center border-r border-slate-200 w-[100px] bg-slate-50">Situación</th>
                                       {programConfig.modules.map((mod, idx) => (
                                         <th key={mod.id} colSpan={(mod.evaluationCount || 0) + 1} className={`px-2 py-2 text-center border-r border-slate-200 ${idx % 2 === 0 ? 'bg-purple-50/50' : 'bg-white'}`}>
                                           <div className="flex flex-col">
@@ -814,6 +809,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                     </tr>
                                     <tr className="bg-slate-100 text-xs text-slate-500 border-b border-slate-200">
                                       <th className="bg-slate-50 sticky left-0 z-20 border-r border-slate-200"></th>
+                                      <th className="bg-slate-50 border-r border-slate-200"></th>
                                       {programConfig.modules.map((mod, modIdx) => (
                                         <React.Fragment key={`sub-${mod.id}`}>
                                           {Array.from({ length: mod.evaluationCount }).map((_, noteIdx) => (<th key={`${mod.id}-n${noteIdx}`} className="px-1 py-1 text-center w-[50px] min-w-[50px] font-normal border-r border-slate-100">N{noteIdx + 1} <span className="text-[8px] text-slate-300 block">{mod.evaluationWeights?.[noteIdx] || '-'}%</span></th>))}
@@ -832,7 +828,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                             <tbody className="divide-y divide-slate-100">
                               {sortedEnrollments.map((enr) => { 
                                 const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut)); 
-                                // ADN TECNICO: Usar búfer local para cálculos en tiempo real sin mutar el origen de datos global
+                                const isInactive = enr.situation === 'INACTIVO';
                                 const activeGrades = pendingGrades[enr.id] || enr.grades || [];
                                 const finalGrade = calculateFinalProgramGrade(activeGrades); 
                                 const allProgramDates = programConfig.modules.flatMap(mod => (mod.classDates || []).map(date => ({ date, moduleId: mod.id })) ).sort((a, b) => a.date.localeCompare(b.date)); 
@@ -841,12 +837,24 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                 allProgramDates.forEach((_, idx) => { if (enr[`attendanceSession${idx + 1}` as keyof Enrollment]) presentCount++; }); 
                                 const dynamicPercentage = totalDatesCount > 0 ? Math.round((presentCount / totalDatesCount) * 100) : 0; 
                                 return (
-                                  <tr key={enr.id} className="hover:bg-purple-50/20 transition-colors">
+                                  <tr key={enr.id} className={`hover:bg-purple-50/20 transition-colors ${isInactive ? 'grayscale opacity-60 bg-slate-50' : ''}`}>
                                     <td className="px-2 py-2 font-medium text-slate-700 sticky left-0 bg-white border-r border-slate-200 z-10 w-[200px] min-w-[200px] truncate">
                                       <div className="flex flex-col truncate">
                                         <span className="truncate" title={`${student?.names} ${student?.paternalSurname}`}>{student ? `${student.paternalSurname} ${student.maternalSurname || ''}, ${student.names}` : enr.rut}</span>
                                         <span className="text-[10px] text-slate-400 font-mono">{enr.rut}</span>
                                       </div>
+                                    </td>
+                                    <td className="px-2 py-2 text-center border-r border-slate-200">
+                                      <button 
+                                        onClick={() => handleToggleSituation(enr.id, enr.situation)}
+                                        className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${
+                                          isInactive 
+                                          ? 'bg-rose-50 text-rose-600 border-rose-100 shadow-sm' 
+                                          : 'bg-emerald-50 text-emerald-600 border-emerald-100 shadow-sm'
+                                        }`}
+                                      >
+                                        {isInactive ? 'INACTIVO' : 'ACTIVO'}
+                                      </button>
                                     </td>
                                     {programConfig.modules.map((mod, modIdx) => (
                                       <React.Fragment key={`row-${enr.id}-${mod.id}`}>
@@ -855,7 +863,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                           const gradeVal = activeGrades[globalIdx]; 
                                           return (
                                             <td key={`${enr.id}-${mod.id}-${noteIdx}`} className="px-1 py-2 text-center border-r border-slate-50">
-                                              <input type="number" step="0.1" min="1" max="7" className={`w-full min-w-[40px] text-center border border-slate-200 rounded py-1 text-sm font-bold px-0 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal && gradeVal < 4.0 ? 'text-red-500' : 'text-slate-700'}`} value={gradeVal || ''} onChange={(e) => handleUpdateGradeLocal(enr.id, modIdx, noteIdx, e.target.value)} />
+                                              <input type="number" step="0.1" min="1" max="7" disabled={isInactive || isSyncing} className={`w-full min-w-[40px] text-center border border-slate-200 rounded py-1 text-sm font-bold px-0 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal && gradeVal < 4.0 ? 'text-red-500' : 'text-slate-700'} ${isInactive ? 'cursor-not-allowed bg-slate-100 opacity-50' : ''}`} value={gradeVal || ''} onChange={(e) => handleUpdateGradeLocal(enr.id, modIdx, noteIdx, e.target.value)} />
                                             </td>
                                           ); 
                                         })}
@@ -875,7 +883,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                       const isChecked = enr[sessionKey]; 
                                       return (
                                         <td key={`att-${enr.id}-${i}`} className="px-1 py-2 text-center border-r border-slate-100">
-                                          <input type="checkbox" checked={!!isChecked} onChange={() => handleToggleAttendance(enr.id, i)} className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer w-4 h-4"/>
+                                          <input type="checkbox" checked={!!isChecked} disabled={isInactive || isSyncing} onChange={() => handleToggleAttendance(enr.id, i)} className={`rounded text-purple-600 focus:ring-purple-500 cursor-pointer w-4 h-4 ${isInactive ? 'cursor-not-allowed opacity-30' : ''}`}/>
                                         </td>
                                       ); 
                                     })} 
@@ -886,12 +894,12 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                 ); 
                               })}
 
-                              {/* --- NUEVA FILA: BOTONES DE GRABACIÓN MASIVA POR MÓDULO (REQUERIDO) --- */}
-                              <tr className="bg-slate-50 font-bold border-t-2 border-slate-200 sticky bottom-0 z-30">
+                              <tr className="bg-slate-50 font-bold border-t-2 border-slate-200 sticky bottom-0 z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
                                   <td className="px-2 py-4 bg-slate-100 sticky left-0 border-r border-slate-200 z-40 text-right text-[10px] text-slate-500 uppercase tracking-widest flex items-center justify-end gap-2 h-full">
                                       <span>Acciones Módulo</span>
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
                                   </td>
+                                  <td className="bg-slate-100 border-r border-slate-200"></td>
                                   {programConfig.modules.map((mod, modIdx) => {
                                       const hasChanges = hasChangesInModule(modIdx);
                                       return (
@@ -911,7 +919,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                           </td>
                                       );
                                   })}
-                                  {/* Relleno para las columnas restantes del final (Estado, Final, etc) */}
                                   <td colSpan={2 + (programConfig.modules.flatMap(m => m.classDates || []).length) + 2} className="bg-slate-50"></td>
                               </tr>
                             </tbody>
