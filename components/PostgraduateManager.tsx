@@ -9,16 +9,12 @@ import { useReloadDirective } from '../hooks/useReloadDirective';
 
 // --- Utility Functions ---
 
-// Formatea para visualización (X-DV) - Remueve ceros a la izquierda para estandarizar
 const cleanRutFormat = (rut: string): string => {
     let clean = rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '');
     if (clean.length < 2) return rut; 
-    
-    // NORMA: Si tiene 8 caracteres (7 dígitos + DV), agregar el 0 a la izquierda
     if (clean.length === 8) {
         clean = '0' + clean;
     }
-
     const body = clean.slice(0, -1);
     const dv = clean.slice(-1).toUpperCase();
     return `${body}-${dv}`;
@@ -75,6 +71,11 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       programType: 'Diplomado', modules: [], globalAttendanceRequired: 75
   });
 
+  // --- NUEVA LÓGICA: BÚFER DE NOTAS LOCALES ---
+  // Estructura: { [enrollmentId]: number[] }
+  const [pendingGrades, setPendingGrades] = useState<Record<string, number[]>>({});
+  const [isProcessingBatch, setIsProcessingBatch] = useState(false);
+
   const selectedCourse = useMemo(() => postgraduateActivities.find(a => a.id === selectedCourseId), [postgraduateActivities, selectedCourseId]);
 
   useEffect(() => {
@@ -83,6 +84,8 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       } else if (selectedCourse) {
           setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75 });
       }
+      // Limpiar búfer al cambiar de programa
+      setPendingGrades({});
   }, [selectedCourse]);
 
   const [manualForm, setManualForm] = useState({
@@ -365,8 +368,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
               const masterUser = users.find(u => normalizeRut(u.rut) === normRut);
               const hasNameInFile = rowStrings[1] && rowStrings[1].length > 1;
 
-              // ADN TECNICO: Sincronización Dual (Upsert)
-              // Si el docente no existe O la fila trae información nueva, actualizamos.
               if (hasNameInFile || !masterUser) {
                   usersToUpsert.push({ 
                       rut: cleanRut, 
@@ -431,22 +432,92 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       return (totalWeightedScore).toFixed(1);
   };
 
-  const handleUpdateGrade = async (enrollmentId: string, moduleIndex: number, noteIndex: number, value: string) => {
+  // --- NUEVA LÓGICA: ACTUALIZACIÓN DE GRADOS LOCAL (SIN ACTUALIZACIÓN DE APP POR TECLA) ---
+  const handleUpdateGradeLocal = (enrollmentId: string, moduleIndex: number, noteIndex: number, value: string) => {
       const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
       if (!enrollment) return;
       const globalIndex = getGlobalGradeIndex(moduleIndex, noteIndex);
       const totalSlots = programConfig.modules.reduce((acc, m) => acc + (m.evaluationCount || 0), 0);
-      const currentGrades = enrollment.grades ? [...enrollment.grades] : [];
+      
+      const currentGrades = pendingGrades[enrollmentId] ? [...pendingGrades[enrollmentId]] : [...(enrollment.grades || [])];
       while(currentGrades.length < totalSlots) currentGrades.push(0);
-      let grade = parseFloat(value);
+      
+      let grade = parseFloat(value.replace(',', '.'));
       if (value.trim() === '' || isNaN(grade)) grade = 0;
       if (grade > 7.0) grade = 7.0;
       if (grade < 0) grade = 0;
+      
       currentGrades[globalIndex] = parseFloat(grade.toFixed(1));
-      const finalGradeStr = calculateFinalProgramGrade(currentGrades);
-      const finalGrade = finalGradeStr !== "-" ? parseFloat(finalGradeStr) : 0;
-      await updateEnrollment(enrollmentId, { grades: currentGrades, finalGrade: finalGrade, state: finalGrade >= (config.minPassingGrade || 4.0) ? ActivityState.APROBADO : ActivityState.EN_PROCESO });
-      await executeReload();
+      
+      setPendingGrades(prev => ({
+          ...prev,
+          [enrollmentId]: currentGrades
+      }));
+  };
+
+  // --- NUEVA LÓGICA: DETECCIÓN DE CAMBIOS POR MÓDULO ---
+  const hasChangesInModule = (moduleIndex: number) => {
+      const start = getGlobalGradeIndex(moduleIndex, 0);
+      const count = programConfig.modules[moduleIndex].evaluationCount || 0;
+      
+      return Object.keys(pendingGrades).some(eid => {
+          const enr = courseEnrollments.find(e => e.id === eid);
+          if (!enr) return false;
+          const currentGrades = pendingGrades[eid];
+          const currentSlice = currentGrades.slice(start, start + count);
+          const originalSlice = (enr.grades || []).slice(start, start + count);
+          while(originalSlice.length < count) originalSlice.push(0);
+          return JSON.stringify(currentSlice) !== JSON.stringify(originalSlice);
+      });
+  };
+
+  // --- NUEVA LÓGICA: GRABADO MASIVO POR MÓDULO ---
+  const handleBatchCommitModule = async (moduleIndex: number) => {
+      const start = getGlobalGradeIndex(moduleIndex, 0);
+      const count = programConfig.modules[moduleIndex].evaluationCount || 0;
+      
+      // Identificar qué matrículas tienen cambios en este módulo
+      const toUpdate = Object.keys(pendingGrades).filter(eid => {
+          const enr = courseEnrollments.find(e => e.id === eid);
+          if (!enr) return false;
+          const currentGrades = pendingGrades[eid];
+          const currentSlice = currentGrades.slice(start, start + count);
+          const originalSlice = (enr.grades || []).slice(start, start + count);
+          while(originalSlice.length < count) originalSlice.push(0);
+          return JSON.stringify(currentSlice) !== JSON.stringify(originalSlice);
+      });
+
+      if (toUpdate.length === 0) return;
+
+      setIsProcessingBatch(true);
+      try {
+          // ADN TECNICO: Actualización por lote sincronizada
+          for (const eid of toUpdate) {
+              const newGrades = pendingGrades[eid];
+              const finalGradeStr = calculateFinalProgramGrade(newGrades);
+              const finalGrade = finalGradeStr !== "-" ? parseFloat(finalGradeStr) : 0;
+              
+              await updateEnrollment(eid, { 
+                  grades: newGrades, 
+                  finalGrade: finalGrade, 
+                  state: finalGrade >= (config.minPassingGrade || 4.0) ? ActivityState.APROBADO : ActivityState.EN_PROCESO 
+              });
+          }
+          await executeReload();
+          
+          // Limpiar el búfer para los registros actualizados
+          setPendingGrades(prev => {
+              const next = { ...prev };
+              toUpdate.forEach(id => delete next[id]);
+              return next;
+          });
+          
+          alert(`Éxito: Se han guardado las notas de ${toUpdate.length} estudiantes en el módulo.`);
+      } catch (err) {
+          alert("Error al intentar guardar el lote de notas. Verifique su conexión.");
+      } finally {
+          setIsProcessingBatch(false);
+      }
   };
 
   const handleToggleAttendance = async (enrollmentId: string, sessionIndex: number) => {
@@ -761,7 +832,9 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                             <tbody className="divide-y divide-slate-100">
                               {sortedEnrollments.map((enr) => { 
                                 const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut)); 
-                                const finalGrade = calculateFinalProgramGrade(enr.grades || []); 
+                                // ADN TECNICO: Usar búfer local para cálculos en tiempo real sin mutar el origen de datos global
+                                const activeGrades = pendingGrades[enr.id] || enr.grades || [];
+                                const finalGrade = calculateFinalProgramGrade(activeGrades); 
                                 const allProgramDates = programConfig.modules.flatMap(mod => (mod.classDates || []).map(date => ({ date, moduleId: mod.id })) ).sort((a, b) => a.date.localeCompare(b.date)); 
                                 const totalDatesCount = allProgramDates.length; 
                                 let presentCount = 0; 
@@ -779,15 +852,15 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                       <React.Fragment key={`row-${enr.id}-${mod.id}`}>
                                         {Array.from({ length: mod.evaluationCount }).map((_, noteIdx) => { 
                                           const globalIdx = getGlobalGradeIndex(modIdx, noteIdx); 
-                                          const gradeVal = enr.grades?.[globalIdx]; 
+                                          const gradeVal = activeGrades[globalIdx]; 
                                           return (
                                             <td key={`${enr.id}-${mod.id}-${noteIdx}`} className="px-1 py-2 text-center border-r border-slate-50">
-                                              <input type="number" step="0.1" min="1" max="7" className={`w-full min-w-[40px] text-center border border-slate-200 rounded py-1 text-sm font-bold px-0 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal && gradeVal < 4.0 ? 'text-red-500' : 'text-slate-700'}`} value={gradeVal || ''} onChange={(e) => handleUpdateGrade(enr.id, modIdx, noteIdx, e.target.value)} />
+                                              <input type="number" step="0.1" min="1" max="7" className={`w-full min-w-[40px] text-center border border-slate-200 rounded py-1 text-sm font-bold px-0 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal && gradeVal < 4.0 ? 'text-red-500' : 'text-slate-700'}`} value={gradeVal || ''} onChange={(e) => handleUpdateGradeLocal(enr.id, modIdx, noteIdx, e.target.value)} />
                                             </td>
                                           ); 
                                         })}
                                         <td className="px-2 py-2 text-center border-r border-slate-200 bg-purple-50/10">
-                                          <span className={`text-xs font-bold ${parseFloat(calculateModuleAverage(enr.grades || [], modIdx)) < 4.0 ? 'text-red-500' : 'text-purple-700'}`}>{calculateModuleAverage(enr.grades || [], modIdx)}</span>
+                                          <span className={`text-xs font-bold ${parseFloat(calculateModuleAverage(activeGrades, modIdx)) < 4.0 ? 'text-red-500' : 'text-purple-700'}`}>{calculateModuleAverage(activeGrades, modIdx)}</span>
                                         </td>
                                       </React.Fragment>
                                     ))}
@@ -812,6 +885,35 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                   </tr>
                                 ); 
                               })}
+
+                              {/* --- NUEVA FILA: BOTONES DE GRABACIÓN MASIVA POR MÓDULO (REQUERIDO) --- */}
+                              <tr className="bg-slate-50 font-bold border-t-2 border-slate-200 sticky bottom-0 z-30">
+                                  <td className="px-2 py-4 bg-slate-100 sticky left-0 border-r border-slate-200 z-40 text-right text-[10px] text-slate-500 uppercase tracking-widest flex items-center justify-end gap-2 h-full">
+                                      <span>Acciones Módulo</span>
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                                  </td>
+                                  {programConfig.modules.map((mod, modIdx) => {
+                                      const hasChanges = hasChangesInModule(modIdx);
+                                      return (
+                                          <td key={`batch-save-${modIdx}`} colSpan={(mod.evaluationCount || 0) + 1} className="px-2 py-3 text-center border-r border-slate-200">
+                                              <button 
+                                                  type="button"
+                                                  disabled={!hasChanges || isProcessingBatch}
+                                                  onClick={() => handleBatchCommitModule(modIdx)}
+                                                  className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-md transition-all transform active:scale-95 border-2 ${
+                                                      hasChanges 
+                                                      ? 'bg-purple-600 text-white hover:bg-purple-700 animate-pulse border-white' 
+                                                      : 'bg-slate-200 text-slate-400 cursor-not-allowed border-transparent'
+                                                  }`}
+                                              >
+                                                  {isProcessingBatch ? 'Procesando...' : 'Ingresar/Grabar'}
+                                              </button>
+                                          </td>
+                                      );
+                                  })}
+                                  {/* Relleno para las columnas restantes del final (Estado, Final, etc) */}
+                                  <td colSpan={2 + (programConfig.modules.flatMap(m => m.classDates || []).length) + 2} className="bg-slate-50"></td>
+                              </tr>
                             </tbody>
                           </table>
                         </div>

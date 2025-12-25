@@ -193,7 +193,8 @@ export const ReportManager: React.FC = () => {
         const stats: Record<string, { frequentCount: number, teacherRuts: string[] }> = {};
         
         Object.entries(userApprovedCount).forEach(([rut, count]) => {
-            if (count >= 2) {
+            // LÓGICA ACTUALIZADA: Se muestra a partir de 1 o más logros acumulados
+            if (count >= 1) {
                 const user = users.find(u => u.rut === rut);
                 const faculty = user?.faculty || 'Sin Facultad / Externo';
                 if (!stats[faculty]) stats[faculty] = { frequentCount: 0, teacherRuts: [] };
@@ -296,7 +297,7 @@ export const ReportManager: React.FC = () => {
                     
                     <p style="font-size: 14px; margin-bottom: 20px;">
                         Este documento contiene el listado de docentes que han participado activamente en el ciclo de formación continua institucional, 
-                        cumpliendo con el criterio de fidelización (2 o más actividades).
+                        cumpliendo con el criterio de fidelización (1 o más actividades).
                     </p>
 
                     <table>
@@ -378,7 +379,7 @@ export const ReportManager: React.FC = () => {
                 {/* INFORME CONSOLIDADO */}
                 <div onClick={() => setActiveReport('consolidated')} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:border-indigo-400 hover:shadow-md transition-all cursor-pointer group">
                     <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center mb-4 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
                     </div>
                     <h3 className="font-bold text-slate-800 text-lg">Informe Consolidado</h3>
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">Listado maestro de alumnos con actividades aprobadas, extensión o asesorías.</p>
@@ -433,7 +434,7 @@ export const ReportManager: React.FC = () => {
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-7.714 2.143L11 21l-2.286-6.857L1 12l7.714-2.143L11 3z" /></svg>
                     </div>
                     <h3 className="font-bold text-slate-800 text-lg">Docentes Frecuentes</h3>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Índice de fidelización: Docentes que han aprobado 2 o más actividades en el ciclo.</p>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Índice de fidelización: Docentes que han aprobado 1 o más actividades en el ciclo.</p>
                     <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
                         <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider">Ver Fidelización</span>
                         <svg className="w-4 h-4 text-slate-300 group-hover:text-purple-500 transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
@@ -777,7 +778,7 @@ export const ReportManager: React.FC = () => {
                         <div className="p-6 bg-purple-50 border-b border-purple-200 flex justify-between items-center">
                             <div>
                                 <h3 className="text-xl font-bold text-purple-900">Índice de Docentes Frecuentes (Fidelización)</h3>
-                                <p className="text-xs text-purple-700 mt-1">Identificación de docentes con 2 o más actividades aprobadas por unidad académica.</p>
+                                <p className="text-xs text-purple-700 mt-1">Identificación de docentes con 1 o más actividades aprobadas por unidad académica.</p>
                             </div>
                             <div className="flex items-center gap-3">
                                 {isSyncing && <div className="text-[10px] text-purple-600 font-bold animate-pulse">Sincronizando...</div>}
@@ -808,7 +809,7 @@ export const ReportManager: React.FC = () => {
                                                 <div className="flex items-center gap-3 mt-2">
                                                     <div className={`text-[10px] flex items-center gap-1 font-bold ${selectedFaculty === item.faculty ? 'text-purple-100' : 'text-slate-400'}`}>
                                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                                                        {item.frequentCount} Docentes con 2+ logros
+                                                        {item.frequentCount} Docentes con 1+ logros
                                                     </div>
                                                 </div>
                                             </div>
@@ -929,10 +930,10 @@ export const ReportManager: React.FC = () => {
                                 ) : (
                                     <div className="text-center p-12">
                                         <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-                                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 000.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>
+                                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
                                         </div>
                                         <h4 className="font-bold text-slate-400">Análisis de Fidelización</h4>
-                                        <p className="text-xs text-slate-400 mt-1 max-w-[250px] mx-auto">Seleccione una unidad académica para listar a sus docentes más comprometidos con la formación continua.</p>
+                                        <p className="text-xs text-slate-400 mt-1 max-w-[250px] mx-auto">Seleccione una unidad académica para listar a sus docentes con 1 o más actividades en el ciclo formativo.</p>
                                     </div>
                                 )}
                             </div>
