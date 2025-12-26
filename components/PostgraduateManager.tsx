@@ -557,6 +557,36 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       await executeReload();
   };
 
+  // --- LÓGICA DE NOTAS PENDIENTES (KPI) ---
+  const pendingStats = useMemo(() => {
+    if (!selectedCourse || !programConfig.modules.length) return { total: 0, byModule: [] };
+    
+    const activeEnrolled = sortedEnrollments.filter(e => e.situation !== 'INACTIVO');
+    const enrolledCount = activeEnrolled.length;
+    
+    let totalPending = 0;
+    const byModule = programConfig.modules.map((mod, modIdx) => {
+        const startIdx = getGlobalGradeIndex(modIdx, 0);
+        const count = mod.evaluationCount;
+        
+        let modFilled = 0;
+        activeEnrolled.forEach(enr => {
+            // Usar notas locales si existen, sino las del servidor
+            const grades = pendingGrades[enr.id] || enr.grades || [];
+            const modGrades = grades.slice(startIdx, startIdx + count);
+            modFilled += modGrades.filter(g => g !== undefined && g !== null && g > 0).length;
+        });
+        
+        const modTotal = enrolledCount * count;
+        const modPending = Math.max(0, modTotal - modFilled);
+        totalPending += modPending;
+        
+        return { name: mod.name, pending: modPending };
+    });
+    
+    return { total: totalPending, byModule };
+  }, [selectedCourse, programConfig.modules, sortedEnrollments, pendingGrades]);
+
   if (view === 'list') {
       return (
           <div className="animate-fadeIn space-y-6">
@@ -785,7 +815,34 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                   <div className="animate-fadeIn space-y-4">
                     <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-center gap-4">
                       <div><h3 className="font-bold text-purple-800 text-lg">Seguimiento Académico Modular</h3><p className="text-xs text-purple-600">Gestión de calificaciones por módulo y cálculo de promedio final.</p></div>
-                      <div className="flex gap-4 text-center"><div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm"><span className="block text-xl font-bold text-slate-700">{sortedEnrollments.length}</span><span className="text-[10px] font-bold text-slate-400 uppercase">Matriculados</span></div><div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm"><span className="block text-xl font-bold text-slate-700">{programConfig.modules.length}</span><span className="text-[10px] font-bold text-slate-400 uppercase">Módulos</span></div></div>
+                      <div className="flex gap-4 text-center">
+                        <div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm"><span className="block text-xl font-bold text-slate-700">{sortedEnrollments.length}</span><span className="text-[10px] font-bold text-slate-400 uppercase">Matriculados</span></div>
+                        <div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm"><span className="block text-xl font-bold text-slate-700">{programConfig.modules.length}</span><span className="text-[10px] font-bold text-slate-400 uppercase">Módulos</span></div>
+                        
+                        {/* KPI: NOTAS PENDIENTES */}
+                        <div className="bg-white px-4 py-2 rounded-lg border border-rose-100 shadow-sm relative group cursor-help">
+                            <span className="block text-xl font-bold text-rose-600">{pendingStats.total}</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Notas Pendientes</span>
+                            
+                            {/* TOOLTIP DESGLOSE */}
+                            <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-rose-200 shadow-2xl rounded-xl z-50 p-4 hidden group-hover:block animate-fadeIn">
+                                <div className="text-[10px] font-black text-rose-700 uppercase border-b border-rose-50 pb-2 mb-2 flex items-center gap-2">
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                    Notas Faltantes por Módulo
+                                </div>
+                                <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar">
+                                    {pendingStats.byModule.map((m, idx) => (
+                                        <div key={idx} className="flex justify-between items-center text-[11px] border-b border-slate-50 pb-1 last:border-0">
+                                            <span className="truncate text-slate-600 font-medium pr-2">{m.name}</span>
+                                            <span className={`font-black ${m.pending > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                                {m.pending > 0 ? `${m.pending} pend.` : 'Al día'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                      </div>
                     </div> 
                     {programConfig.modules.length === 0 ? (
                       <div className="text-center py-12 border border-dashed border-slate-300 rounded-xl bg-slate-50 text-slate-500">Debe configurar los Módulos en la pestaña "Configuración Académica" antes de ingresar notas.</div>
@@ -805,7 +862,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                         <th key={mod.id} colSpan={(mod.evaluationCount || 0) + 1} className={`px-2 py-2 text-center border-r border-slate-200 ${idx % 2 === 0 ? 'bg-purple-50/50' : 'bg-white'}`}>
                                           <div className="flex flex-col">
                                             <span className="text-xs uppercase text-purple-700 mb-1 truncate max-w-[150px]" title={mod.name}>{mod.name}</span>
-                                            <span className="text-[10px] bg-white border border-purple-100 rounded px-1 w-fit mx-auto text-slate-400">{mod.weight}%</span>
+                                            <span className="text-[10px] bg-white border border-purple-100 rounded px-1 w-fit mx-auto text-purple-900 font-black">{mod.weight}%</span>
                                           </div>
                                         </th>
                                       ))}
@@ -831,7 +888,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                       <th className="bg-slate-50 border-r border-slate-200"></th>
                                       {programConfig.modules.map((mod, modIdx) => (
                                         <React.Fragment key={`sub-${mod.id}`}>
-                                          {Array.from({ length: mod.evaluationCount }).map((_, noteIdx) => (<th key={`${mod.id}-n${noteIdx}`} className="px-1 py-1 text-center w-[50px] min-w-[50px] font-normal border-r border-slate-100">N{noteIdx + 1} <span className="text-[8px] text-slate-300 block">{mod.evaluationWeights?.[noteIdx] || '-'}%</span></th>))}
+                                          {Array.from({ length: mod.evaluationCount }).map((_, noteIdx) => (<th key={`${mod.id}-n${noteIdx}`} className="px-1 py-1 text-center w-[50px] min-w-[50px] font-normal border-r border-slate-100">N{noteIdx + 1} <span className="text-[8px] text-purple-600 block font-bold">{mod.evaluationWeights?.[noteIdx] || '-'}%</span></th>))}
                                           <th className="px-2 py-1 text-center w-[50px] min-w-[50px] font-bold text-purple-700 bg-purple-50/30 border-r border-slate-200">Prom</th>
                                         </React.Fragment>
                                       ))}
