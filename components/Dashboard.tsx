@@ -20,7 +20,7 @@ const formatDateCL = (dateStr: string | undefined): string => {
 
 // Utility para limpiar RUT
 const cleanRutFormat = (rut: string): string => {
-    let clean = rut.replace(/[^0-9kK]/g, '');
+    let clean = rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '');
     if (clean.length < 2) return rut;
     const body = clean.slice(0, -1);
     const dv = clean.slice(-1).toUpperCase();
@@ -136,7 +136,6 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
 };
 
 // --- KPI CARD COMPONENT for ASESOR with Tooltip Improved ---
-// Reducido el padding lateral (px-2) para permitir más columnas en una fila
 const KpiCardCompact: React.FC<{
     title: string;
     value: string | number;
@@ -178,7 +177,7 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
   const { activities, users, enrollments, config } = useData();
-  const { isSyncing, executeReload } = useReloadDirective(); // DIRECTIVA_RECARGA
+  const { isSyncing, executeReload } = useReloadDirective(); 
 
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
@@ -353,6 +352,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
       return { count, progress: Math.round((filledSlots / totalSlots) * 100) };
   };
 
+  const getPostgradMetrics = (act: Activity) => {
+      const enrolled = enrollments.filter(e => e.activityId === act.id);
+      const count = enrolled.length;
+      const totalEvalCount = act.programConfig?.modules?.reduce((acc, m) => acc + (m.evaluationCount || 0), 0) || 0;
+      
+      let totalSlots = count * totalEvalCount;
+      if (totalSlots === 0) return { count, progress: 0 };
+      
+      let filledSlots = 0;
+      enrolled.forEach(e => {
+          if (e.grades && e.grades.length > 0) {
+              filledSlots += e.grades.filter(g => g > 0).length;
+          }
+      });
+      
+      return { count, progress: Math.min(100, Math.round((filledSlots / totalSlots) * 100)) };
+  };
+
   return (
     <div className="animate-fadeIn space-y-8">
       
@@ -410,7 +427,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Extensión</span>
              </div>
              
-             {/* CONSOLIDADO SIEMPRE A LA IZQUIERDA DE INSCRITOS */}
              <div className="flex-shrink-0 text-center px-4 py-2.5 bg-indigo-600 rounded-xl border border-indigo-700 shadow-md min-w-[100px] transform hover:scale-105 transition-transform">
                   <span className="block text-2xl font-black text-white">{totalConsolidatedPeriod}</span>
                   <span className="text-[9px] font-black text-indigo-100 uppercase tracking-wide whitespace-nowrap">Consolidado</span>
@@ -423,11 +439,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
           </div>
       </div>
 
-      {/* VISTA ASESOR / ADMIN: PANEL DE KPIs COHERENTES */}
       {(user.systemRole === UserRole.ASESOR || user.systemRole === UserRole.ADMIN) && advisorKpis && (
           <div className="space-y-12 animate-fadeIn">
               
-              {/* Indicadores Clave Section - Ajustado a 7 columnas para Asesor y Administrador */}
               <div>
                   <div className="flex justify-between items-center mb-4">
                       <h3 className="text-lg font-bold text-slate-600 flex items-center gap-2">
@@ -437,7 +451,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                       {isSyncing && <span className="text-[10px] font-black text-indigo-500 animate-pulse uppercase tracking-widest">Calculando KPIs en tiempo real...</span>}
                   </div>
 
-                  {/* GRID RECONFIGURADO: 7 COLUMNAS PARA ASESOR Y ADMIN */}
                   <div className={`grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3`}>
                       <KpiCardCompact 
                         title="Tasa Aprobación" 
@@ -569,7 +582,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                         }
                       />
 
-                      {/* 7. APROBADOS (AHORA VISIBLE PARA ASESOR Y ADMIN EN ESTA SECCIÓN) */}
                       {(user.systemRole === UserRole.ASESOR || user.systemRole === UserRole.ADMIN) && (
                         <KpiCardCompact 
                             title="Total Aprobados" 
@@ -583,9 +595,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                   </div>
               </div>
 
-              {/* LISTADOS DE SEGUIMIENTO */}
               <div className="space-y-10">
-                  {/* SECCIÓN 1: CURSOS UAD */}
                   <div>
                       <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-indigo-200 pb-4">
                           <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
@@ -648,7 +658,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                       </div>
                   </div>
 
-                  {/* SECCIÓN 2: POSTÍTULOS */}
                   <div>
                       <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-purple-200 pb-4">
                           <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
@@ -662,13 +671,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                       <tr>
                                           <th className="px-6 py-4">Programa</th>
                                           <th className="px-6 py-4">Matrícula</th>
+                                          <th className="px-6 py-4">Avance Notas</th>
                                           <th className="px-6 py-4">Módulos</th>
                                           <th className="px-6 py-4 text-center">Gestión</th>
                                       </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-100">
                                       {activities.filter(a => a.category === 'POSTGRADUATE' && a.year === selectedYear).map(act => {
-                                          const count = enrollments.filter(e => e.activityId === act.id).length;
+                                          const { count, progress } = getPostgradMetrics(act);
                                           return (
                                               <tr key={act.id} className="hover:bg-purple-50/30 transition-colors group">
                                                   <td className="px-6 py-4">
@@ -679,6 +689,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                                                       <span className="bg-purple-100 text-purple-700 px-3 py-1.5 rounded-full text-xs font-black border border-purple-200">
                                                           {count} Docentes
                                                       </span>
+                                                  </td>
+                                                  <td className="px-6 py-4">
+                                                      <div className="flex items-center gap-3">
+                                                          <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200 min-w-[100px]">
+                                                              <div className={`h-full rounded-full transition-all duration-500 ${progress === 100 ? 'bg-emerald-500' : 'bg-purple-500'}`} style={{ width: `${progress}%` }}></div>
+                                                          </div>
+                                                          <span className="text-xs font-bold text-slate-600 w-10 text-right">{progress}%</span>
+                                                      </div>
                                                   </td>
                                                   <td className="px-6 py-4">
                                                       <div className="flex items-center gap-2">
@@ -697,7 +715,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                       </div>
                   </div>
 
-                  {/* SECCIÓN 3: EXTENSIÓN Y VINCULACIÓN */}
                   <div>
                       <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-teal-200 pb-4">
                           <svg className="w-8 h-8 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" /></svg>
@@ -749,7 +766,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
           </div>
       )}
       
-      {/* SECCIÓN KIOSK PARA ESTUDIANTE */}
       {user.systemRole === UserRole.ESTUDIANTE && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fadeIn">
               <div className="lg:col-span-2 space-y-8">
@@ -787,7 +803,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
           </div>
       )}
 
-      {/* MODAL DETALLES (Kiosk Mode) */}
       {showDetailModal && selectedEnrollmentId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-slate-200">
