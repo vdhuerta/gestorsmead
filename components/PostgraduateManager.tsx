@@ -37,7 +37,7 @@ const normalizeValue = (val: string, masterList: string[]): string => {
 };
 
 type ViewState = 'list' | 'create' | 'details' | 'edit';
-type DetailTab = 'enrollment' | 'tracking' | 'config';
+type DetailTab = 'enrollment' | 'tracking' | 'config' | 'acta';
 
 interface PostgraduateManagerProps {
     currentUser?: User;
@@ -67,21 +67,22 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
     internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: ''
   });
 
-  const [programConfig, setProgramConfig] = useState<ProgramConfig>({
-      programType: 'Diplomado', modules: [], globalAttendanceRequired: 75
+  const [programConfig, setProgramConfig] = useState<ProgramConfig & { isClosed?: boolean }>({
+      programType: 'Diplomado', modules: [], globalAttendanceRequired: 75, isClosed: false
   });
 
-  // --- NUEVA LÓGICA: BÚFER DE NOTAS LOCALES ---
   const [pendingGrades, setPendingGrades] = useState<Record<string, number[]>>({});
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
 
   const selectedCourse = useMemo(() => postgraduateActivities.find(a => a.id === selectedCourseId), [postgraduateActivities, selectedCourseId]);
 
+  const isCourseClosed = useMemo(() => !!selectedCourse?.programConfig?.isClosed, [selectedCourse]);
+
   useEffect(() => {
       if (selectedCourse && selectedCourse.programConfig) {
           setProgramConfig(selectedCourse.programConfig);
       } else if (selectedCourse) {
-          setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75 });
+          setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75, isClosed: false });
       }
       setPendingGrades({});
   }, [selectedCourse]);
@@ -98,7 +99,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
   const [isFoundInMaster, setIsFoundInMaster] = useState(false);
   const [isAlreadyEnrolled, setIsAlreadyEnrolled] = useState(false);
-  const [enrollMsg, setEnrollMsg] = useState<{type: 'success'|'error'|'duplicate', text: string} | null>(null);
+  const [enrollMsg, setEnrollMsg] = useState<{type: 'success'|'error'|'duplicate', text: string, existingId?: string} | null>(null);
   
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [hasHeaders, setHasHeaders] = useState(true);
@@ -173,7 +174,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
         relator: formData.relator, 
         startDate: formData.fechaInicio, 
         endDate: formData.fechaTermino, 
-        linkResources: formData.linkRecursos, 
+        linkResources: formData.linkResources, 
         classLink: formData.linkClase, 
         evaluationLink: formData.linkEvaluacion, 
         isPublic: true, 
@@ -184,7 +185,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
     await executeReload();
     if (view === 'edit') { setView('details'); } else {
         setFormData({ internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '' });
-        setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75 });
+        setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75, isClosed: false });
         setView('list');
     }
   };
@@ -201,12 +202,39 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       }
   };
 
+  const handleToggleCloseCourse = async () => {
+      if (!selectedCourse) return;
+      
+      if (!isCourseClosed) {
+          if (confirm("¿Está seguro de CERRAR este postítulo? Se inhabilitará la edición de notas y asistencia.")) {
+              const newConfig = { ...programConfig, isClosed: true };
+              const updatedActivity: Activity = { ...selectedCourse, programConfig: newConfig };
+              await addActivity(updatedActivity);
+              await executeReload();
+              setProgramConfig(newConfig);
+              alert("Postítulo cerrado correctamente.");
+          }
+      } else {
+          const pass = prompt("Para REABRIR el curso ingrese la clave de ADMINISTRADOR:");
+          if (pass === '112358') {
+              const newConfig = { ...programConfig, isClosed: false };
+              const updatedActivity: Activity = { ...selectedCourse, programConfig: newConfig };
+              await addActivity(updatedActivity);
+              await executeReload();
+              setProgramConfig(newConfig);
+              alert("Postítulo reabierto correctamente.");
+          } else if (pass !== null) {
+              alert("Clave incorrecta.");
+          }
+      }
+  };
+
   const handleEditCourse = () => {
     if (!selectedCourse) return;
     const sem = selectedCourse.academicPeriod ? selectedCourse.academicPeriod.split('-')[1] || 'ANUAL' : 'ANUAL';
     setFormData({ internalCode: selectedCourse.internalCode || '', year: selectedCourse.year || new Date().getFullYear(), semester: sem, nombre: selectedCourse.name, version: selectedCourse.version || 'V1', modality: selectedCourse.modality, horas: selectedCourse.hours, relator: selectedCourse.relator || '', fechaInicio: selectedCourse.startDate || '', fechaTermino: selectedCourse.endDate || '', linkRecursos: selectedCourse.linkResources || '', linkClase: selectedCourse.classLink || '', linkEvaluacion: selectedCourse.evaluationLink || '' });
     if (selectedCourse.programConfig) { setProgramConfig(selectedCourse.programConfig); } 
-    else { setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75 }); }
+    else { setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75, isClosed: false }); }
     setView('edit');
   };
 
@@ -421,7 +449,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
           });
           if (weightTotal === 0) return "-";
           
-          // REQUERIMIENTO: TRUNCAMIENTO A UN DECIMAL (PISO)
           const rawAvg = weightedSum / weightTotal;
           return (Math.floor(rawAvg * 10) / 10).toFixed(1); 
       }
@@ -444,12 +471,12 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       });
       if (totalWeightUsed === 0) return "-";
       
-      // REQUERIMIENTO: TRUNCAMIENTO A UN DECIMAL (PISO)
       const rawFinal = totalWeightedScore / totalWeightUsed;
       return (Math.floor(rawFinal * 10) / 10).toFixed(1);
   };
 
   const handleUpdateGradeLocal = (enrollmentId: string, moduleIndex: number, noteIndex: number, value: string) => {
+      if (isCourseClosed) return;
       const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
       if (!enrollment || enrollment.situation === 'INACTIVO') return;
       const globalIndex = getGlobalGradeIndex(moduleIndex, noteIndex);
@@ -472,6 +499,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   };
 
   const hasChangesInModule = (moduleIndex: number) => {
+      if (isCourseClosed) return false;
       const start = getGlobalGradeIndex(moduleIndex, 0);
       const count = programConfig.modules[moduleIndex].evaluationCount || 0;
       
@@ -530,6 +558,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   };
 
   const handleToggleAttendance = async (enrollmentId: string, sessionIndex: number) => {
+      if (isCourseClosed) return;
       const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
       if (!enrollment || enrollment.situation === 'INACTIVO') return;
       const sessionKey = `attendanceSession${sessionIndex + 1}`;
@@ -552,12 +581,12 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   };
 
   const handleToggleSituation = async (enrollmentId: string, currentSituation: string | undefined) => {
+      if (isCourseClosed) return;
       const newSituation = (currentSituation === 'INACTIVO') ? 'ACTIVO' : 'INACTIVO';
       await updateEnrollment(enrollmentId, { situation: newSituation });
       await executeReload();
   };
 
-  // --- LÓGICA DE NOTAS PENDIENTES (KPI) ---
   const pendingStats = useMemo(() => {
     if (!selectedCourse || !programConfig.modules.length) return { total: 0, byModule: [] };
     
@@ -571,7 +600,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
         
         let modFilled = 0;
         activeEnrolled.forEach(enr => {
-            // Usar notas locales si existen, sino las del servidor
             const grades = pendingGrades[enr.id] || enr.grades || [];
             const modGrades = grades.slice(startIdx, startIdx + count);
             modFilled += modGrades.filter(g => g !== undefined && g !== null && g > 0).length;
@@ -587,18 +615,133 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
     return { total: totalPending, byModule };
   }, [selectedCourse, programConfig.modules, sortedEnrollments, pendingGrades]);
 
+  const handleDownloadActa = () => {
+    if (!selectedCourse) return;
+    
+    const verificationCode = `SMEAD-${selectedCourse.internalCode}-${Date.now().toString().slice(-4)}`;
+    const coordinadores = users.filter(u => u.academicRole?.toLowerCase().includes("coordinación") || u.academicRole?.toLowerCase().includes("coordinador"));
+    const coordinador = coordinadores.length > 0 ? `${coordinadores[0].names} ${coordinadores[0].paternalSurname}` : "COORDINADOR UNIDAD";
+    
+    const rowsHTML = sortedEnrollments.map(enr => {
+        const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut));
+        const activeGrades = enr.grades || [];
+        const moduleAverages = programConfig.modules.map((_, idx) => calculateModuleAverage(activeGrades, idx));
+        const finalGrade = calculateFinalProgramGrade(activeGrades);
+        
+        return `
+            <tr>
+                <td style="font-weight: bold; border: 1px solid #ddd; padding: 8px;">${enr.rut}</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">${student ? `${student.paternalSurname} ${student.names}` : 'S/I'}</td>
+                ${moduleAverages.map(avg => `<td style="text-align: center; border: 1px solid #ddd; padding: 8px;">${avg}</td>`).join('')}
+                <td style="text-align: center; border: 1px solid #ddd; padding: 8px; font-weight: bold; background: #f9f9f9;">${finalGrade}</td>
+                <td style="text-align: center; border: 1px solid #ddd; padding: 8px;">${enr.attendancePercentage || 0}%</td>
+                <td style="text-align: center; border: 1px solid #ddd; padding: 8px; font-weight: bold;">${enr.state.toUpperCase()}</td>
+            </tr>
+        `;
+    }).join('');
+
+    const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>ACTA FINAL - ${selectedCourse.name}</title>
+            <style>
+                @page { size: landscape; margin: 1cm; }
+                body { font-family: 'Helvetica', sans-serif; color: #333; }
+                .acta-header { text-align: center; border-bottom: 2px solid #6b21a8; padding-bottom: 10px; margin-bottom: 20px; }
+                .acta-title { font-size: 20px; font-weight: bold; color: #6b21a8; text-transform: uppercase; }
+                .course-info { display: grid; grid-template-cols: 1fr 1fr; gap: 20px; margin-bottom: 20px; font-size: 13px; }
+                table { width: 100%; border-collapse: collapse; font-size: 11px; }
+                th { background: #f1f5f9; color: #475569; padding: 10px; text-transform: uppercase; font-size: 10px; border: 1px solid #ddd; }
+                .signatures { display: flex; justify-content: space-around; margin-top: 60px; text-align: center; }
+                .sig-box { width: 250px; border-top: 1px solid #333; padding-top: 10px; font-size: 12px; }
+                .footer { margin-top: 40px; font-size: 10px; color: #888; text-align: right; }
+                .verification { border: 1px dashed #ccc; padding: 10px; margin-top: 20px; font-family: monospace; font-size: 11px; background: #fffbeb; }
+            </style>
+        </head>
+        <body>
+            <div class="acta-header">
+                <div class="acta-title">Acta Final de Calificaciones - Postítulos SMEAD</div>
+                <div style="font-size: 14px; font-weight: bold; margin-top: 5px;">${selectedCourse.name}</div>
+            </div>
+            
+            <div class="course-info">
+                <div>
+                    <strong>CÓDIGO:</strong> ${selectedCourse.internalCode} <br>
+                    <strong>VERSIÓN:</strong> ${selectedCourse.version} <br>
+                    <strong>AÑO / SEMESTRE:</strong> ${selectedCourse.academicPeriod}
+                </div>
+                <div style="text-align: right;">
+                    <strong>MODALIDAD:</strong> ${selectedCourse.modality} <br>
+                    <strong>DURACIÓN:</strong> ${selectedCourse.hours} Horas <br>
+                    <strong>FECHA CIERRE:</strong> ${new Date().toLocaleDateString()}
+                </div>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>RUT</th>
+                        <th>NOMBRE DEL DOCENTE / ESTUDIANTE</th>
+                        ${programConfig.modules.map(m => `<th>${m.name}<br>(${m.weight}%)</th>`).join('')}
+                        <th>PROMEDIO FINAL</th>
+                        <th>% ASISTENCIA</th>
+                        <th>SITUACIÓN</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHTML}
+                </tbody>
+            </table>
+
+            <div class="signatures">
+                <div class="sig-box">
+                    <strong>${selectedCourse.relator?.toUpperCase() || 'DIRECTOR PROGRAMA'}</strong><br>
+                    Director / Encargado del Programa
+                </div>
+                <div class="sig-box">
+                    <strong>${coordinador.toUpperCase()}</strong><br>
+                    Coordinador Unidad de Acompañamiento
+                </div>
+            </div>
+
+            <div class="verification">
+                CÓDIGO DE VERIFICACIÓN: <strong>${verificationCode}</strong><br>
+                Validado digitalmente por GestorSMEAD en conformidad con el registro institucional.
+            </div>
+
+            <div class="footer">
+                Documento generado el ${new Date().toLocaleString()} - Sistema de Gestión de Actividades Formativas
+            </div>
+        </body>
+        </html>
+    `;
+
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ACTA_FINAL_${selectedCourse.internalCode}.html`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (view === 'list') {
       return (
           <div className="animate-fadeIn space-y-6">
               <div className="flex justify-between items-center">
                   <div><h2 className="text-2xl font-bold text-slate-800">Gestión de Postítulos y Diplomados</h2><p className="text-sm text-slate-500">Administración avanzada de programas académicos modulares.</p></div>
-                  <button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '' }); setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75 }); setView('create'); }} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 flex items-center gap-2 shadow-lg"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Nuevo Programa</button>
+                  <button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '' }); setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75, isClosed: false }); setView('create'); }} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 flex items-center gap-2 shadow-lg"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Nuevo Programa</button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {postgraduateActivities.map(act => (
-                      <div key={act.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:border-purple-300 transition-colors relative overflow-hidden">
+                      <div key={act.id} className={`bg-white rounded-xl shadow-sm border p-6 hover:border-purple-300 transition-colors relative overflow-hidden ${act.programConfig?.isClosed ? 'border-slate-300 bg-slate-50' : 'border-slate-200'}`}>
+                          {act.programConfig?.isClosed && (
+                              <div className="absolute top-0 right-0 bg-slate-800 text-white text-[9px] font-black px-2 py-1 rounded-bl-lg uppercase tracking-widest z-10">CERRADO</div>
+                          )}
                           <div className="flex justify-between items-start mb-4"><span className="px-2 py-1 rounded text-xs font-bold bg-purple-50 text-purple-700 border border-purple-100">{act.programConfig?.programType || 'Postítulo'}</span><span className="text-xs text-slate-400 font-mono" title="ID">{act.id}</span></div>
-                          <h3 className="font-bold text-slate-800 text-lg mb-2 truncate" title={act.name}>{act.name}</h3>
+                          <h3 className={`font-bold text-lg mb-2 truncate ${act.programConfig?.isClosed ? 'text-slate-500' : 'text-slate-800'}`} title={act.name}>{act.name}</h3>
                           <div className="text-sm text-slate-500 space-y-1 mb-4"><p className="flex items-center gap-2"><span className="font-bold text-xs text-purple-600">DIR:</span> {act.relator || 'Sin Director'}</p><p className="flex items-center gap-2">Modules: {act.programConfig?.modules?.length || 0}</p><p className="flex items-center gap-2">Inicio: {formatDateCL(act.startDate)}</p></div>
                           <button onClick={() => { setSelectedCourseId(act.id); setView('details'); }} className="w-full bg-slate-50 border border-slate-300 text-slate-700 py-2 rounded-lg font-medium hover:bg-white hover:border-purple-500 hover:text-purple-600 transition-colors text-sm">Gestionar Programa</button>
                       </div>
@@ -661,14 +804,15 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       return (
           <div className="animate-fadeIn space-y-6">
             <button onClick={() => { setSelectedCourseId(null); setView('list'); }} className="text-slate-500 hover:text-slate-700 mb-4 flex items-center gap-1 text-sm font-bold">← Volver al listado</button>
-            <div className="bg-white border-l-4 border-purple-600 rounded-r-xl shadow-sm p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className={`bg-white border-l-4 rounded-r-xl shadow-sm p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${isCourseClosed ? 'border-slate-500' : 'border-purple-600'}`}>
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="bg-purple-100 text-purple-700 text-xs font-bold px-2 py-0.5 rounded">{selectedCourse.programConfig?.programType}</span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${isCourseClosed ? 'bg-slate-200 text-slate-700' : 'bg-purple-100 text-purple-700'}`}>{selectedCourse.programConfig?.programType}</span>
                   <span className="text-slate-400 text-xs">|</span>
                   <span className="text-slate-500 text-xs font-bold uppercase">{selectedCourse.version}</span>
+                  {isCourseClosed && <span className="ml-2 bg-slate-800 text-white text-[9px] font-black px-2 py-0.5 rounded uppercase">ACTA CERRADA</span>}
                 </div>
-                <h2 className="text-2xl font-bold text-slate-800">{selectedCourse.name}</h2>
+                <h2 className={`text-2xl font-bold ${isCourseClosed ? 'text-slate-500' : 'text-slate-800'}`}>{selectedCourse.name}</h2>
                 <p className="text-slate-500 text-sm mt-1 flex items-center gap-4">
                   <span>Director: {selectedCourse.relator}</span>
                   <span>•</span>
@@ -684,7 +828,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                   <div className="h-4 w-px bg-slate-300 mx-2"></div>
                   <button onClick={handleRefresh} className="text-xs font-bold text-purple-600 hover:text-purple-800 flex items-center gap-1"><svg className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Actualizar</button>
                 </div>
-                <button onClick={handleEditCourse} className="text-xs bg-amber-50 border border-amber-200 hover:bg-amber-100 text-amber-700 px-3 py-2 rounded-lg flex items-center gap-2 transition-colors font-bold">Modificar Datos Base</button>
+                {!isCourseClosed && <button onClick={handleEditCourse} className="text-xs bg-amber-50 border border-amber-200 hover:bg-amber-100 text-amber-700 px-3 py-2 rounded-lg flex items-center gap-2 transition-colors font-bold">Modificar Datos Base</button>}
               </div>
             </div>
             
@@ -693,111 +837,116 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                 <button onClick={() => setActiveDetailTab('enrollment')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'enrollment' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Matrícula</button>
                 <button onClick={() => setActiveDetailTab('config')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'config' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Configuración Académica</button>
                 <button onClick={() => setActiveDetailTab('tracking')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'tracking' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Seguimiento</button>
+                {isCourseClosed && <button onClick={() => setActiveDetailTab('acta')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'acta' ? 'bg-white text-indigo-700 border-t-indigo-600 border-x border-indigo-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Acta Final</button>}
               </div>
               
               <div className="bg-white rounded-b-xl rounded-tr-xl shadow-sm border border-purple-200 border-t-0 p-8">
                 {activeDetailTab === 'enrollment' && (
                   <div className="space-y-8">
-                    <div className={`bg-white rounded-xl shadow-sm border p-6 transition-colors ${isAlreadyEnrolled ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}>
-                      <div className="flex justify-between items-center mb-6">
-                        <h3 className={`font-bold text-lg flex items-center gap-2 ${isAlreadyEnrolled ? 'text-red-700' : 'text-slate-800'}`}>{isAlreadyEnrolled ? (<><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg> Gestión de Matrícula Existente</>) : ("Matrícula Individual")}</h3>
-                        {isFoundInMaster && !isAlreadyEnrolled && (<span className="text-xs px-2 py-1 rounded border bg-green-50 text-green-700 border-green-200">Datos de Base Maestra</span>)}
-                      </div>
-                      <form onSubmit={handleManualEnroll} className="space-y-8">
-                        <div className="space-y-4">
-                          <h3 className={`text-sm font-bold uppercase tracking-wide border-b pb-2 ${isAlreadyEnrolled ? 'text-red-400 border-red-100' : 'text-slate-500 border-slate-100'}`}>Identificación Personal</h3>
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div className="md:col-span-1 relative">
-                              <label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label>
-                              <div className="relative">
-                                <input type="text" name="rut" placeholder="12345678-9" autoComplete="off" value={manualForm.rut} onChange={handleManualFormChange} onBlur={handleRutBlur} className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : 'bg-white border-slate-300'} ${isAlreadyEnrolled ? 'border-red-500 bg-white text-red-800' : ''}`}/>
-                                {showSuggestions && activeSearchField === 'rut' && suggestions.length > 0 && (
-                                  <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
-                                    <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por RUT</div>
-                                    {suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span></div>))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" name="names" value={manualForm.names} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
-                            <div className="md:col-span-1 relative">
-                              <label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label>
-                              <input type="text" name="paternalSurname" value={manualForm.paternalSurname} onChange={handleManualFormChange} autoComplete="off" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/>
-                              {showSuggestions && activeSearchField === 'paternalSurname' && suggestions.length > 0 && (
-                                <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
-                                  <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por Apellido</div>
-                                  {suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.paternalSurname} {s.maternalSurname}</span><span className="text-xs text-slate-500">{s.names} ({s.rut})</span></div>))}
+                    {!isCourseClosed && (
+                        <div className={`bg-white rounded-xl shadow-sm border p-6 transition-colors ${isAlreadyEnrolled ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}>
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className={`font-bold text-lg flex items-center gap-2 ${isAlreadyEnrolled ? 'text-red-700' : 'text-slate-800'}`}>{isAlreadyEnrolled ? (<><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg> Gestión de Matrícula Existente</>) : ("Matrícula Individual")}</h3>
+                            {isFoundInMaster && !isAlreadyEnrolled && (<span className="text-xs px-2 py-1 rounded border bg-green-50 text-green-700 border-green-200">Datos de Base Maestra</span>)}
+                        </div>
+                        <form onSubmit={handleManualEnroll} className="space-y-8">
+                            <div className="space-y-4">
+                            <h3 className={`text-sm font-bold uppercase tracking-wide border-b pb-2 ${isAlreadyEnrolled ? 'text-red-400 border-red-100' : 'text-slate-500 border-slate-100'}`}>Identificación Personal</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div className="md:col-span-1 relative">
+                                <label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label>
+                                <div className="relative">
+                                    <input type="text" name="rut" placeholder="12345678-9" autoComplete="off" value={manualForm.rut} onChange={handleManualFormChange} onBlur={handleRutBlur} className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : 'bg-white border-slate-300'} ${isAlreadyEnrolled ? 'border-red-500 bg-white text-red-800' : ''}`}/>
+                                    {showSuggestions && activeSearchField === 'rut' && suggestions.length > 0 && (
+                                    <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
+                                        <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por RUT</div>
+                                        {suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span></div>))}
+                                    </div>
+                                    )}
                                 </div>
-                              )}
+                                </div>
+                                <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" name="names" value={manualForm.names} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
+                                <div className="md:col-span-1 relative">
+                                <label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label>
+                                <input type="text" name="paternalSurname" value={manualForm.paternalSurname} onChange={handleManualFormChange} autoComplete="off" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/>
+                                {showSuggestions && activeSearchField === 'paternalSurname' && suggestions.length > 0 && (
+                                    <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
+                                    <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por Apellido</div>
+                                    {suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.paternalSurname} {s.maternalSurname}</span><span className="text-xs text-slate-500">{s.names} ({s.rut})</span></div>))}
+                                    </div>
+                                )}
+                                </div>
+                                <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={manualForm.maternalSurname} onChange={handleManualFormChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"/></div>
                             </div>
-                            <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={manualForm.maternalSurname} onChange={handleManualFormChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"/></div>
-                          </div>
-                        </div>
-                        <div className="space-y-4">
-                          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Información de Contacto</h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div><label className="block text-xs font-medium text-slate-700 mb-1">Correo Institucional</label><input type="email" name="email" value={manualForm.email} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
-                            <div><label className="block text-xs font-medium text-slate-700 mb-1">Teléfono</label><input type="tel" name="phone" value={manualForm.phone} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
-                          </div>
-                        </div>
-                        <div className="space-y-4">
-                          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Información Académica</h3>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div><label className="block text-xs font-medium text-slate-700 mb-1">Sede / Campus</label><input type="text" name="campus" value={manualForm.campus} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
-                            <div><SmartSelect label="Facultad" name="faculty" value={manualForm.faculty} options={listFaculties} onChange={handleManualFormChange} /></div>
-                            <div><SmartSelect label="Departamento" name="department" value={manualForm.department} options={listDepts} onChange={handleManualFormChange} /></div>
-                            <div><SmartSelect label="Carrera" name="career" value={manualForm.career} options={listCareers} onChange={handleManualFormChange} /></div>
-                            <div><SmartSelect label="Tipo Contrato" name="contractType" value={manualForm.contractType} options={listContracts} onChange={handleManualFormChange} /></div>
-                            <div><SmartSelect label="Semestre Docencia" name="teachingSemester" value={manualForm.teachingSemester} options={listSemesters} onChange={handleManualFormChange} /></div>
-                          </div>
-                        </div>
-                        <div className="space-y-4">
-                          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Roles</h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div><SmartSelect label="Rol / Cargo Académico" name="academicRole" value={manualForm.academicRole} options={listRoles} onChange={handleManualFormChange} /></div>
-                          </div>
-                        </div>
-                        {isFoundInMaster && (
-                          <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
-                            <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Acciones de Base Maestra (Usuario Existente)</h4>
-                            <div className="flex gap-2">
-                              <button type="button" onClick={handleUpdateMasterData} disabled={isSyncing} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 px-3 rounded shadow-sm flex items-center justify-center gap-1 transition-colors"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Guardar Cambios (Datos Personales)</button>
                             </div>
-                          </div>
-                        )}
-                        {isAlreadyEnrolled ? (
-                          <button type="button" onClick={handleUnenroll} disabled={isSyncing} className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all bg-red-600 hover:bg-red-700 text-white ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>Eliminar Matrícula del Curso</button>
-                        ) : (
-                          <button type="submit" disabled={isSyncing} className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all bg-purple-600 text-white hover:bg-purple-700 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>Matricular Usuario</button>
-                        )}
-                        {enrollMsg && (<div className={`text-xs p-3 rounded-lg text-center font-medium ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{enrollMsg.text}</div>)}
-                      </form>
-                    </div>
+                            <div className="space-y-4">
+                            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Información de Contacto</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div><label className="block text-xs font-medium text-slate-700 mb-1">Correo Institucional</label><input type="email" name="email" value={manualForm.email} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
+                                <div><label className="block text-xs font-medium text-slate-700 mb-1">Teléfono</label><input type="tel" name="phone" value={manualForm.phone} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
+                            </div>
+                            </div>
+                            <div className="space-y-4">
+                            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Información Académica</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div><label className="block text-xs font-medium text-slate-700 mb-1">Sede / Campus</label><input type="text" name="campus" value={manualForm.campus} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
+                                <SmartSelect label="Facultad" name="faculty" value={manualForm.faculty} options={listFaculties} onChange={handleManualFormChange} />
+                                <SmartSelect label="Departamento" name="department" value={manualForm.department} options={listDepts} onChange={handleManualFormChange} />
+                                <SmartSelect label="Carrera" name="career" value={manualForm.career} options={listCareers} onChange={handleManualFormChange} />
+                                <SmartSelect label="Tipo Contrato" name="contractType" value={manualForm.contractType} options={listContracts} onChange={handleManualFormChange} />
+                                <SmartSelect label="Semestre Docencia" name="teachingSemester" value={manualForm.teachingSemester} options={listSemesters} onChange={handleManualFormChange} />
+                            </div>
+                            </div>
+                            <div className="space-y-4">
+                            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Roles</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div><SmartSelect label="Rol / Cargo Académico" name="academicRole" value={manualForm.academicRole} options={listRoles} onChange={handleManualFormChange} /></div>
+                            </div>
+                            </div>
+                            {isFoundInMaster && (
+                            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
+                                <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Acciones de Base Maestra (Usuario Existente)</h4>
+                                <div className="flex gap-2">
+                                <button type="button" onClick={handleUpdateMasterData} disabled={isSyncing} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 px-3 rounded shadow-sm flex items-center justify-center gap-1 transition-colors"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Guardar Cambios (Datos Personales)</button>
+                                </div>
+                            </div>
+                            )}
+                            {isAlreadyEnrolled ? (
+                            <button type="button" onClick={handleUnenroll} disabled={isSyncing} className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all bg-red-600 hover:bg-red-700 text-white ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>Eliminar Matrícula del Curso</button>
+                            ) : (
+                            <button type="submit" disabled={isSyncing} className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all bg-purple-600 text-white hover:bg-purple-700 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>Matricular Usuario</button>
+                            )}
+                            {enrollMsg && (<div className={`text-xs p-3 rounded-lg text-center font-medium ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{enrollMsg.text}</div>)}
+                        </form>
+                        </div>
+                    )}
                     
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
-                      <h3 className="font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100 flex items-center gap-2"><svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>Carga Masiva (CSV / Excel)</h3>
-                      <div className="flex-1 space-y-6 flex flex-col justify-center">
-                        <p className="text-sm text-slate-600">Suba un archivo con las 13 columnas requeridas para la matrícula.<br/><span className="text-xs text-slate-400">.csv, .xls, .xlsx</span></p>
-                        <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-purple-200 bg-purple-50 hover:bg-purple-100'}`}>
-                          <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                            {uploadFile ? (<><svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="mb-1 text-sm font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-sm text-purple-600 font-semibold">Seleccionar archivo</p></>)}
-                          </div>
-                          <input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} />
-                        </label>
-                        <div className="flex items-center justify-center gap-2 mt-2">
-                          <input type="checkbox" id="hasHeadersEnrollment" checked={hasHeaders} onChange={e => setHasHeaders(e.target.checked)} className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer" /><label htmlFor="hasHeadersEnrollment" className="text-sm text-slate-700 cursor-pointer select-none">Ignorar primera fila (encabezados)</label>
+                    {!isCourseClosed && (
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
+                        <h3 className="font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100 flex items-center gap-2"><svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>Carga Masiva (CSV / Excel)</h3>
+                        <div className="flex-1 space-y-6 flex flex-col justify-center">
+                            <p className="text-sm text-slate-600">Suba un archivo con las 13 columnas requeridas para la matrícula.<br/><span className="text-xs text-slate-400">.csv, .xls, .xlsx</span></p>
+                            <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-purple-200 bg-purple-50 hover:bg-purple-100'}`}>
+                            <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                {uploadFile ? (<><svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="mb-1 text-sm font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-sm text-purple-600 font-semibold">Seleccionar archivo</p></>)}
+                            </div>
+                            <input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} />
+                            </label>
+                            <div className="flex items-center justify-center gap-2 mt-2">
+                            <input type="checkbox" id="hasHeadersEnrollment" checked={hasHeaders} onChange={e => setHasHeaders(e.target.checked)} className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer" /><label htmlFor="hasHeadersEnrollment" className="text-sm text-slate-700 cursor-pointer select-none">Ignorar primera fila (encabezados)</label>
+                            </div>
+                            <button onClick={handleBulkUpload} disabled={!uploadFile} className="mt-auto w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-900 disabled:opacity-50 shadow-md transition-all">Procesar Archivo</button>
                         </div>
-                        <button onClick={handleBulkUpload} disabled={!uploadFile} className="mt-auto w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-900 disabled:opacity-50 shadow-md transition-all">Procesar Archivo</button>
-                      </div>
-                    </div>
+                        </div>
+                    )}
                     
                     <div className="overflow-hidden rounded-xl border border-slate-200">
-                      <table className="w-full text-sm text-left">
+                      <table className={`w-full text-sm text-left ${isCourseClosed ? 'opacity-50' : ''}`}>
                         <thead className="bg-slate-50 text-slate-700">
                           <tr><th className="px-6 py-3">RUT</th><th className="px-6 py-3">Nombre</th><th className="px-6 py-3">Estado</th><th className="px-6 py-3 text-center">Acción</th></tr>
                         </thead>
                         <tbody>
-                          {sortedEnrollments.map(enr => { const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut)); return (<tr key={enr.id} className="border-t border-slate-100"><td className="px-6 py-3 font-mono">{enr.rut}</td><td className="px-6 py-3">{u?.names} {u?.paternalSurname}</td><td className="px-6 py-3">{enr.state}</td><td className="px-6 py-3 text-center"><button onClick={() => handleUnenrollFromList(enr.id, u ? `${u.names} ${u.paternalSurname}` : enr.rut)} className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 px-3 py-1.5 rounded text-[10px] font-black uppercase transition-all shadow-sm whitespace-nowrap">DESMATRICULAR</button></td></tr>);})}
+                          {sortedEnrollments.map(enr => { const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut)); return (<tr key={enr.id} className="border-t border-slate-100"><td className="px-6 py-3 font-mono">{enr.rut}</td><td className="px-6 py-3">{u?.names} {u?.paternalSurname}</td><td className="px-6 py-3">{enr.state}</td><td className="px-6 py-3 text-center">{!isCourseClosed && <button onClick={() => handleUnenrollFromList(enr.id, u ? `${u.names} ${u.paternalSurname}` : enr.rut)} className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 px-3 py-1.5 rounded text-[10px] font-black uppercase transition-all shadow-sm whitespace-nowrap">DESMATRICULAR</button>}</td></tr>);})}
                           {sortedEnrollments.length === 0 && (<tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400 italic">No hay estudiantes matriculados en este programa.</td></tr>)}
                         </tbody>
                       </table>
@@ -805,26 +954,33 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                   </div>
                 )} 
                 {activeDetailTab === 'config' && (
-                  <div className="space-y-8 animate-fadeIn">
-                    <div className="flex justify-between items-center"><h3 className="font-bold text-slate-800 text-lg">Estructura Curricular del Programa</h3><button onClick={handleAddModule} className="bg-purple-100 text-purple-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-purple-200 flex items-center gap-2"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Agregar Módulo</button></div>
-                    <div className="space-y-6">{programConfig.modules.map((module, idx) => (<div key={module.id} className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm hover:border-purple-300 transition-colors"><div className="flex justify-between items-start mb-4 border-b border-slate-100 pb-4"><div className="flex-1"><label className="block text-xs font-bold text-slate-400 uppercase mb-1">Nombre del Módulo {idx + 1}</label><input type="text" value={module.name} onChange={(e) => handleUpdateModule(module.id, 'name', e.target.value)} className="w-full font-bold text-slate-800 text-lg border-none focus:ring-0 p-0 placeholder-slate-300" placeholder="Nombre del Módulo..."/></div><button onClick={() => handleRemoveModule(module.id)} className="text-red-400 hover:text-red-600 p-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button></div><div className="grid grid-cols-1 md:grid-cols-3 gap-6"><div className="space-y-4"><div><label className="block text-xs font-bold text-slate-600 mb-1">Académico a Cargo</label><select value={module.relatorRut || ''} onChange={(e) => handleUpdateModule(module.id, 'relatorRut', e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"><option value="">Seleccione Académico...</option>{users.filter(u => u.systemRole === UserRole.ASESOR).map(u => (<option key={u.rut} value={u.rut}>{u.names} {u.paternalSurname}</option>))}</select></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-600 mb-1">Cant. Notas (0-6)</label><select value={module.evaluationCount} onChange={(e) => { const count = Number(e.target.value); setProgramConfig(prev => ({ ...prev, modules: prev.modules.map(m => { if (m.id === module.id) { const current = m.evaluationWeights || []; const nextWeights = Array.from({length: count}, (_, i) => current[i] || 0); return { ...m, evaluationCount: count, evaluationWeights: nextWeights }; } return m; }) })); }} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-slate-50">{[0,1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}</select></div><div><label className="block text-xs font-bold text-slate-600 mb-1">Ponderación Módulo %</label><input type="number" min="0" max="100" value={module.weight} onChange={(e) => handleUpdateModule(module.id, 'weight', Number(e.target.value))} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"/></div></div>{module.evaluationCount > 0 && (<div className="col-span-full mt-3 p-3 bg-purple-50 rounded-lg border border-purple-100"><label className="block text-[10px] font-bold text-purple-700 uppercase mb-2">Ponderación de cada Nota (Total 100%)</label><div className="flex flex-wrap gap-2">{Array.from({length: module.evaluationCount}).map((_, i) => (<div key={i} className="flex flex-col w-20"><span className="text-[10px] text-purple-500 mb-0.5 font-bold">Nota {i+1}</span><div className="relative"><input type="number" min="0" max="100" placeholder="%" value={module.evaluationWeights?.[i] || 0} onChange={(e) => { const val = Number(e.target.value); setProgramConfig(prev => ({ ...prev, modules: prev.modules.map(m => { if(m.id === module.id) { const w = [...(m.evaluationWeights || [])]; w[i] = val; return { ...m, evaluationWeights: w }; } return m; }) })); }} className="w-full px-2 py-1 text-sm border border-purple-200 rounded text-center font-bold text-purple-800 focus:ring-purple-500 focus:border-purple-500"/><span className="absolute right-1 top-1 text-[10px] text-purple-300">%</span></div></div>))}</div></div>)}</div><div className="space-y-4"><div><label className="block text-xs font-bold text-slate-600 mb-1">Fecha Inicio Módulo</label><input type="date" value={module.startDate || ''} onChange={(e) => handleUpdateModule(module.id, 'startDate', e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"/></div><div><label className="block text-xs font-bold text-slate-600 mb-1">Fecha Término Módulo</label><input type="date" value={module.endDate || ''} onChange={(e) => handleUpdateModule(module.id, 'endDate', e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"/></div></div><div className="bg-purple-50 p-4 rounded-lg border border-purple-100"><label className="block text-xs font-bold text-purple-800 mb-2">Calendario de Clases (Días Específicos)</label><div className="flex gap-2 mb-2"><input type="date" id={`date-${module.id}`} className="flex-1 px-2 py-1 text-xs border border-purple-200 rounded"/><button type="button" onClick={() => { const input = document.getElementById(`date-${module.id}`) as HTMLInputElement; if(input) handleAddClassDate(module.id, input.value); }} className="bg-purple-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-purple-700">+</button></div><div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto custom-scrollbar">{module.classDates?.map(date => (<span key={date} className="bg-white border border-purple-200 text-purple-700 px-2 py-1 rounded text-[10px] flex items-center gap-1 shadow-sm">{formatDateCL(date)}<button onClick={() => handleRemoveClassDate(module.id, date)} className="text-red-400 hover:text-red-600 font-bold">×</button></span>))}{(!module.classDates || module.classDates.length === 0) && <span className="text-[10px] text-purple-400 italic">Sin fechas asignadas</span>}</div></div></div></div>))} {programConfig.modules.length === 0 && (<div className="text-center py-12 bg-slate-50 border border-dashed border-slate-300 rounded-xl text-slate-400">Agregue módulos para configurar la estructura académica.</div>)}</div>
-                    <div className="flex justify-end pt-4 border-t border-slate-200"><button onClick={handleSaveConfig} className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold shadow hover:bg-green-700 transition-colors">Guardar Configuración Académica</button></div>
+                  <div className={`space-y-8 animate-fadeIn ${isCourseClosed ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <div className="flex justify-between items-center"><h3 className="font-bold text-slate-800 text-lg">Estructura Curricular del Programa</h3>{!isCourseClosed && <button onClick={handleAddModule} className="bg-purple-100 text-purple-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-purple-200 flex items-center gap-2"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Agregar Módulo</button>}</div>
+                    <div className="space-y-6">{programConfig.modules.map((module, idx) => (<div key={module.id} className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm hover:border-purple-300 transition-colors"><div className="flex justify-between items-start mb-4 border-b border-slate-100 pb-4"><div className="flex-1"><label className="block text-xs font-bold text-slate-400 uppercase mb-1">Nombre del Módulo {idx + 1}</label><input type="text" disabled={isCourseClosed} value={module.name} onChange={(e) => handleUpdateModule(module.id, 'name', e.target.value)} className="w-full font-bold text-slate-800 text-lg border-none focus:ring-0 p-0 placeholder-slate-300 disabled:bg-transparent" placeholder="Nombre del Módulo..."/></div>{!isCourseClosed && <button onClick={() => handleRemoveModule(module.id)} className="text-red-400 hover:text-red-600 p-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>}</div><div className="grid grid-cols-1 md:grid-cols-3 gap-6"><div className="space-y-4"><div><label className="block text-xs font-bold text-slate-600 mb-1">Académico a Cargo</label><select disabled={isCourseClosed} value={module.relatorRut || ''} onChange={(e) => handleUpdateModule(module.id, 'relatorRut', e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"><option value="">Seleccione Académico...</option>{users.filter(u => u.systemRole === UserRole.ASESOR).map(u => (<option key={u.rut} value={u.rut}>{u.names} {u.paternalSurname}</option>))}</select></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-600 mb-1">Cant. Notas (0-6)</label><select disabled={isCourseClosed} value={module.evaluationCount} onChange={(e) => { const count = Number(e.target.value); setProgramConfig(prev => ({ ...prev, modules: prev.modules.map(m => { if (m.id === module.id) { const current = m.evaluationWeights || []; const nextWeights = Array.from({length: count}, (_, i) => current[i] || 0); return { ...m, evaluationCount: count, evaluationWeights: nextWeights }; } return m; }) })); }} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-slate-50">{[0,1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}</select></div><div><label className="block text-xs font-bold text-slate-600 mb-1">Ponderación Módulo %</label><input type="number" disabled={isCourseClosed} min="0" max="100" value={module.weight} onChange={(e) => handleUpdateModule(module.id, 'weight', Number(e.target.value))} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"/></div></div>{module.evaluationCount > 0 && (<div className="col-span-full mt-3 p-3 bg-purple-50 rounded-lg border border-purple-100"><label className="block text-[10px] font-bold text-purple-700 uppercase mb-2">Ponderación de cada Nota (Total 100%)</label><div className="flex flex-wrap gap-2">{Array.from({length: module.evaluationCount}).map((_, i) => (<div key={i} className="flex flex-col w-20"><span className="text-[10px] text-purple-500 mb-0.5 font-bold">Nota {i+1}</span><div className="relative"><input disabled={isCourseClosed} type="number" min="0" max="100" placeholder="%" value={module.evaluationWeights?.[i] || 0} onChange={(e) => { const val = Number(e.target.value); setProgramConfig(prev => ({ ...prev, modules: prev.modules.map(m => { if(m.id === module.id) { const w = [...(m.evaluationWeights || [])]; w[i] = val; return { ...m, evaluationWeights: w }; } return m; }) })); }} className="w-full px-2 py-1 text-sm border border-purple-200 rounded text-center font-bold text-purple-800 focus:ring-purple-500 focus:border-purple-500"/><span className="absolute right-1 top-1 text-[10px] text-purple-300">%</span></div></div>))}</div></div>)}</div><div className="space-y-4"><div><label className="block text-xs font-bold text-slate-600 mb-1">Fecha Inicio Módulo</label><input disabled={isCourseClosed} type="date" value={module.startDate || ''} onChange={(e) => handleUpdateModule(module.id, 'startDate', e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"/></div><div><label className="block text-xs font-bold text-slate-600 mb-1">Fecha Término Módulo</label><input disabled={isCourseClosed} type="date" value={module.endDate || ''} onChange={(e) => handleUpdateModule(module.id, 'endDate', e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"/></div></div><div className="bg-purple-50 p-4 rounded-lg border border-purple-100"><label className="block text-xs font-bold text-purple-800 mb-2">Calendario de Clases (Días Específicos)</label><div className="flex gap-2 mb-2"><input disabled={isCourseClosed} type="date" id={`date-${module.id}`} className="flex-1 px-2 py-1 text-xs border border-purple-200 rounded"/><button disabled={isCourseClosed} type="button" onClick={() => { const input = document.getElementById(`date-${module.id}`) as HTMLInputElement; if(input) handleAddClassDate(module.id, input.value); }} className="bg-purple-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-purple-700">+</button></div><div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto custom-scrollbar">{module.classDates?.map(date => (<span key={date} className="bg-white border border-purple-200 text-purple-700 px-2 py-1 rounded text-[10px] flex items-center gap-1 shadow-sm">{formatDateCL(date)}<button disabled={isCourseClosed} onClick={() => handleRemoveClassDate(module.id, date)} className="text-red-400 hover:text-red-600 font-bold">×</button></span>))}{(!module.classDates || module.classDates.length === 0) && <span className="text-[10px] text-purple-400 italic">Sin fechas asignadas</span>}</div></div></div></div>))} {programConfig.modules.length === 0 && (<div className="text-center py-12 bg-slate-50 border border-dashed border-slate-300 rounded-xl text-slate-400">Agregue módulos para configurar la estructura académica.</div>)}</div>
+                    {!isCourseClosed && <div className="flex justify-end pt-4 border-t border-slate-200"><button onClick={handleSaveConfig} className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold shadow hover:bg-green-700 transition-colors">Guardar Configuración Académica</button></div>}
                   </div>
                 )} 
                 {activeDetailTab === 'tracking' && (
                   <div className="animate-fadeIn space-y-4">
                     <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-center gap-4">
-                      <div><h3 className="font-bold text-purple-800 text-lg">Seguimiento Académico Modular</h3><p className="text-xs text-purple-600">Gestión de calificaciones por módulo y cálculo de promedio final.</p></div>
+                      <div className="flex items-center gap-4">
+                        <button 
+                            onClick={handleToggleCloseCourse}
+                            className={`px-4 py-2 rounded-lg font-black uppercase text-xs shadow-md transition-all active:scale-95 flex items-center gap-2 ${isCourseClosed ? 'bg-rose-600 text-white hover:bg-rose-700 animate-pulse' : 'bg-slate-800 text-white hover:bg-black'}`}
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isCourseClosed ? "M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" : "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"} /></svg>
+                            {isCourseClosed ? 'REABRIR CURSO' : 'CERRAR POSTÍTULO'}
+                        </button>
+                        <div><h3 className="font-bold text-purple-800 text-lg">Seguimiento Académico Modular</h3><p className="text-xs text-purple-600">Gestión de calificaciones por módulo y cálculo de promedio final.</p></div>
+                      </div>
                       <div className="flex gap-4 text-center">
                         <div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm"><span className="block text-xl font-bold text-slate-700">{sortedEnrollments.length}</span><span className="text-[10px] font-bold text-slate-400 uppercase">Matriculados</span></div>
                         <div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm"><span className="block text-xl font-bold text-slate-700">{programConfig.modules.length}</span><span className="text-[10px] font-bold text-slate-400 uppercase">Módulos</span></div>
                         
-                        {/* KPI: NOTAS PENDIENTES */}
                         <div className="bg-white px-4 py-2 rounded-lg border border-rose-100 shadow-sm relative group cursor-help">
                             <span className="block text-xl font-bold text-rose-600">{pendingStats.total}</span>
                             <span className="text-[10px] font-bold text-slate-400 uppercase">Notas Pendientes</span>
                             
-                            {/* TOOLTIP DESGLOSE */}
                             <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-rose-200 shadow-2xl rounded-xl z-50 p-4 hidden group-hover:block animate-fadeIn">
                                 <div className="text-[10px] font-black text-rose-700 uppercase border-b border-rose-50 pb-2 mb-2 flex items-center gap-2">
                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -913,22 +1069,22 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                 allProgramDates.forEach((_, idx) => { if (enr[`attendanceSession${idx + 1}` as keyof Enrollment]) presentCount++; }); 
                                 const dynamicPercentage = totalDatesCount > 0 ? Math.round((presentCount / totalDatesCount) * 100) : 0; 
                                 return (
-                                  <tr key={enr.id} className={`hover:bg-purple-50/20 transition-colors ${isInactive ? 'grayscale opacity-60 bg-slate-50' : ''}`}>
-                                    <td className="px-2 py-2 font-medium text-slate-700 sticky left-0 bg-white border-r border-slate-200 z-10 w-[200px] min-w-[200px] truncate">
+                                  <tr key={enr.id} className={`hover:bg-purple-50/20 transition-colors ${isInactive || isCourseClosed ? 'grayscale opacity-60 bg-slate-50' : ''}`}>
+                                    <td className="px-2 py-2 font-medium sticky left-0 bg-white border-r border-slate-200 z-10 w-[200px] min-w-[200px] truncate">
                                       <div className="flex flex-col truncate">
-                                        <span className="truncate" title={`${student?.names} ${student?.paternalSurname}`}>{student ? `${student.paternalSurname} ${student.maternalSurname || ''}, ${student.names}` : enr.rut}</span>
+                                        <span className={`truncate ${isCourseClosed ? 'text-slate-400 font-bold' : 'text-slate-700'}`} title={`${student?.names} ${student?.paternalSurname}`}>{student ? `${student.paternalSurname} ${student.maternalSurname || ''}, ${student.names}` : enr.rut}</span>
                                         <span className="text-[10px] text-slate-400 font-mono">{enr.rut}</span>
                                       </div>
                                     </td>
                                     <td className="px-2 py-2 text-center border-r border-slate-200">
                                       <button 
-                                        disabled={isSyncing}
+                                        disabled={isSyncing || isCourseClosed}
                                         onClick={() => handleToggleSituation(enr.id, enr.situation)}
                                         className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${
                                           isInactive 
                                           ? 'bg-rose-50 text-rose-600 border-rose-100 shadow-sm' 
                                           : 'bg-emerald-50 text-emerald-600 border-emerald-100 shadow-sm'
-                                        } ${isSyncing ? 'opacity-50 cursor-wait' : ''}`}
+                                        } ${isSyncing || isCourseClosed ? 'opacity-50 cursor-not-allowed' : ''}`}
                                       >
                                         {isInactive ? 'INACTIVO' : 'ACTIVO'}
                                       </button>
@@ -940,7 +1096,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                           const gradeVal = activeGrades[globalIdx]; 
                                           return (
                                             <td key={`${enr.id}-${mod.id}-${noteIdx}`} className="px-1 py-2 text-center border-r border-slate-50">
-                                              <input type="number" step="0.1" min="1" max="7" disabled={isInactive || isSyncing} className={`w-full min-w-[40px] text-center border border-slate-200 rounded py-1 text-sm font-bold px-0 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal && gradeVal < 4.0 ? 'text-red-500' : 'text-slate-700'} ${isInactive ? 'cursor-not-allowed bg-slate-100 opacity-50' : ''}`} value={gradeVal || ''} onChange={(e) => handleUpdateGradeLocal(enr.id, modIdx, noteIdx, e.target.value)} />
+                                              <input type="number" step="0.1" min="1" max="7" disabled={isInactive || isSyncing || isCourseClosed} className={`w-full min-w-[40px] text-center border border-slate-200 rounded py-1 text-sm font-bold px-0 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal && gradeVal < 4.0 ? 'text-red-500' : 'text-slate-700'} ${isInactive || isCourseClosed ? 'cursor-not-allowed bg-slate-100 opacity-50' : ''}`} value={gradeVal || ''} onChange={(e) => handleUpdateGradeLocal(enr.id, modIdx, noteIdx, e.target.value)} />
                                             </td>
                                           ); 
                                         })}
@@ -960,7 +1116,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                       const isChecked = enr[sessionKey]; 
                                       return (
                                         <td key={`att-${enr.id}-${i}`} className="px-1 py-2 text-center border-r border-slate-100">
-                                          <input type="checkbox" checked={!!isChecked} disabled={isInactive || isSyncing} onChange={() => handleToggleAttendance(enr.id, i)} className={`rounded text-purple-600 focus:ring-purple-500 cursor-pointer w-4 h-4 ${isInactive ? 'cursor-not-allowed opacity-30' : ''}`}/>
+                                          <input type="checkbox" checked={!!isChecked} disabled={isInactive || isSyncing || isCourseClosed} onChange={() => handleToggleAttendance(enr.id, i)} className={`rounded text-purple-600 focus:ring-purple-500 cursor-pointer w-4 h-4 ${isInactive || isCourseClosed ? 'cursor-not-allowed opacity-30' : ''}`}/>
                                         </td>
                                       ); 
                                     })} 
@@ -983,7 +1139,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                           <td key={`batch-save-${modIdx}`} colSpan={(mod.evaluationCount || 0) + 1} className="px-2 py-3 text-center border-r border-slate-200">
                                               <button 
                                                   type="button"
-                                                  disabled={!hasChanges || isProcessingBatch}
+                                                  disabled={!hasChanges || isProcessingBatch || isCourseClosed}
                                                   onClick={() => handleBatchCommitModule(modIdx)}
                                                   className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-md transition-all transform active:scale-95 border-2 ${
                                                       hasChanges 
@@ -1004,6 +1160,36 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                       </div>
                     )}
                   </div>
+                )}
+                {activeDetailTab === 'acta' && isCourseClosed && (
+                    <div className="animate-fadeIn space-y-8 max-w-4xl mx-auto py-10">
+                        <div className="bg-indigo-50 border border-indigo-200 rounded-3xl p-10 flex flex-col items-center text-center shadow-sm">
+                            <div className="w-20 h-20 bg-indigo-600 text-white rounded-2xl flex items-center justify-center mb-6 shadow-xl">
+                                <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                            </div>
+                            <h3 className="text-2xl font-black text-indigo-900 mb-2">Acta Final de Calificaciones</h3>
+                            <p className="text-slate-600 max-w-lg mb-8 leading-relaxed">Este documento constituye el registro oficial de calificaciones y promedios finales del programa, inhabilitado para futuras modificaciones debido al cierre del curso.</p>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-md mb-10">
+                                <div className="bg-white p-4 rounded-xl border border-indigo-100 shadow-inner">
+                                    <span className="block text-[10px] font-black text-slate-400 uppercase mb-1">Inscritos</span>
+                                    <span className="text-2xl font-black text-indigo-700">{courseEnrollments.length}</span>
+                                </div>
+                                <div className="bg-white p-4 rounded-xl border border-indigo-100 shadow-inner">
+                                    <span className="block text-[10px] font-black text-slate-400 uppercase mb-1">Aprobados</span>
+                                    <span className="text-2xl font-black text-emerald-600">{courseEnrollments.filter(e => e.state === ActivityState.APROBADO).length}</span>
+                                </div>
+                            </div>
+
+                            <button 
+                                onClick={handleDownloadActa}
+                                className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-sm tracking-widest shadow-2xl hover:bg-indigo-700 hover:-translate-y-1 transition-all active:scale-95 flex items-center gap-3"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                Descargar Acta Oficial (.html)
+                            </button>
+                        </div>
+                    </div>
                 )}
               </div>
             </div>

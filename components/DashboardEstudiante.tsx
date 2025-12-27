@@ -35,15 +35,19 @@ const loadImageToPdf = (url: string): Promise<HTMLImageElement> => {
     });
 };
 
-// --- MINI CALENDAR COMPONENT (Exclusivo Estudiante) ---
+// --- MINI CALENDAR COMPONENT (Interactividad de Meses añadida) ---
 const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
     const today = new Date();
-    const currentYear = today.getFullYear();
-    const currentMonth = today.getMonth();
+    const [viewDate, setViewDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+    
+    const viewYear = viewDate.getFullYear();
+    const viewMonth = viewDate.getMonth();
+    
     const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
     const dayNames = ["L", "M", "M", "J", "V", "S", "D"];
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const firstDayIndex = new Date(currentYear, currentMonth, 1).getDay();
+    
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const firstDayIndex = new Date(viewYear, viewMonth, 1).getDay();
     const adjustedFirstDay = firstDayIndex === 0 ? 6 : firstDayIndex - 1;
 
     const days = [];
@@ -54,23 +58,43 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
     activities.forEach(act => {
         if(act.startDate) {
             const [y, m, d] = act.startDate.split('-').map(Number);
-            if (y === currentYear && (m - 1) === currentMonth) {
+            if (y === viewYear && (m - 1) === viewMonth) {
                 if(!activitiesByDay[d]) activitiesByDay[d] = [];
                 activitiesByDay[d].push(act);
             }
         }
     });
 
+    const nextMonth = () => {
+        setViewDate(new Date(viewYear, viewMonth + 1, 1));
+    };
+
+    const prevMonth = () => {
+        setViewDate(new Date(viewYear, viewMonth - 1, 1));
+    };
+
+    const resetToToday = () => {
+        setViewDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    };
+
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
             <div className="flex justify-between items-center mb-6">
                 <h3 className="font-bold text-slate-700 flex items-center gap-2">
                     <svg className="w-5 h-5 text-[#647FBC]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                    Mi Calendario
+                    Calendario
                 </h3>
-                <span className="text-[10px] font-black text-[#647FBC] uppercase bg-blue-50 px-2 py-1 rounded-lg border border-blue-100">
-                    {monthNames[currentMonth]} {currentYear}
-                </span>
+                <div className="flex items-center gap-1">
+                    <button onClick={prevMonth} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                    </button>
+                    <button onClick={resetToToday} className="text-[10px] font-black text-[#647FBC] uppercase bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 hover:bg-blue-100 transition-colors">
+                        {monthNames[viewMonth]} {viewYear}
+                    </button>
+                    <button onClick={nextMonth} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                    </button>
+                </div>
             </div>
             <div className="grid grid-cols-7 gap-1 text-center mb-2">
                 {dayNames.map((d, i) => (
@@ -81,7 +105,7 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                 {days.map((day, idx) => {
                     if (day === null) return <div key={idx} className="h-9"></div>;
                     const dayActs = activitiesByDay[day] || [];
-                    const isToday = day === today.getDate();
+                    const isToday = day === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
                     return (
                         <div key={idx} className={`h-9 flex flex-col items-center justify-center rounded-lg border transition-all relative group
                             ${isToday ? 'bg-[#647FBC] text-white border-[#647FBC] shadow-md scale-105 z-10' : 'bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100'}
@@ -90,11 +114,28 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                             <span className="text-xs">{day}</span>
                             <div className="flex gap-0.5 mt-0.5">
                                 {dayActs.some(a => a.category === 'ACADEMIC') && <div className={`w-1 h-1 rounded-full ${isToday ? 'bg-white' : 'bg-indigo-500'}`}></div>}
+                                {dayActs.some(a => a.category === 'POSTGRADUATE') && <div className={`w-1 h-1 rounded-full ${isToday ? 'bg-purple-200' : 'bg-purple-500'}`}></div>}
                                 {dayActs.some(a => a.category === 'GENERAL') && <div className={`w-1 h-1 rounded-full ${isToday ? 'bg-teal-200' : 'bg-teal-500'}`}></div>}
                             </div>
                         </div>
                     );
                 })}
+            </div>
+
+            {/* LEYENDA DEL CALENDARIO */}
+            <div className="mt-6 pt-4 border-t border-slate-100 flex flex-wrap gap-x-4 gap-y-2">
+                <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Cursos</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Postítulos</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-teal-500"></div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Extensión</span>
+                </div>
             </div>
         </div>
     );
@@ -341,6 +382,10 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
                             </div>
                             <h3 className="text-xl font-bold text-slate-800 leading-tight mb-6 flex-1 group-hover:text-emerald-700 transition-colors">{act.name}</h3>
                             <div className="space-y-3 text-xs text-slate-500 mb-8 bg-slate-50 p-4 rounded-2xl">
+                                <p className="flex items-center gap-3">
+                                    <svg className="w-4 h-4 text-[#647FBC]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                    Docente: <span className="font-bold text-slate-700">{act.relator || 'No asignado'}</span>
+                                </p>
                                 <p className="flex items-center gap-3"><svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> Inicio: <span className="font-bold text-slate-700">{formatDateCL(act.startDate)}</span></p>
                                 <p className="flex items-center gap-3"><svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Horas: <span className="font-bold text-slate-700">{act.hours}h Cronológicas</span></p>
                                 <p className="flex items-center gap-3"><svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg> Modalidad: <span className="font-bold text-slate-700">{act.modality}</span></p>
@@ -506,16 +551,16 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
                                 </div>
 
                                 <div className="p-8 space-y-8">
-                                    {/* Información del Curso */}
+                                    {/* Información del Curso (Igual a Cursos Abiertos) */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                        <div className="space-y-4">
-                                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2">Información de la Actividad</h4>
-                                            <div className="space-y-2 text-sm">
-                                                <p className="flex justify-between items-center"><span className="text-slate-500 font-medium">Director / Relator:</span> <span className="font-bold text-slate-700">{act.relator || 'Sin asignar'}</span></p>
-                                                <p className="flex justify-between items-center"><span className="text-slate-500 font-medium">Fecha Inicio:</span> <span className="font-bold text-slate-700">{formatDateCL(act.startDate)}</span></p>
-                                                <p className="flex justify-between items-center"><span className="text-slate-500 font-medium">Horas Cronológicas:</span> <span className="font-bold text-slate-700">{act.hours}h</span></p>
-                                                <p className="flex justify-between items-center"><span className="text-slate-500 font-medium">Modalidad:</span> <span className="font-bold text-slate-700">{act.modality}</span></p>
-                                            </div>
+                                        <div className="space-y-3 text-xs text-slate-500 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                                            <p className="flex items-center gap-3">
+                                                <svg className="w-4 h-4 text-[#647FBC]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                                Docente: <span className="font-bold text-slate-700">{act.relator || 'No asignado'}</span>
+                                            </p>
+                                            <p className="flex items-center gap-3"><svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> Inicio: <span className="font-bold text-slate-700">{formatDateCL(act.startDate)}</span></p>
+                                            <p className="flex items-center gap-3"><svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Horas: <span className="font-bold text-slate-700">{act.hours}h Cronológicas</span></p>
+                                            <p className="flex items-center gap-3"><svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg> Modalidad: <span className="font-bold text-slate-700">{act.modality}</span></p>
                                         </div>
 
                                         {/* KPIs Principales */}
@@ -533,7 +578,10 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
 
                                     {/* Notas Parciales */}
                                     <div className="space-y-4">
-                                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2">Desglose de Calificaciones</h4>
+                                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2 flex items-center gap-2">
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                                            Desglose de Calificaciones
+                                        </h4>
                                         <div className="flex flex-wrap gap-4">
                                             {Array.from({ length: act.evaluationCount || 3 }).map((_, idx) => {
                                                 const grade = enr.grades?.[idx];
