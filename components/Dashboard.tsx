@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, Activity, UserRole, ActivityState } from '../types';
-import { useData } from '../context/DataContext';
+import { useData, normalizeRut } from '../context/DataContext';
 import { TabType } from './RoleNavbar';
 import { DataExporter } from './DataExporter';
 // @ts-ignore
@@ -33,34 +33,21 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
     const currentYear = today.getFullYear();
     const currentMonth = today.getMonth(); // 0-11
     
-    // Nombres de días y meses
     const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
     const dayNames = ["L", "M", "M", "J", "V", "S", "D"];
 
-    // Calcular días del mes
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const firstDayIndex = new Date(currentYear, currentMonth, 1).getDay(); // 0 (Sun) - 6 (Sat)
-    
-    // Ajustar para que Lunes sea 0 (ISO)
+    const firstDayIndex = new Date(currentYear, currentMonth, 1).getDay();
     const adjustedFirstDay = firstDayIndex === 0 ? 6 : firstDayIndex - 1;
 
-    // Generar Array de Días
     const days = [];
-    // Relleno previo
-    for (let i = 0; i < adjustedFirstDay; i++) {
-        days.push(null);
-    }
-    // Días reales
-    for (let i = 1; i <= daysInMonth; i++) {
-        days.push(i);
-    }
+    for (let i = 0; i < adjustedFirstDay; i++) { days.push(null); }
+    for (let i = 1; i <= daysInMonth; i++) { days.push(i); }
 
-    // Mapear actividades por día
     const activitiesByDay: Record<number, Activity[]> = {};
     activities.forEach(act => {
         if(act.startDate) {
             const [y, m, d] = act.startDate.split('-').map(Number);
-            // Verificar si es el mes actual (m-1 porque en DB viene 1-12 y JS usa 0-11)
             if (y === currentYear && (m - 1) === currentMonth) {
                 if(!activitiesByDay[d]) activitiesByDay[d] = [];
                 activitiesByDay[d].push(act);
@@ -102,15 +89,12 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                             ${dayActs.length > 0 ? 'font-bold cursor-help' : ''}
                         `}>
                             <span className="text-sm z-10">{day}</span>
-                            
-                            {/* Dots Indicators */}
                             <div className="flex gap-0.5 mt-0.5">
                                 {hasAcademic && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-white' : 'bg-indigo-50'}`}></div>}
                                 {hasGeneral && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-teal-200' : 'bg-teal-500'}`}></div>}
                                 {hasPostgraduate && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-purple-200' : 'bg-purple-500'}`}></div>}
                             </div>
 
-                            {/* Tooltip */}
                             {dayActs.length > 0 && (
                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 bg-slate-800 text-white text-[10px] p-2 rounded z-20 shadow-xl pointer-events-none text-left">
                                     {dayActs.map(a => (
@@ -126,16 +110,11 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                     );
                 })}
             </div>
-            <div className="flex gap-4 mt-4 text-[10px] justify-center text-slate-500">
-                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-indigo-500"></div> Académico</div>
-                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-purple-500"></div> Postítulos</div>
-                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-teal-500"></div> Extensión</div>
-            </div>
         </div>
     );
 };
 
-// --- KPI CARD COMPONENT for ASESOR with Tooltip Improved ---
+// --- KPI CARD COMPONENT ---
 const KpiCardCompact: React.FC<{
     title: string;
     value: string | number;
@@ -162,8 +141,6 @@ const KpiCardCompact: React.FC<{
                     <div className="max-h-[500px] overflow-y-auto custom-scrollbar p-3 space-y-2 overflow-x-hidden text-slate-600">
                         {tooltipContent}
                     </div>
-                    <div className="absolute -top-2 left-0 w-full h-2 bg-transparent"></div>
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-8 border-transparent border-b-white"></div>
                 </div>
             )}
         </div>
@@ -176,39 +153,51 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
-  const { activities, users, enrollments, config } = useData();
+  const { activities, users, enrollments, config, upsertUsers, enrollUser } = useData();
   const { isSyncing, executeReload } = useReloadDirective(); 
 
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
 
+  // --- ESTADOS VISTA ESTUDIANTE ---
   const [kioskRut, setKioskRut] = useState('');
   const [activeSearchRut, setActiveSearchRut] = useState<string | null>(null);
   const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  
+  // Estados para Matriculación Estudiante
+  const [showEnrollmentModal, setShowEnrollmentModal] = useState(false);
+  const [activityToEnroll, setActivityToEnroll] = useState<Activity | null>(null);
+  const [studentEnrollForm, setStudentEnrollForm] = useState({
+      rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '',
+      campus: '', faculty: '', department: '', career: '', contractType: '',
+      teachingSemester: '', academicRole: ''
+  });
+  const [enrollStatus, setEnrollStatus] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   useEffect(() => {
     executeReload();
   }, [selectedYear, executeReload]);
 
-  const sortedDashboardCourses = useMemo(() => {
-    return activities
-      .filter(a => a.category === 'ACADEMIC' && a.year === selectedYear)
-      .sort((a, b) => {
-        const periodA = a.academicPeriod || '';
-        const periodB = b.academicPeriod || '';
-        const isSecondA = periodA.endsWith('-2') || periodA.toLowerCase().includes('2do') || periodA.toLowerCase().includes('segundo');
-        const isSecondB = periodB.endsWith('-2') || periodB.toLowerCase().includes('2do') || periodB.toLowerCase().includes('segundo');
-        if (isSecondA && !isSecondB) return -1;
-        if (!isSecondA && isSecondB) return 1;
-        return a.name.localeCompare(b.name);
-      });
-  }, [activities, selectedYear]);
-
-  const activeCoursesCount = activities.filter(a => a.category === 'ACADEMIC' && a.year === selectedYear).length;
-  const activeGeneralCount = activities.filter(a => a.category === 'GENERAL' && a.year === selectedYear).length;
-  const activePostgraduateCount = activities.filter(a => a.category === 'POSTGRADUATE' && a.year === selectedYear).length;
+  // --- FILTROS DE ACTIVIDADES (ESTUDIANTE) ---
+  const nowStr = new Date().toISOString().split('T')[0];
   
+  const openActivities = useMemo(() => {
+      return activities.filter(a => 
+        (a.category === 'ACADEMIC' || a.category === 'POSTGRADUATE') && 
+        a.isPublic !== false && 
+        (!a.endDate || a.endDate >= nowStr)
+      );
+  }, [activities, nowStr]);
+
+  const closedActivities = useMemo(() => {
+      return activities.filter(a => 
+        (a.category === 'ACADEMIC' || a.category === 'POSTGRADUATE') && 
+        a.isPublic !== false && 
+        (a.endDate && a.endDate < nowStr)
+      );
+  }, [activities, nowStr]);
+
   const yearEnrollments = enrollments.filter(e => {
       const act = activities.find(a => a.id === e.activityId);
       return act && act.year === selectedYear;
@@ -228,146 +217,92 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     }).length;
   }, [yearEnrollments, activities]);
 
-  const advisorKpis = useMemo(() => {
-    if (user.systemRole === UserRole.ESTUDIANTE) return null;
+  // FIX: Define activeCoursesCount which was missing but used on line 356
+  const activeCoursesCount = useMemo(() => {
+    return activities.filter(a => a.year === selectedYear && (a.category === 'ACADEMIC' || !a.category)).length;
+  }, [activities, selectedYear]);
 
-    const minGrade = config.minPassingGrade || 4.0;
-    const minAtt = config.minAttendancePercentage || 75;
-    const now = new Date();
-    const hoyStr = now.toISOString().split('T')[0];
+  // --- LOGICA DE CURSOS CERTIFICADOS PARA ESTUDIANTE ---
+  const studentCertifiedCount = useMemo(() => {
+      const rutToSearch = activeSearchRut || user.rut;
+      if (!rutToSearch) return 0;
+      
+      const normRutToSearch = normalizeRut(rutToSearch);
+      
+      return enrollments.filter(e => {
+          if (normalizeRut(e.rut) !== normRutToSearch) return false;
+          
+          const act = activities.find(a => a.id === e.activityId);
+          if (!act) return false;
 
-    const yearAcademicActivities = activities.filter(a => a.year === selectedYear && (a.category === 'ACADEMIC' || a.category === 'POSTGRADUATE'));
-    const academicEnrollments = enrollments.filter(e => yearAcademicActivities.some(a => a.id === e.activityId));
-    
-    const aprobados = academicEnrollments.filter(e => e.state === ActivityState.APROBADO).length;
-    const tasaAprobacion = academicEnrollments.length > 0 ? Math.round((aprobados / academicEnrollments.length) * 100) : 0;
-    
-    const detallesAprobacion = yearAcademicActivities.map(act => {
-        const enrs = academicEnrollments.filter(e => e.activityId === act.id);
-        const count = enrs.length;
-        const approved = enrs.filter(e => e.state === ActivityState.APROBADO).length;
-        return { name: act.name, pct: count > 0 ? Math.round((approved / count) * 100) : 0, approved, count };
-    }).sort((a,b) => b.pct - a.pct).slice(0, 10);
+          // Contamos cursos/postítulos aprobados O actividades de extensión registradas
+          if ((act.category === 'ACADEMIC' || act.category === 'POSTGRADUATE') && e.state === ActivityState.APROBADO) return true;
+          if (act.category === 'GENERAL') return true;
+          
+          return false;
+      }).length;
+  }, [enrollments, activities, activeSearchRut, user.rut]);
 
-    const estudiantesRiesgo: { name: string, course: string, reason: string }[] = [];
-    academicEnrollments.forEach(e => {
-        if (e.state === ActivityState.APROBADO) return;
-        const activity = yearAcademicActivities.find(a => a.id === e.activityId);
-        if (!activity) return;
-        const expectedGrades = activity.evaluationCount || 1;
-        const recordedGrades = (e.grades || []).filter(g => g !== undefined && g !== null && g > 0).length;
-        const hasAllGrades = recordedGrades >= expectedGrades;
-        const isFailingGrade = e.finalGrade !== undefined && e.finalGrade < minGrade && e.finalGrade > 0;
-        const isFailingAttendance = e.attendancePercentage !== undefined && e.attendancePercentage < minAtt;
-        let riskType = "";
-        if (hasAllGrades && (isFailingGrade || isFailingAttendance)) {
-            riskType = isFailingGrade && isFailingAttendance ? "Nota y Asistencia" : (isFailingGrade ? "Promedio bajo" : "Falta Asistencia");
-        } else if (!hasAllGrades && recordedGrades > 0 && isFailingGrade) {
-            riskType = "Tendencia reprobatoria";
-        }
-        if (riskType) {
-            const student = users.find(u => u.rut === e.rut);
-            estudiantesRiesgo.push({
-                name: student ? `${student.names} ${student.paternalSurname}` : e.rut,
-                course: activity.name,
-                reason: riskType
-            });
-        }
-    });
-
-    let totalSlots = 0;
-    let filledSlots = 0;
-    const avancePorCurso = yearAcademicActivities.map(act => {
-        const enrs = academicEnrollments.filter(e => e.activityId === act.id);
-        let cTotal = enrs.length * (act.evaluationCount || 1);
-        let cFilled = enrs.reduce((acc, e) => acc + (e.grades?.filter(g => g > 0).length || 0), 0);
-        totalSlots += cTotal;
-        filledSlots += cFilled;
-        return { name: act.name, pct: cTotal > 0 ? Math.round((cFilled / cTotal) * 100) : 0, filled: cFilled, total: cTotal };
-    }).sort((a,b) => a.pct - b.pct).slice(0, 10);
-
-    const avanceCalificaciones = totalSlots > 0 ? Math.round((filledSlots / totalSlots) * 100) : 0;
-
-    const enrollmentsWithAttendance = academicEnrollments.filter(e => typeof e.attendancePercentage === 'number' && e.attendancePercentage > 0);
-    const asistenciaPromedio = enrollmentsWithAttendance.length > 0 ? Math.round(enrollmentsWithAttendance.reduce((acc, e) => acc + (e.attendancePercentage || 0), 0) / enrollmentsWithAttendance.length) : 0;
-    
-    const asistenciaPorCurso = yearAcademicActivities.map(act => {
-        const enrs = academicEnrollments.filter(e => e.activityId === act.id && typeof e.attendancePercentage === 'number' && e.attendancePercentage > 0);
-        const avg = enrs.length > 0 ? Math.round(enrs.reduce((acc, e) => acc + (e.attendancePercentage || 0), 0) / enrs.length) : 0;
-        return { name: act.name, avg };
-    }).filter(a => a.avg > 0).sort((a,b) => a.avg - a.avg).slice(0, 10);
-
-    const cursosCriticosList = yearAcademicActivities.map(a => {
-        const count = academicEnrollments.filter(e => e.activityId === a.id).length;
-        return { name: a.name, count };
-    }).filter(c => c.count < 5).sort((a,b) => a.count - b.count);
-    
-    const finalizadosList = yearAcademicActivities.map(a => {
-        if (a.endDate && a.endDate < hoyStr) return { name: a.name, date: a.endDate, finished: true };
-        if (!a.endDate && (a.year || 0) < new Date().getFullYear()) return { name: a.name, date: `${a.year}-12-31`, finished: true };
-        return { name: a.name, date: a.endDate || '', finished: false };
-    }).filter(item => item.finished);
-
-    return {
-        tasaAprobacion,
-        detallesTasa: detallesAprobacion,
-        totalEstudiantesRiesgo: estudiantesRiesgo.length,
-        detallesEstudiantesRiesgo: estudiantesRiesgo,
-        avanceCalificaciones,
-        detallesAvance: avancePorCurso,
-        asistenciaPromedio,
-        detallesAsistencia: asistenciaPorCurso,
-        cursosCriticos: cursosCriticosList.length,
-        detallesCursosCriticos: cursosCriticosList,
-        cursosFinalizados: finalizadosList.length,
-        detallesCursosFinalizados: finalizadosList
-    };
-  }, [user.systemRole, activities, enrollments, config, selectedYear, users]);
-
-  const handleAdvisorNavigate = (act: Activity, targetTab: 'enrollment' | 'tracking' = 'tracking') => {
-      if (act.category === 'GENERAL') {
-          localStorage.setItem('jumpto_activity_id', act.id);
-          onNavigate('generalActivities');
-      } else if (act.category === 'POSTGRADUATE') {
-          localStorage.setItem('jumpto_postgrad_id', act.id);
-          onNavigate('postgraduate');
+  // --- HANDLERS MATRICULACIÓN ---
+  const handleOpenEnrollmentModal = (act: Activity) => {
+      setActivityToEnroll(act);
+      setEnrollStatus(null);
+      // Pre-cargar si el estudiante está logueado y no es el invitado general
+      if (user && user.systemRole === UserRole.ESTUDIANTE && user.rut !== '9.876.543-2') {
+          setStudentEnrollForm({
+              rut: user.rut, names: user.names, paternalSurname: user.paternalSurname, maternalSurname: user.maternalSurname || '',
+              email: user.email || '', phone: user.phone || '', campus: user.campus || '', faculty: user.faculty || '',
+              department: user.department || '', career: user.career || '', contractType: user.contractType || '',
+              teachingSemester: user.teachingSemester || '', academicRole: user.academicRole || ''
+          });
       } else {
-          localStorage.setItem('jumpto_course_id', act.id);
-          localStorage.setItem('jumpto_tab_course', targetTab); 
-          onNavigate('courses');
+          setStudentEnrollForm({
+            rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '',
+            campus: '', faculty: '', department: '', career: '', contractType: '',
+            teachingSemester: '', academicRole: ''
+          });
       }
+      setShowEnrollmentModal(true);
   };
 
-  const getCourseMetrics = (actId: string, evaluationCount: number = 3) => {
-      const enrolled = enrollments.filter(e => e.activityId === actId);
-      const count = enrolled.length;
-      let totalSlots = count * (evaluationCount || 1);
-      if (totalSlots === 0) totalSlots = 1;
-      let filledSlots = 0;
-      enrolled.forEach(e => {
-          if (e.grades && e.grades.length > 0) {
-              filledSlots += e.grades.filter(g => g > 0).length;
-          }
-      });
-      return { count, progress: Math.round((filledSlots / totalSlots) * 100) };
+  const handleEnrollFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      const { name, value } = e.target;
+      setStudentEnrollForm(prev => ({ ...prev, [name]: value }));
   };
 
-  const getPostgradMetrics = (act: Activity) => {
-      const enrolled = enrollments.filter(e => e.activityId === act.id);
-      const count = enrolled.length;
-      const totalEvalCount = act.programConfig?.modules?.reduce((acc, m) => acc + (m.evaluationCount || 0), 0) || 0;
+  const handleStudentEnrollSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!activityToEnroll) return;
       
-      let totalSlots = count * totalEvalCount;
-      if (totalSlots === 0) return { count, progress: 0 };
-      
-      let filledSlots = 0;
-      enrolled.forEach(e => {
-          if (e.grades && e.grades.length > 0) {
-              filledSlots += e.grades.filter(g => g > 0).length;
-          }
-      });
-      
-      return { count, progress: Math.min(100, Math.round((filledSlots / totalSlots) * 100)) };
+      setEnrollStatus(null);
+      const formattedRut = cleanRutFormat(studentEnrollForm.rut);
+      const normRut = normalizeRut(formattedRut);
+
+      // Verificar si ya está matriculado
+      const alreadyEnrolled = enrollments.some(enr => enr.activityId === activityToEnroll.id && normalizeRut(enr.rut) === normRut);
+      if (alreadyEnrolled) {
+          setEnrollStatus({ type: 'error', text: 'Ya te encuentras matriculado en este curso.' });
+          return;
+      }
+
+      try {
+          // 1. Upsert User (Base Maestra)
+          const studentUser: User = {
+              ...studentEnrollForm,
+              rut: formattedRut,
+              systemRole: UserRole.ESTUDIANTE
+          };
+          await upsertUsers([studentUser]);
+          
+          // 2. Enroll
+          await enrollUser(formattedRut, activityToEnroll.id);
+          
+          setEnrollStatus({ type: 'success', text: '¡Matriculación exitosa! Ya puedes ver el curso en tus resultados.' });
+          executeReload();
+          setTimeout(() => { setShowEnrollmentModal(false); }, 2500);
+      } catch (err: any) {
+          setEnrollStatus({ type: 'error', text: 'Error al procesar la matrícula. Por favor intente más tarde.' });
+      }
   };
 
   return (
@@ -389,27 +324,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                   }`}>
                       {user.systemRole}
                   </span>
-                  
-                  {(user.systemRole === UserRole.ASESOR || user.systemRole === UserRole.ADMIN) && (
-                        <div className="flex items-center bg-white rounded-full px-3 py-1 border border-slate-200 shadow-sm ml-2">
-                            <span className="text-[10px] font-bold uppercase text-slate-400 mr-2">Periodo:</span>
-                            <select
-                                value={selectedYear}
-                                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                                className="text-xs font-bold text-indigo-700 bg-transparent border-none focus:ring-0 p-0 cursor-pointer outline-none"
-                            >
-                                <option value={currentYear}>{currentYear} (Vigente)</option>
-                                <option value={currentYear - 1}>{currentYear - 1}</option>
-                                <option value={currentYear - 2}>{currentYear - 2}</option>
-                            </select>
-                            
-                            <div className="h-4 w-px bg-slate-200 mx-2"></div>
-                            <div className="flex items-center gap-1.5">
-                                <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-amber-400 animate-pulse' : 'bg-green-500'}`}></div>
-                                <span className="text-[8px] font-black uppercase text-slate-400">{isSyncing ? 'Sincronizando' : 'Actualizado'}</span>
-                            </div>
-                        </div>
-                  )}
               </div>
           </div>
 
@@ -418,357 +332,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                   <span className="block text-2xl font-bold text-[#647FBC]">{activeCoursesCount}</span>
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Cursos UAD</span>
              </div>
-             <div className="flex-shrink-0 text-center px-4 py-2.5 bg-white rounded-xl border border-slate-100 shadow-sm min-w-[100px]">
-                  <span className="block text-2xl font-bold text-purple-600">{activePostgraduateCount}</span>
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Postítulos</span>
-             </div>
-             <div className="flex-shrink-0 text-center px-4 py-2.5 bg-white rounded-xl border border-slate-100 shadow-sm min-w-[100px]">
-                  <span className="block text-2xl font-bold text-teal-600">{activeGeneralCount}</span>
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Extensión</span>
-             </div>
-             
              <div className="flex-shrink-0 text-center px-4 py-2.5 bg-indigo-600 rounded-xl border border-indigo-700 shadow-md min-w-[100px] transform hover:scale-105 transition-transform">
                   <span className="block text-2xl font-black text-white">{totalConsolidatedPeriod}</span>
                   <span className="text-[9px] font-black text-indigo-100 uppercase tracking-wide whitespace-nowrap">Consolidado</span>
              </div>
-
-             <div className="flex-shrink-0 text-center px-4 py-2.5 bg-white rounded-xl border border-slate-100 shadow-sm min-w-[100px]">
-                  <span className="block text-2xl font-bold text-slate-800">{totalEnrollmentsPeriod}</span>
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Inscritos</span>
-             </div>
           </div>
       </div>
 
-      {(user.systemRole === UserRole.ASESOR || user.systemRole === UserRole.ADMIN) && advisorKpis && (
-          <div className="space-y-12 animate-fadeIn">
-              
-              <div>
-                  <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-lg font-bold text-slate-600 flex items-center gap-2">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
-                          Indicadores Clave de Gestión ({selectedYear})
-                      </h3>
-                      {isSyncing && <span className="text-[10px] font-black text-indigo-500 animate-pulse uppercase tracking-widest">Calculando KPIs en tiempo real...</span>}
-                  </div>
-
-                  <div className={`grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3`}>
-                      <KpiCardCompact 
-                        title="Tasa Aprobación" 
-                        value={advisorKpis.tasaAprobacion} 
-                        suffix="%" 
-                        colorClass="text-emerald-600" 
-                        tooltipContent={
-                            <div className="space-y-2">
-                                <p className="text-[10px] text-slate-400 mb-2 uppercase font-bold tracking-tight">Rendimiento en Cursos Curriculares (Abiertos/Cerrados)</p>
-                                {advisorKpis.detallesTasa.length > 0 ? (
-                                    <ul className="text-[10px] space-y-1.5">
-                                        {advisorKpis.detallesTasa.map((c, i) => (
-                                            <li key={i} className="flex justify-between items-center gap-2 border-b border-slate-100 pb-1 last:border-0">
-                                                <span className="truncate flex-1 font-medium text-slate-700">{c.name}</span>
-                                                <span className="font-black text-emerald-600 whitespace-nowrap">{c.approved}/{c.count} ({c.pct}%)</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : "Sin datos en el período."}
-                            </div>
-                        }
-                      />
-
-                      <KpiCardCompact 
-                        title="Alumnos en Riesgo" 
-                        value={advisorKpis.totalEstudiantesRiesgo} 
-                        colorClass="text-amber-600" 
-                        tooltipContent={
-                            <div className="space-y-2">
-                                <p className="text-[10px] text-slate-400 mb-2 uppercase font-bold tracking-tight">Alertas Académicas Vigentes</p>
-                                {advisorKpis.detallesEstudiantesRiesgo.length > 0 ? (
-                                    <div className="space-y-2">
-                                        {advisorKpis.detallesEstudiantesRiesgo.map((item, i) => (
-                                            <div key={i} className="bg-slate-50 p-2 rounded border border-slate-200">
-                                                <div className="font-bold text-[10px] text-slate-800 leading-tight mb-0.5">{item.name}</div>
-                                                <div className="text-[9px] text-slate-500 mb-1 leading-tight">{item.course}</div>
-                                                <span className="text-[8px] font-black uppercase text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">Causa: {item.reason}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : "Sin riesgos detectados en el período."}
-                            </div>
-                        }
-                      />
-
-                      <KpiCardCompact 
-                        title="Avance Notas" 
-                        value={advisorKpis.avanceCalificaciones} 
-                        suffix="%" 
-                        colorClass="text-indigo-600" 
-                        tooltipContent={
-                            <div className="space-y-2">
-                                <p className="text-[10px] text-slate-400 mb-2 uppercase font-bold tracking-tight">Carga de Calificaciones por Programa</p>
-                                {advisorKpis.detallesAvance.length > 0 ? (
-                                    <ul className="text-[10px] space-y-1.5">
-                                        {advisorKpis.detallesAvance.map((c, i) => (
-                                            <li key={i} className="flex justify-between items-center gap-2 border-b border-slate-100 pb-1 last:border-0">
-                                                <span className="truncate flex-1 font-medium text-slate-700">{c.name}</span>
-                                                <span className={`font-black whitespace-nowrap ${c.pct < 50 ? 'text-red-600' : 'text-indigo-600'}`}>{c.filled}/{c.total} ({c.pct}%)</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : "Sin registros de notas."}
-                            </div>
-                        }
-                      />
-
-                      <KpiCardCompact 
-                        title="Asistencia Media" 
-                        value={advisorKpis.asistenciaPromedio} 
-                        suffix="%" 
-                        colorClass="text-blue-600" 
-                        tooltipContent={
-                            <div className="space-y-2">
-                                <p className="text-[10px] text-slate-400 mb-2 uppercase font-bold tracking-tight">Participación Real Promediada</p>
-                                {advisorKpis.detallesAsistencia.length > 0 ? (
-                                    <ul className="text-[10px] space-y-1.5">
-                                        {advisorKpis.detallesAsistencia.map((c, i) => (
-                                            <li key={i} className="flex justify-between items-center gap-2 border-b border-slate-100 pb-1 last:border-0">
-                                                <span className="truncate flex-1 font-medium text-slate-700">{c.name}</span>
-                                                <span className="font-black text-blue-600">{c.avg}%</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : "Sin datos de asistencia."}
-                            </div>
-                        }
-                      />
-
-                      <KpiCardCompact 
-                        title="Cursos Críticos" 
-                        value={advisorKpis.cursosCriticos} 
-                        colorClass="text-red-600" 
-                        tooltipContent={
-                            <div className="space-y-2">
-                                <p className="text-[10px] text-slate-400 mb-2 uppercase font-bold tracking-tight">Cursos Curriculares con Inscripción &lt; 5</p>
-                                {advisorKpis.detallesCursosCriticos.length > 0 ? (
-                                    <ul className="text-[10px] space-y-1.5">
-                                        {advisorKpis.detallesCursosCriticos.map((c, i) => (
-                                            <li key={i} className="flex justify-between items-center gap-2 border-b border-slate-100 pb-1 last:border-0">
-                                                <span className="truncate flex-1 font-medium text-slate-700">{c.name}</span>
-                                                <span className="font-black text-red-600">{c.count} alumnos</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : "Todos los cursos tienen quórum suficiente."}
-                            </div>
-                        }
-                      />
-
-                      <KpiCardCompact 
-                        title="Finalizados" 
-                        value={advisorKpis.cursosFinalizados} 
-                        colorClass="text-purple-600" 
-                        tooltipContent={
-                            <div className="space-y-2">
-                                <p className="text-[10px] text-slate-400 mb-2 uppercase font-bold tracking-tight">Cierres de Período Académico</p>
-                                {advisorKpis.detallesCursosFinalizados.length > 0 ? (
-                                    <ul className="text-[10px] space-y-1.5">
-                                        {advisorKpis.detallesCursosFinalizados.map((c, i) => (
-                                            <li key={i} className="flex flex-col border-b border-slate-100 pb-1 last:border-0">
-                                                <span className="truncate text-slate-700 font-bold leading-tight">{c.name}</span>
-                                                <span className="text-[8px] text-slate-400 uppercase font-mono">Concluyó: {formatDateCL(c.date)}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : "No hay cierres detectados."}
-                            </div>
-                        }
-                      />
-
-                      {(user.systemRole === UserRole.ASESOR || user.systemRole === UserRole.ADMIN) && (
-                        <KpiCardCompact 
-                            title="Total Aprobados" 
-                            value={totalApprovedPeriod} 
-                            colorClass="text-emerald-700" 
-                            tooltipContent={
-                                <p className="text-[10px] text-slate-500">Número consolidado de estudiantes que han completado satisfactoriamente sus programas en el período {selectedYear}.</p>
-                            }
-                        />
-                      )}
-                  </div>
-              </div>
-
-              <div className="space-y-10">
-                  <div>
-                      <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-indigo-200 pb-4">
-                          <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
-                          Cursos Curriculares (Seguimiento {selectedYear})
-                      </h3>
-                      
-                      <div className="bg-white border border-indigo-100 rounded-xl shadow-sm overflow-hidden">
-                          <div className="overflow-x-auto">
-                              <table className="w-full text-sm text-left">
-                                  <thead className="bg-indigo-50 text-indigo-800 font-bold border-b border-indigo-100">
-                                      <tr>
-                                          <th className="px-6 py-4 min-w-[320px]">Curso Académico</th>
-                                          <th className="px-6 py-4">Matrícula</th>
-                                          <th className="px-6 py-4">Avance Notas</th>
-                                          <th className="px-6 py-4 text-center">Acción</th>
-                                      </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100">
-                                      {sortedDashboardCourses.map(act => {
-                                          const { count, progress } = getCourseMetrics(act.id, act.evaluationCount);
-                                          const hoy = new Date().toISOString().split('T')[0];
-                                          const isFinished = act.endDate ? (act.endDate < hoy) : ((act.year || 0) < new Date().getFullYear());
-                                          const isSecondSemester = act.academicPeriod?.endsWith("-2") || act.academicPeriod?.toLowerCase().includes("2do") || act.academicPeriod?.toLowerCase().includes("segundo");
-                                          return (
-                                              <tr key={act.id} className={`transition-colors group ${isSecondSemester ? 'bg-indigo-50/40 hover:bg-indigo-100/50' : 'bg-white hover:bg-slate-50'} border-l-4 ${!isFinished ? 'border-emerald-500' : 'border-transparent opacity-80'}`}>
-                                                  <td className="px-6 py-4">
-                                                      <div className={`font-bold break-words leading-tight max-w-sm ${isFinished ? 'text-slate-400 font-medium' : 'text-emerald-700'}`}>{act.name}</div>
-                                                      <div className="text-[10px] text-slate-400 font-mono mt-1 uppercase">{act.internalCode || act.id} | {act.academicPeriod}</div>
-                                                  </td>
-                                                  <td className="px-6 py-4">
-                                                      <span className={`px-3 py-1.5 rounded-full text-xs font-black border flex items-center justify-center gap-2 w-fit ${isFinished ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200'}`}>
-                                                          {isFinished ? (
-                                                              <svg className="w-3.5 h-3.5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" title="Curso Cerrado"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                                                          ) : (
-                                                              <svg className="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" title="Curso Abierto"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
-                                                          )}
-                                                          {count}
-                                                      </span>
-                                                  </td>
-                                                  <td className="px-6 py-4">
-                                                      <div className="flex items-center gap-3">
-                                                          <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
-                                                              <div className={`h-full rounded-full transition-all duration-500 ${progress === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${progress}%` }}></div>
-                                                          </div>
-                                                          <span className="text-xs font-bold text-slate-600 w-10 text-right">{progress}%</span>
-                                                      </div>
-                                                  </td>
-                                                  <td className="px-6 py-4 text-center">
-                                                      <div className="flex items-center justify-center gap-2">
-                                                          <button onClick={(e) => { e.stopPropagation(); handleAdvisorNavigate(act, 'enrollment'); }} className="text-emerald-600 hover:text-white hover:bg-emerald-600 font-bold text-xs bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-lg transition-colors shadow-sm">Matricular</button>
-                                                          <button onClick={(e) => { e.stopPropagation(); handleAdvisorNavigate(act, 'tracking'); }} className="text-indigo-600 hover:text-white hover:bg-indigo-600 font-bold text-xs bg-indigo-50 border border-indigo-200 px-3 py-2 rounded-lg transition-colors shadow-sm">Notas</button>
-                                                      </div>
-                                                  </td>
-                                              </tr>
-                                          );
-                                      })}
-                                  </tbody>
-                              </table>
-                          </div>
-                      </div>
-                  </div>
-
-                  <div>
-                      <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-purple-200 pb-4">
-                          <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-                          Diplomados y Postítulos ({selectedYear})
-                      </h3>
-                      
-                      <div className="bg-white border border-purple-100 rounded-xl shadow-sm overflow-hidden">
-                          <div className="overflow-x-auto">
-                              <table className="w-full text-sm text-left">
-                                  <thead className="bg-purple-50 text-purple-800 font-bold border-b border-purple-100">
-                                      <tr>
-                                          <th className="px-6 py-4">Programa</th>
-                                          <th className="px-6 py-4">Matrícula</th>
-                                          <th className="px-6 py-4">Avance Notas</th>
-                                          <th className="px-6 py-4">Módulos</th>
-                                          <th className="px-6 py-4 text-center">Gestión</th>
-                                      </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100">
-                                      {activities.filter(a => a.category === 'POSTGRADUATE' && a.year === selectedYear).map(act => {
-                                          const { count, progress } = getPostgradMetrics(act);
-                                          return (
-                                              <tr key={act.id} className="hover:bg-purple-50/30 transition-colors group">
-                                                  <td className="px-6 py-4">
-                                                      <div className="font-bold text-slate-800">{act.name}</div>
-                                                      <div className="text-xs text-slate-500 font-mono">{act.internalCode || act.id}</div>
-                                                  </td>
-                                                  <td className="px-6 py-4">
-                                                      <span className="bg-purple-100 text-purple-700 px-3 py-1.5 rounded-full text-xs font-black border border-purple-200">
-                                                          {count} Docentes
-                                                      </span>
-                                                  </td>
-                                                  <td className="px-6 py-4">
-                                                      <div className="flex items-center gap-3">
-                                                          <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200 min-w-[100px]">
-                                                              <div className={`h-full rounded-full transition-all duration-500 ${progress === 100 ? 'bg-emerald-500' : 'bg-purple-500'}`} style={{ width: `${progress}%` }}></div>
-                                                          </div>
-                                                          <span className="text-xs font-bold text-slate-600 w-10 text-right">{progress}%</span>
-                                                      </div>
-                                                  </td>
-                                                  <td className="px-6 py-4">
-                                                      <div className="flex items-center gap-2">
-                                                          <span className="font-bold text-slate-700">{act.programConfig?.modules?.length || 0}</span>
-                                                      </div>
-                                                  </td>
-                                                  <td className="px-6 py-4 text-center">
-                                                      <button onClick={() => handleAdvisorNavigate(act)} className="text-purple-600 hover:text-white hover:bg-purple-600 font-bold text-xs bg-purple-50 border border-purple-200 px-3 py-2 rounded-lg transition-colors">Ver Detalles</button>
-                                                  </td>
-                                              </tr>
-                                          );
-                                      })}
-                                  </tbody>
-                              </table>
-                          </div>
-                      </div>
-                  </div>
-
-                  <div>
-                      <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b border-teal-200 pb-4">
-                          <svg className="w-8 h-8 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" /></svg>
-                          Actividades de Extensión y Vinculación ({selectedYear})
-                      </h3>
-                      
-                      <div className="bg-white border border-teal-100 rounded-xl shadow-sm overflow-hidden">
-                          <div className="overflow-x-auto">
-                              <table className="w-full text-sm text-left">
-                                  <thead className="bg-teal-50 text-teal-800 font-bold border-b border-teal-100">
-                                      <tr>
-                                          <th className="px-6 py-4">Actividad / Evento</th>
-                                          <th className="px-6 py-4">Inscritos</th>
-                                          <th className="px-6 py-4">Modalidad</th>
-                                          <th className="px-6 py-4 text-center">Gestión</th>
-                                      </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100">
-                                      {activities.filter(a => a.category === 'GENERAL' && a.year === selectedYear).map(act => {
-                                          const count = enrollments.filter(e => e.activityId === act.id).length;
-                                          return (
-                                              <tr key={act.id} className="hover:bg-teal-50/30 transition-colors group">
-                                                  <td className="px-6 py-4">
-                                                      <div className="font-bold text-slate-800">{act.name}</div>
-                                                      <div className="text-xs text-slate-500">{act.activityType} | {formatDateCL(act.startDate)}</div>
-                                                  </td>
-                                                  <td className="px-6 py-4">
-                                                      <span className="bg-teal-100 text-teal-700 px-3 py-1.5 rounded-full text-xs font-black border border-teal-200 flex items-center gap-1.5 w-fit">
-                                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                                                          {count}
-                                                      </span>
-                                                  </td>
-                                                  <td className="px-6 py-4 font-medium text-slate-600">{act.modality}</td>
-                                                  <td className="px-6 py-4 text-center">
-                                                      <button onClick={() => handleAdvisorNavigate(act)} className="text-teal-600 hover:text-white hover:bg-teal-600 font-bold text-xs bg-teal-50 border border-teal-200 px-3 py-2 rounded-lg transition-colors">Gestionar</button>
-                                                  </td>
-                                              </tr>
-                                          );
-                                      })}
-                                      {activities.filter(a => a.category === 'GENERAL' && a.year === selectedYear).length === 0 && (
-                                          <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400 italic">No hay actividades registradas en este período.</td></tr>
-                                      )}
-                                  </tbody>
-                              </table>
-                          </div>
-                      </div>
-                  </div>
-              </div>
-          </div>
-      )}
-      
+      {/* VISTA ESTUDIANTE COMPLETA */}
       {user.systemRole === UserRole.ESTUDIANTE && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fadeIn">
-              <div className="lg:col-span-2 space-y-8">
+              <div className="lg:col-span-2 space-y-12">
+                  
+                  {/* BUSCADOR DE RESULTADOS */}
                   <div className="bg-gradient-to-r from-[#647FBC] to-indigo-600 rounded-2xl p-8 shadow-md text-center text-white">
                       <h2 className="text-2xl font-bold mb-2">Consulta tus Resultados Académicos</h2>
                       <p className="text-blue-100 max-w-2xl mx-auto mb-6 font-medium text-sm">Ingresa tu RUT para revisar el estado de tus cursos, asistencia y calificaciones en tiempo real.</p>
@@ -779,27 +355,214 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                   </div>
                   
                   {activeSearchRut && (
-                      <div className="border-t-4 border-[#647FBC] bg-white rounded-xl shadow-md p-6 relative animate-fadeIn">
+                      <div className="border-t-4 border-[#647FBC] bg-white rounded-xl shadow-md p-8 relative animate-fadeIn">
                           <button onClick={() => { setActiveSearchRut(null); setKioskRut(''); }} className="absolute top-4 right-4 text-slate-400 hover:text-red-500"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
-                          <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">Resultados para: {activeSearchRut}</h3>
+                          <div className="mb-8 border-b border-slate-100 pb-4">
+                              <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">Resultados para: {activeSearchRut}</h3>
+                              <p className="text-xs text-slate-400 mt-1 uppercase font-black tracking-widest">Historial de Participación Académica</p>
+                          </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                              {enrollments.filter(e => e.rut === activeSearchRut).map(enr => {
+                              {enrollments.filter(e => normalizeRut(e.rut) === normalizeRut(activeSearchRut)).map(enr => {
                                   const act = activities.find(a => a.id === enr.activityId);
+                                  if (!act) return null;
+                                  
                                   return (
-                                      <div key={enr.id} className="border border-slate-200 rounded-xl p-5 bg-slate-50 relative group">
-                                          <div className="flex justify-between items-start mb-2">
-                                              <span className={`text-[10px] px-2 py-1 rounded font-bold uppercase ${enr.state === ActivityState.APROBADO ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>{enr.state}</span>
+                                      <div key={enr.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 hover:shadow-md transition-shadow flex flex-col h-full border-l-4 border-l-[#647FBC] relative group">
+                                          <div className="flex justify-between items-start mb-4">
+                                              <span className={`text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-tighter ${
+                                                  enr.state === ActivityState.APROBADO ? 'bg-emerald-100 text-emerald-700' : 
+                                                  enr.state === ActivityState.REPROBADO ? 'bg-rose-100 text-rose-700' :
+                                                  'bg-amber-100 text-amber-700'
+                                              }`}>{enr.state}</span>
+                                              <span className="text-[9px] text-slate-400 font-mono">{act.internalCode}</span>
                                           </div>
-                                          <h4 className="font-bold text-slate-800 text-base mb-1 line-clamp-2 h-10">{act?.name}</h4>
-                                          <button onClick={() => { setSelectedEnrollmentId(enr.id); setShowDetailModal(true); }} className="w-full text-xs bg-[#647FBC] text-white px-3 py-2 rounded-lg font-bold hover:bg-blue-800 transition-colors shadow-sm flex justify-center items-center gap-2 mt-4">Ver Detalles</button>
+                                          
+                                          <span className="text-[9px] font-black text-indigo-500 uppercase mb-1">{act.category === 'ACADEMIC' ? 'Curso' : act.category === 'POSTGRADUATE' ? 'Postítulo' : 'Extensión'}</span>
+                                          <h3 className="text-base font-bold text-slate-800 leading-tight mb-3 flex-1">{act.name}</h3>
+                                          
+                                          <div className="space-y-2 text-[11px] text-slate-500 mb-6 border-t border-slate-50 pt-3">
+                                              <p className="flex items-center gap-2"><svg className="w-3.5 h-3.5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Duración: {act.hours} Horas</p>
+                                              <p className="flex items-center gap-2"><svg className="w-3.5 h-3.5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg> Modalidad: {act.modality}</p>
+                                              <p className="flex items-center gap-2"><svg className="w-3.5 h-3.5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> Inicio: {formatDateCL(act.startDate)}</p>
+                                          </div>
+                                          
+                                          <button onClick={() => { setSelectedEnrollmentId(enr.id); setShowDetailModal(true); }} className="w-full text-[10px] uppercase tracking-widest bg-slate-100 text-slate-600 px-3 py-2 rounded-lg font-black hover:bg-[#647FBC] hover:text-white transition-all shadow-sm flex justify-center items-center gap-2">Ver Detalles Académicos</button>
                                       </div>
                                   );
                               })}
+                              {enrollments.filter(e => normalizeRut(e.rut) === normalizeRut(activeSearchRut)).length === 0 && (
+                                  <div className="col-span-full py-16 text-center bg-slate-50 rounded-xl border border-dashed border-slate-300">
+                                      <p className="text-slate-400 italic">No se encontraron registros vinculados a este RUT en el sistema.</p>
+                                  </div>
+                              )}
                           </div>
                       </div>
                   )}
+
+                  {/* NUEVA SECCIÓN: CURSOS ABIERTOS */}
+                  <div className="space-y-6">
+                      <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center">
+                              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
+                          </div>
+                          <div>
+                              <h2 className="text-xl font-bold text-slate-800 uppercase tracking-tight">Cursos Abiertos</h2>
+                              <p className="text-xs text-slate-500">Programas con matriculación vigente en el sistema.</p>
+                          </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {openActivities.map(act => (
+                              <div key={act.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 hover:shadow-md transition-shadow flex flex-col h-full border-t-4 border-t-emerald-500">
+                                  <div className="flex justify-between items-start mb-4">
+                                      <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-black uppercase">{act.category === 'ACADEMIC' ? 'Curso' : 'Postítulo'}</span>
+                                      <span className="text-[10px] text-slate-400 font-mono">{act.internalCode}</span>
+                                  </div>
+                                  <h3 className="text-lg font-bold text-slate-800 leading-tight mb-2 flex-1">{act.name}</h3>
+                                  <div className="space-y-2 text-xs text-slate-500 mb-6">
+                                      <p className="flex items-center gap-2"><svg className="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Duración: {act.hours} Horas Cronológicas</p>
+                                      <p className="flex items-center gap-2"><svg className="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg> Modalidad: {act.modality}</p>
+                                      <p className="flex items-center gap-2"><svg className="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> Fecha Inicio: {formatDateCL(act.startDate)}</p>
+                                  </div>
+                                  <button onClick={() => handleOpenEnrollmentModal(act)} className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold text-sm hover:bg-emerald-700 shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                      Matricúlate Ahora
+                                  </button>
+                              </div>
+                          ))}
+                          {openActivities.length === 0 && (
+                              <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-300 text-slate-400">
+                                  No hay cursos abiertos disponibles en este momento.
+                              </div>
+                          )}
+                      </div>
+                  </div>
+
+                  {/* NUEVA SECCIÓN: CATALOGO CURSOS CERRADOS */}
+                  <div className="space-y-6">
+                      <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-slate-100 text-slate-500 rounded-lg flex items-center justify-center">
+                              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+                          </div>
+                          <div>
+                              <h2 className="text-xl font-bold text-slate-800 uppercase tracking-tight">Histórico de Programas Realizados</h2>
+                              <p className="text-xs text-slate-500">Catálogo de cursos concluidos por la UAD.</p>
+                          </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {closedActivities.map(act => (
+                              <div key={act.id} className="bg-white border border-slate-200 rounded-lg p-4 flex flex-col opacity-75 grayscale hover:grayscale-0 hover:opacity-100 transition-all">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase mb-1">{act.category}</span>
+                                  <h4 className="text-sm font-bold text-slate-700 leading-tight mb-3 flex-1">{act.name}</h4>
+                                  <div className="flex justify-between items-center text-[10px] text-slate-400 border-t border-slate-100 pt-2">
+                                      <span>{act.year}</span>
+                                      <span>{act.hours}h</span>
+                                  </div>
+                              </div>
+                          ))}
+                          {closedActivities.length === 0 && (
+                              <p className="col-span-full text-center text-slate-400 italic text-xs py-4">Sin registros históricos públicos.</p>
+                          )}
+                      </div>
+                  </div>
+
               </div>
-              <div className="lg:col-span-1"><MiniCalendar activities={activities.filter(a => a.isPublic !== false)} /></div>
+
+              {/* BARRA LATERAL */}
+              <div className="lg:col-span-1 space-y-8">
+                  <MiniCalendar activities={activities.filter(a => a.isPublic !== false)} />
+                  
+                  <div className="bg-indigo-600 rounded-xl p-6 text-white shadow-lg overflow-hidden relative group transition-all">
+                      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:rotate-12 transition-transform"><svg className="w-24 h-24" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></div>
+                      <h3 className="font-bold text-lg mb-2 relative z-10">Logros Académicos</h3>
+                      <p className="text-indigo-100 text-[10px] mb-4 relative z-10 leading-tight">Total de cursos curriculares aprobados y actividades de extensión registradas.</p>
+                      <div className="text-5xl font-black relative z-10 animate-fadeIn">{studentCertifiedCount}</div>
+                      <div className="text-[9px] uppercase font-black text-indigo-300 mt-2 relative z-10 tracking-widest">
+                          {activeSearchRut ? `Viendo registros de: ${activeSearchRut}` : 'Global (Visitante)'}
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* MODAL DE MATRICULACIÓN ESTUDIANTE (13 CAMPOS BASE MAESTRA) */}
+      {showEnrollmentModal && activityToEnroll && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fadeIn">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[95vh] overflow-hidden flex flex-col border border-emerald-200">
+                  <div className="p-6 bg-emerald-600 text-white flex justify-between items-center shadow-lg relative z-10">
+                      <div>
+                          <h3 className="text-xl font-bold uppercase tracking-tight">Formulario de Matriculación Académica</h3>
+                          <p className="text-emerald-100 text-xs mt-1">Programa: {activityToEnroll.name}</p>
+                      </div>
+                      <button onClick={() => setShowEnrollmentModal(false)} className="text-white hover:text-emerald-200 text-3xl font-light">&times;</button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-8 bg-[#F9F8F6]">
+                      <form onSubmit={handleStudentEnrollSubmit} className="space-y-8">
+                          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
+                              <h4 className="text-xs font-black text-emerald-600 uppercase tracking-widest border-b border-emerald-50 pb-2">1. Antecedentes Personales</h4>
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                  <div className="md:col-span-1">
+                                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">RUT *</label>
+                                      <input name="rut" required type="text" placeholder="12.345.678-9" value={studentEnrollForm.rut} onChange={handleEnrollFormChange} onBlur={() => setStudentEnrollForm(prev => ({...prev, rut: cleanRutFormat(prev.rut)}))} className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-emerald-500 font-bold"/>
+                                  </div>
+                                  <div className="md:col-span-1">
+                                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nombres *</label>
+                                      <input name="names" required type="text" value={studentEnrollForm.names} onChange={handleEnrollFormChange} className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-emerald-500"/>
+                                  </div>
+                                  <div className="md:col-span-1">
+                                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Ap. Paterno *</label>
+                                      <input name="paternalSurname" required type="text" value={studentEnrollForm.paternalSurname} onChange={handleEnrollFormChange} className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-emerald-500"/>
+                                  </div>
+                                  <div className="md:col-span-1">
+                                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Ap. Materno</label>
+                                      <input name="maternalSurname" type="text" value={studentEnrollForm.maternalSurname} onChange={handleEnrollFormChange} className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-emerald-500"/>
+                                  </div>
+                                  <div className="md:col-span-2">
+                                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Correo Institucional *</label>
+                                      <input name="email" required type="email" placeholder="ejemplo@upla.cl" value={studentEnrollForm.email} onChange={handleEnrollFormChange} className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-emerald-500"/>
+                                  </div>
+                                  <div className="md:col-span-2">
+                                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Teléfono</label>
+                                      <input name="phone" type="tel" placeholder="+569..." value={studentEnrollForm.phone} onChange={handleEnrollFormChange} className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-emerald-500"/>
+                                  </div>
+                              </div>
+                          </div>
+
+                          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
+                              <h4 className="text-xs font-black text-emerald-600 uppercase tracking-widest border-b border-emerald-50 pb-2">2. Información Institucional (Base Maestra)</h4>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                  <SmartSelect label="Sede / Campus" name="campus" value={studentEnrollForm.campus} options={config.campuses || ["Valparaíso", "San Felipe"]} onChange={handleEnrollFormChange} />
+                                  <SmartSelect label="Facultad" name="faculty" value={studentEnrollForm.faculty} options={config.faculties || FACULTY_LIST} onChange={handleEnrollFormChange} />
+                                  <SmartSelect label="Departamento" name="department" value={studentEnrollForm.department} options={config.departments || DEPARTMENT_LIST} onChange={handleEnrollFormChange} />
+                                  <SmartSelect label="Carrera" name="career" value={studentEnrollForm.career} options={config.careers || CAREER_LIST} onChange={handleEnrollFormChange} />
+                                  <SmartSelect label="Tipo Contrato" name="contractType" value={studentEnrollForm.contractType} options={config.contractTypes || CONTRACT_TYPE_LIST} onChange={handleEnrollFormChange} />
+                                  <SmartSelect label="Semestre Docencia" name="teachingSemester" value={studentEnrollForm.teachingSemester} options={config.semesters || ["1er Semestre", "2do Semestre", "Anual"]} onChange={handleEnrollFormChange} />
+                                  <div className="md:col-span-3">
+                                      <SmartSelect label="Rol Académico Actual" name="academicRole" value={studentEnrollForm.academicRole} options={config.academicRoles || ACADEMIC_ROLES} onChange={handleEnrollFormChange} />
+                                  </div>
+                              </div>
+                          </div>
+
+                          <div className="flex flex-col items-center gap-4 pt-4">
+                              {enrollStatus && (
+                                  <div className={`w-full p-4 rounded-xl text-center font-bold animate-fadeIn ${enrollStatus.type === 'success' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}>
+                                      {enrollStatus.text}
+                                  </div>
+                              )}
+                              <button 
+                                  type="submit" 
+                                  disabled={isSyncing || enrollStatus?.type === 'success'}
+                                  className={`w-full md:w-auto px-12 py-4 bg-emerald-600 text-white rounded-xl font-bold text-lg shadow-xl hover:bg-emerald-700 hover:-translate-y-1 transition-all active:scale-95 disabled:opacity-50 disabled:translate-y-0 disabled:cursor-not-allowed`}
+                              >
+                                  {isSyncing ? 'Procesando Matriculación...' : 'Confirmar Matrícula'}
+                              </button>
+                              <p className="text-[10px] text-slate-400 text-center italic">Al confirmar, tus datos serán actualizados en la Base Maestra de la Unidad de Acompañamiento Docente.</p>
+                          </div>
+                      </form>
+                  </div>
+              </div>
           </div>
       )}
 
