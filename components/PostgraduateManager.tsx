@@ -619,8 +619,10 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
     if (!selectedCourse) return;
     
     const verificationCode = `SMEAD-${selectedCourse.internalCode}-${Date.now().toString().slice(-4)}`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`${window.location.origin}/?mode=verify_acta&code=${verificationCode}`)}`;
+    
     const coordinadores = users.filter(u => u.academicRole?.toLowerCase().includes("coordinación") || u.academicRole?.toLowerCase().includes("coordinador"));
-    const coordinador = coordinadores.length > 0 ? `${coordinadores[0].names} ${coordinadores[0].paternalSurname}` : "COORDINADOR UNIDAD";
+    const encargadoPrincipal = selectedCourse.relator || (coordinadores.length > 0 ? `${coordinadores[0].names} ${coordinadores[0].paternalSurname}` : "COORDINADOR UNIDAD");
     
     const rowsHTML = sortedEnrollments.map(enr => {
         const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut));
@@ -654,10 +656,13 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                 .course-info { display: grid; grid-template-cols: 1fr 1fr; gap: 20px; margin-bottom: 20px; font-size: 13px; }
                 table { width: 100%; border-collapse: collapse; font-size: 11px; }
                 th { background: #f1f5f9; color: #475569; padding: 10px; text-transform: uppercase; font-size: 10px; border: 1px solid #ddd; }
-                .signatures { display: flex; justify-content: space-around; margin-top: 60px; text-align: center; }
-                .sig-box { width: 250px; border-top: 1px solid #333; padding-top: 10px; font-size: 12px; }
+                .signatures { display: flex; justify-content: center; margin-top: 60px; text-align: center; }
+                .sig-box { width: 350px; border-top: 1px solid #333; padding-top: 10px; font-size: 12px; }
                 .footer { margin-top: 40px; font-size: 10px; color: #888; text-align: right; }
-                .verification { border: 1px dashed #ccc; padding: 10px; margin-top: 20px; font-family: monospace; font-size: 11px; background: #fffbeb; }
+                .verification-container { display: flex; justify-content: space-between; align-items: flex-end; border: 1px dashed #ccc; padding: 15px; margin-top: 20px; background: #fffbeb; }
+                .verification-text { font-family: monospace; font-size: 11px; }
+                .qr-box { text-align: center; }
+                .qr-box img { width: 80px; height: 80px; display: block; margin-bottom: 5px; }
             </style>
         </head>
         <body>
@@ -697,22 +702,25 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
             <div class="signatures">
                 <div class="sig-box">
-                    <strong>${selectedCourse.relator?.toUpperCase() || 'DIRECTOR PROGRAMA'}</strong><br>
-                    Director / Encargado del Programa
-                </div>
-                <div class="sig-box">
-                    <strong>${coordinador.toUpperCase()}</strong><br>
-                    Coordinador Unidad de Acompañamiento
+                    <strong>${encargadoPrincipal.toUpperCase()}</strong><br>
+                    Director / Coordinador de Programa / UAD
                 </div>
             </div>
 
-            <div class="verification">
-                CÓDIGO DE VERIFICACIÓN: <strong>${verificationCode}</strong><br>
-                Validado digitalmente por GestorSMEAD en conformidad con el registro institucional.
+            <div class="verification-container">
+                <div class="verification-text">
+                    <strong>CÓDIGO DE VERIFICACIÓN:</strong> ${verificationCode}<br>
+                    Validado digitalmente por GestorSMEAD en conformidad con el registro institucional.<br>
+                    Este documento constituye un registro oficial inalterable.
+                </div>
+                <div class="qr-box">
+                    <img src="${qrUrl}" alt="QR Verificación">
+                    <span style="font-size: 8px; font-weight: bold; color: #6b21a8;">ESCANEAR PARA VALIDAR</span>
+                </div>
             </div>
 
             <div class="footer">
-                Documento generado el ${new Date().toLocaleString()} - Sistema de Gestión de Actividades Formativas
+                Documento generado el ${new Date().toLocaleString()} - Sistema de Gestión de Actividades Formativas UAD
             </div>
         </body>
         </html>
@@ -968,7 +976,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                             onClick={handleToggleCloseCourse}
                             className={`px-4 py-2 rounded-lg font-black uppercase text-xs shadow-md transition-all active:scale-95 flex items-center gap-2 ${isCourseClosed ? 'bg-rose-600 text-white hover:bg-rose-700 animate-pulse' : 'bg-slate-800 text-white hover:bg-black'}`}
                         >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isCourseClosed ? "M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" : "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"} /></svg>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isCourseClosed ? "M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" : "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"} /></svg>
                             {isCourseClosed ? 'REABRIR CURSO' : 'CERRAR POSTÍTULO'}
                         </button>
                         <div><h3 className="font-bold text-purple-800 text-lg">Seguimiento Académico Modular</h3><p className="text-xs text-purple-600">Gestión de calificaciones por módulo y cálculo de promedio final.</p></div>
