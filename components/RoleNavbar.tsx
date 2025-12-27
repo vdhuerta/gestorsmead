@@ -331,7 +331,15 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
 };
 
 export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabChange, onLogout, unreadMessagesRuts = [] }) => {
-  const availableTabs = NAV_ITEMS.filter(item => item.allowedRoles.includes(user.systemRole));
+  const availableTabs = useMemo(() => {
+    return NAV_ITEMS.filter(item => item.allowedRoles.includes(user.systemRole)).map(item => {
+      // REQUERIMIENTO: Nombre Dashboard en lugar de Inicio para Estudiante
+      if (item.id === 'dashboard' && user.systemRole === UserRole.ESTUDIANTE) {
+        return { ...item, label: 'Dashboard' };
+      }
+      return item;
+    });
+  }, [user.systemRole]);
 
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
