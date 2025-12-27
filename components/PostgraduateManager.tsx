@@ -971,16 +971,16 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                 {activeDetailTab === 'tracking' && (
                   <div className="animate-fadeIn space-y-4">
                     <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-center gap-4">
-                      <div className="flex items-center gap-4">
-                        <button 
-                            onClick={handleToggleCloseCourse}
-                            className={`px-4 py-2 rounded-lg font-black uppercase text-xs shadow-md transition-all active:scale-95 flex items-center gap-2 ${isCourseClosed ? 'bg-rose-600 text-white hover:bg-rose-700 animate-pulse' : 'bg-slate-800 text-white hover:bg-black'}`}
-                        >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isCourseClosed ? "M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" : "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"} /></svg>
-                            {isCourseClosed ? 'REABRIR CURSO' : 'CERRAR POSTÍTULO'}
-                        </button>
-                        <div><h3 className="font-bold text-purple-800 text-lg">Seguimiento Académico Modular</h3><p className="text-xs text-purple-600">Gestión de calificaciones por módulo y cálculo de promedio final.</p></div>
-                      </div>
+                      <div><h3 className="font-bold text-purple-800 text-lg">Seguimiento Académico Modular</h3><p className="text-xs text-purple-600">Gestión de calificaciones por módulo y cálculo de promedio final.</p></div>
+                      
+                      <button 
+                          onClick={handleToggleCloseCourse}
+                          className={`px-4 py-2 rounded-lg font-black uppercase text-xs shadow-md transition-all active:scale-95 flex items-center gap-2 ${isCourseClosed ? 'bg-rose-600 text-white hover:bg-rose-700 animate-pulse' : 'bg-slate-800 text-white hover:bg-black'}`}
+                      >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isCourseClosed ? "M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" : "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"} /></svg>
+                          {isCourseClosed ? 'REABRIR CURSO' : 'CERRAR POSTÍTULO'}
+                      </button>
+
                       <div className="flex gap-4 text-center">
                         <div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm"><span className="block text-xl font-bold text-slate-700">{sortedEnrollments.length}</span><span className="text-[10px] font-bold text-slate-400 uppercase">Matriculados</span></div>
                         <div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm"><span className="block text-xl font-bold text-slate-700">{programConfig.modules.length}</span><span className="text-[10px] font-bold text-slate-400 uppercase">Módulos</span></div>
