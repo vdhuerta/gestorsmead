@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, Activity, UserRole, ActivityState } from '../types';
+import { User, Activity, UserRole, ActivityState, Enrollment } from '../types';
 import { useData, normalizeRut } from '../context/DataContext';
 import { TabType } from './RoleNavbar';
 import { DataExporter } from './DataExporter';
@@ -73,7 +73,7 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                 ))}
             </div>
             
-            <div className="grid grid-cols-7 gap-1 text-center">
+            <div className="grid grid-cols-7 gap-1 text-center mb-6">
                 {days.map((day, idx) => {
                     if (day === null) return <div key={idx} className="h-10"></div>;
                     
@@ -90,7 +90,7 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                         `}>
                             <span className="text-sm z-10">{day}</span>
                             <div className="flex gap-0.5 mt-0.5">
-                                {hasAcademic && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-white' : 'bg-indigo-50'}`}></div>}
+                                {hasAcademic && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-white' : 'bg-indigo-500'}`}></div>}
                                 {hasGeneral && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-teal-200' : 'bg-teal-500'}`}></div>}
                                 {hasPostgraduate && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-purple-200' : 'bg-purple-500'}`}></div>}
                             </div>
@@ -109,6 +109,25 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                         </div>
                     );
                 })}
+            </div>
+
+            {/* Leyenda del Calendario */}
+            <div className="border-t border-slate-100 pt-4 space-y-2">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Categorías</p>
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                        <span className="text-[10px] font-bold text-slate-600">Cursos Curriculares</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+                        <span className="text-[10px] font-bold text-slate-600">Postítulos</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full bg-teal-500"></div>
+                        <span className="text-[10px] font-bold text-slate-600">Extensión / General</span>
+                    </div>
+                </div>
             </div>
         </div>
     );
@@ -164,6 +183,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
   const [activeSearchRut, setActiveSearchRut] = useState<string | null>(null);
   const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   
   // Estados para Matriculación Estudiante
   const [showEnrollmentModal, setShowEnrollmentModal] = useState(false);
@@ -203,9 +223,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
       return act && act.year === selectedYear;
   });
 
-  const totalEnrollmentsPeriod = yearEnrollments.length;
-  const totalApprovedPeriod = yearEnrollments.filter(e => e.state === ActivityState.APROBADO).length;
-
   const totalConsolidatedPeriod = useMemo(() => {
     return yearEnrollments.filter(enr => {
         const act = activities.find(a => a.id === enr.activityId);
@@ -217,7 +234,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     }).length;
   }, [yearEnrollments, activities]);
 
-  // FIX: Define activeCoursesCount which was missing but used on line 356
   const activeCoursesCount = useMemo(() => {
     return activities.filter(a => a.year === selectedYear && (a.category === 'ACADEMIC' || !a.category)).length;
   }, [activities, selectedYear]);
@@ -235,7 +251,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
           const act = activities.find(a => a.id === e.activityId);
           if (!act) return false;
 
-          // Contamos cursos/postítulos aprobados O actividades de extensión registradas
           if ((act.category === 'ACADEMIC' || act.category === 'POSTGRADUATE') && e.state === ActivityState.APROBADO) return true;
           if (act.category === 'GENERAL') return true;
           
@@ -247,7 +262,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
   const handleOpenEnrollmentModal = (act: Activity) => {
       setActivityToEnroll(act);
       setEnrollStatus(null);
-      // Pre-cargar si el estudiante está logueado y no es el invitado general
       if (user && user.systemRole === UserRole.ESTUDIANTE && user.rut !== '9.876.543-2') {
           setStudentEnrollForm({
               rut: user.rut, names: user.names, paternalSurname: user.paternalSurname, maternalSurname: user.maternalSurname || '',
@@ -278,7 +292,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
       const formattedRut = cleanRutFormat(studentEnrollForm.rut);
       const normRut = normalizeRut(formattedRut);
 
-      // Verificar si ya está matriculado
       const alreadyEnrolled = enrollments.some(enr => enr.activityId === activityToEnroll.id && normalizeRut(enr.rut) === normRut);
       if (alreadyEnrolled) {
           setEnrollStatus({ type: 'error', text: 'Ya te encuentras matriculado en este curso.' });
@@ -286,15 +299,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
       }
 
       try {
-          // 1. Upsert User (Base Maestra)
           const studentUser: User = {
               ...studentEnrollForm,
               rut: formattedRut,
               systemRole: UserRole.ESTUDIANTE
           };
           await upsertUsers([studentUser]);
-          
-          // 2. Enroll
           await enrollUser(formattedRut, activityToEnroll.id);
           
           setEnrollStatus({ type: 'success', text: '¡Matriculación exitosa! Ya puedes ver el curso en tus resultados.' });
@@ -302,6 +312,72 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
           setTimeout(() => { setShowEnrollmentModal(false); }, 2500);
       } catch (err: any) {
           setEnrollStatus({ type: 'error', text: 'Error al procesar la matrícula. Por favor intente más tarde.' });
+      }
+  };
+
+  // --- CERTIFICATE GENERATION LOGIC ---
+  const handleGenerateCertificate = async (enrollment: Enrollment, student: User, act: Activity) => {
+      setIsGeneratingPdf(true);
+      try {
+          const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+          const pageWidth = doc.internal.pageSize.getWidth();
+          const pageHeight = doc.internal.pageSize.getHeight();
+          const bgUrl = "https://raw.githubusercontent.com/vdhuerta/assets-aplications/main/Formato_Constancia.png";
+          
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          const bgImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+              img.onload = () => resolve(img);
+              img.onerror = (e) => reject(e);
+              img.src = bgUrl;
+          });
+          
+          doc.addImage(bgImg, 'PNG', 0, 0, pageWidth, pageHeight);
+          doc.setTextColor(30, 41, 59);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(17);
+          const fullName = `${student.names} ${student.paternalSurname} ${student.maternalSurname || ''}`.toUpperCase();
+          doc.text(fullName, 55, 103, { align: "left" });
+
+          const date = new Date();
+          const months = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+          const dateText = `Valparaíso, ${date.getDate()} de ${months[date.getMonth()]} de ${date.getFullYear()}`;
+          doc.setFontSize(11);
+          doc.setFont("helvetica", "normal");
+          doc.text(dateText, 60, 113, { align: "left" });
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(13);
+          const splitCourseName = doc.splitTextToSize(act.name.toUpperCase(), pageWidth - 40);
+          doc.text(splitCourseName, 108, 140, { align: "center" });
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(11);
+          const combinedInfo = `Duración: ${act.hours} horas cronológicas      RUT: ${student.rut}`;
+          doc.text(combinedInfo, 108, 180, { align: "center" });
+
+          const certCode = enrollment.certificateCode || `UPLA-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+          doc.setFont("courier", "normal");
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text(`ID VERIFICACIÓN: ${certCode}`, 125, 220);
+
+          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${window.location.origin}/?mode=verify_cert&code=${certCode}`)}`;
+          const qrImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+              const qimg = new Image();
+              qimg.crossOrigin = "anonymous";
+              qimg.onload = () => resolve(qimg);
+              qimg.onerror = (e) => reject(e);
+              qimg.src = qrUrl;
+          });
+          doc.addImage(qrImg, 'PNG', 145, 225, 25, 25);
+
+          doc.save(`Certificado_${student.rut}_${act.internalCode || 'UPLA'}.pdf`);
+      } catch (err) {
+          console.error(err);
+          alert("Error al descargar certificado.");
+      } finally {
+          setIsGeneratingPdf(false);
       }
   };
 
@@ -572,10 +648,92 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                 {(() => {
                     const enr = enrollments.find(e => e.id === selectedEnrollmentId);
                     const act = activities.find(a => a.id === enr?.activityId);
+                    const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr?.rut || ''));
+                    
+                    if (!enr || !act) return null;
+
                     return (
                         <>
-                            <div className="p-6 border-b flex justify-between items-start bg-slate-50 border-slate-100"><div><h3 className="text-xl font-bold text-slate-800">{act?.name}</h3><p className="text-sm text-slate-500 mt-1">{act?.modality} • {act?.year}</p></div><button onClick={() => setShowDetailModal(false)} className="text-slate-400 hover:text-slate-600 text-2xl font-bold leading-none">&times;</button></div>
-                            <div className="p-6"><div className="space-y-6"><div className="grid grid-cols-2 gap-4"><div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-center"><span className="block text-3xl font-bold text-slate-700">{enr?.finalGrade || '-'}</span><span className="text-xs font-bold text-slate-400 uppercase">Nota Final</span></div><div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-center"><span className={`block text-3xl font-bold ${(enr?.attendancePercentage || 0) < 75 ? 'text-red-500' : 'text-emerald-600'}`}>{enr?.attendancePercentage || 0}%</span><span className="text-xs font-bold text-slate-400 uppercase">Asistencia</span></div></div></div></div>
+                            <div className="p-6 border-b flex justify-between items-start bg-slate-50 border-slate-100">
+                                <div>
+                                    <span className="text-[10px] font-black text-indigo-500 uppercase mb-1 block">Ficha de Seguimiento Alumno</span>
+                                    <h3 className="text-xl font-bold text-slate-800 leading-tight">{act.name}</h3>
+                                    <p className="text-sm text-slate-500 mt-1">{act.modality} • {act.year}</p>
+                                </div>
+                                <button onClick={() => setShowDetailModal(false)} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button>
+                            </div>
+                            
+                            <div className="p-8 space-y-8">
+                                {/* CURSO INFO */}
+                                <div className="grid grid-cols-2 gap-6 bg-slate-50 p-6 rounded-xl border border-slate-100 shadow-sm">
+                                    <div className="space-y-3">
+                                        <div><span className="block text-[10px] font-bold text-slate-400 uppercase">Instructor / Relator</span><span className="text-sm font-bold text-slate-700">{act.relator || 'Por Asignar'}</span></div>
+                                        <div><span className="block text-[10px] font-bold text-slate-400 uppercase">Inicio Actividad</span><span className="text-sm font-bold text-slate-700">{formatDateCL(act.startDate)}</span></div>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <div><span className="block text-[10px] font-bold text-slate-400 uppercase">Duración</span><span className="text-sm font-bold text-slate-700">{act.hours} Horas Cronológicas</span></div>
+                                        <div><span className="block text-[10px] font-bold text-slate-400 uppercase">Modalidad</span><span className="text-sm font-bold text-slate-700">{act.modality}</span></div>
+                                    </div>
+                                </div>
+
+                                {/* DESEMPEÑO */}
+                                <div className="space-y-4">
+                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">Rendimiento Académico</h4>
+                                    
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
+                                            <span className={`block text-3xl font-black ${(enr.finalGrade || 0) < 4 ? 'text-rose-600' : 'text-slate-800'}`}>{enr.finalGrade || '-'}</span>
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Nota Final</span>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
+                                            <span className={`block text-3xl font-black ${(enr.attendancePercentage || 0) < (config.minAttendancePercentage || 75) ? 'text-rose-600' : 'text-emerald-600'}`}>{enr.attendancePercentage || 0}%</span>
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Asistencia</span>
+                                        </div>
+                                    </div>
+
+                                    {/* NOTAS PARCIALES */}
+                                    <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
+                                        <span className="block text-[10px] font-bold text-indigo-400 uppercase mb-3">Detalle de Calificaciones Parciales</span>
+                                        <div className="flex flex-wrap gap-2">
+                                            {(enr.grades || []).map((grade, idx) => (
+                                                <div key={idx} className="bg-white border border-indigo-100 rounded-lg px-3 py-2 text-center min-w-[60px] shadow-sm">
+                                                    <span className="block text-[9px] font-bold text-indigo-300 uppercase mb-1">N{idx + 1}</span>
+                                                    <span className={`text-sm font-black ${grade < 4 ? 'text-rose-500' : 'text-slate-700'}`}>{grade || '0.0'}</span>
+                                                </div>
+                                            ))}
+                                            {(!enr.grades || enr.grades.length === 0) && <span className="text-xs text-slate-400 italic">No hay notas registradas.</span>}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* CERTIFICADO BUTTON */}
+                                <div className="pt-6 border-t border-slate-100 flex flex-col items-center">
+                                    {enr.state === ActivityState.APROBADO ? (
+                                        <button 
+                                            onClick={() => student && handleGenerateCertificate(enr, student, act)}
+                                            disabled={isGeneratingPdf}
+                                            className="w-full md:w-auto bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-xl font-bold text-sm shadow-xl transition-all hover:-translate-y-1 active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                                        >
+                                            {isGeneratingPdf ? (
+                                                <>
+                                                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                                    Generando Certificado...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                                    Descargar Certificado de Aprobación
+                                                </>
+                                            )}
+                                        </button>
+                                    ) : (
+                                        <div className="bg-slate-100 p-4 rounded-xl border border-slate-200 w-full text-center">
+                                            <span className="text-xs font-bold text-slate-500 uppercase">Certificado no disponible</span>
+                                            <p className="text-[10px] text-slate-400 mt-1 italic">Debe cumplir con los requisitos de aprobación (nota y asistencia) para obtener el documento.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </>
                     );
                 })()}
