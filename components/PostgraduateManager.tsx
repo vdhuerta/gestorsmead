@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole, ProgramModule, ProgramConfig } from '../types';
@@ -776,10 +777,15 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                   <div><label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Programa</label><select value={programConfig.programType} onChange={e => setProgramConfig({...programConfig, programType: e.target.value as any})} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-purple-50 focus:ring-purple-500"><option value="Diplomado">Diplomado</option><option value="Postítulo">Postítulo</option><option value="Magíster">Magíster</option><option value="Curso Especialización">Curso Especialización</option></select></div>
                                   <div><label className="block text-sm font-medium text-slate-700 mb-1">Código Interno</label><input required type="text" value={formData.internalCode} onChange={e => setFormData({...formData, internalCode: e.target.value.toUpperCase()})} className="w-full px-3 py-2 border border-slate-300 rounded-lg uppercase font-mono"/></div>
                               </div>
-                              <div className="grid grid-cols-3 gap-4">
-                                  <div><label className="block text-sm font-medium text-slate-700 mb-1">Año</label><input type="number" value={formData.year} onChange={e => setFormData({...formData, year: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/></div>
-                                  <div><label className="block text-sm font-medium text-slate-700 mb-1">Versión</label><input type="text" value={formData.version} onChange={e => setFormData({...formData, version: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/></div>
-                                  <div><label className="block text-sm font-medium text-slate-700 mb-1">Modalidad</label><select value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg">{listModalities.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+                              <div className="grid grid-cols-2 gap-4">
+                                  <div className="grid grid-cols-2 gap-2">
+                                      <div><label className="block text-sm font-medium text-slate-700 mb-1">Año</label><input type="number" value={formData.year} onChange={e => setFormData({...formData, year: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/></div>
+                                      <div><label className="block text-sm font-medium text-slate-700 mb-1">Versión</label><input type="text" value={formData.version} onChange={e => setFormData({...formData, version: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/></div>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-2">
+                                      <div><label className="block text-sm font-medium text-slate-700 mb-1">Modalidad</label><select value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg">{listModalities.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+                                      <div><label className="block text-sm font-medium text-slate-700 mb-1">Horas Cron.</label><input type="number" min="0" value={formData.horas} onChange={e => setFormData({...formData, horas: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
+                                  </div>
                               </div>
                               <div><label className="block text-sm font-medium text-slate-700 mb-1">Director del Programa</label><input type="text" placeholder="Nombre completo" value={formData.relator} onChange={e => setFormData({...formData, relator: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg"/></div>
                               <div className="grid grid-cols-2 gap-4">
@@ -823,6 +829,8 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                 <h2 className={`text-2xl font-bold ${isCourseClosed ? 'text-slate-500' : 'text-slate-800'}`}>{selectedCourse.name}</h2>
                 <p className="text-slate-500 text-sm mt-1 flex items-center gap-4">
                   <span>Director: {selectedCourse.relator}</span>
+                  <span>•</span>
+                  <span>{selectedCourse.hours} Horas</span>
                   <span>•</span>
                   <span>{selectedCourse.programConfig?.modules?.length || 0} Módulos</span>
                 </p>

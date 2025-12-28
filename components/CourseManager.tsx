@@ -11,10 +11,9 @@ import { useReloadDirective } from '../hooks/useReloadDirective';
 
 // --- Utility Functions ---
 const cleanRutFormat = (rut: string): string => {
-    let clean = rut.replace(/[^0-9kK]/g, '');
+    let clean = rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '');
     if (clean.length < 2) return rut;
     
-    // NORMA: Si tiene 8 caracteres (7 dígitos + DV), agregar el 0 a la izquierda
     if (clean.length === 8) {
         clean = '0' + clean;
     }
@@ -69,7 +68,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   // --- LÓGICA DE ORDENACIÓN POR SEMESTRE ACTUAL ---
   const sortedAcademicActivities = useMemo(() => {
     const now = new Date();
-    const month = now.getMonth(); // 0-11
+    const month = now.getMonth(); 
     const currentSemSuffix = (month >= 7) ? "-2" : "-1";
     const otherSemSuffix = (month >= 7) ? "-1" : "-2";
 
@@ -78,7 +77,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
         const periodB = b.academicPeriod || '';
 
         const isCurrentA = periodA.endsWith(currentSemSuffix);
-        const isCurrentB = periodB.endsWith(currentSemSuffix);
+        const isCurrentB = periodA.endsWith(currentSemSuffix);
         const isOtherA = periodA.endsWith(otherSemSuffix);
         const isOtherB = periodB.endsWith(otherSemSuffix);
 
@@ -96,8 +95,13 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('enrollment');
   
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-
   const [pendingChanges, setPendingChanges] = useState<Record<string, Enrollment>>({});
+
+  // --- ESTADOS PARA CONSULTA ACADÉMICA (SOLICITADO) ---
+  const [showKioskModal, setShowKioskModal] = useState(false);
+  const [kioskSearchRut, setKioskSearchRut] = useState('');
+  const [kioskSearchSurname, setKioskSearchSurname] = useState('');
+  const [kioskFoundUser, setKioskFoundUser] = useState<User | null>(null);
 
   const [formData, setFormData] = useState({
     internalCode: '', year: new Date().getFullYear(), academicPeriod: '2025-1',
@@ -122,10 +126,51 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [hasHeaders, setHasHeaders] = useState(true);
 
-  // --- EFECTO: AUTOGENERACIÓN DE CÓDIGO Y FECHA DE TÉRMINO (6 SEMANAS) ---
+  // --- EFECTO: BÚSQUEDA KIOSKO (CONSULTA ACADÉMICA) ---
+  useEffect(() => {
+    if (kioskSearchRut.length >= 2) {
+        const clean = normalizeRut(kioskSearchRut);
+        const match = users.find(u => normalizeRut(u.rut).includes(clean));
+        setKioskFoundUser(match || null);
+    } else if (kioskSearchSurname.length >= 3) {
+        const lower = kioskSearchSurname.toLowerCase();
+        const match = users.find(u => u.paternalSurname.toLowerCase().includes(lower));
+        setKioskFoundUser(match || null);
+    } else {
+        setKioskFoundUser(null);
+    }
+  }, [kioskSearchRut, kioskSearchSurname, users]);
+
+  const kioskResults = useMemo(() => {
+      if (!kioskFoundUser) return [];
+      const userRut = normalizeRut(kioskFoundUser.rut);
+      return enrollments
+        .filter(e => normalizeRut(e.rut) === userRut)
+        .map(enr => ({
+            enrollment: enr,
+            activity: activities.find(a => a.id === enr.activityId)
+        }))
+        .filter(res => res.activity !== undefined)
+        .sort((a, b) => {
+            const periodA = a.activity?.academicPeriod || a.activity?.year?.toString() || '0000';
+            const periodB = b.activity?.academicPeriod || b.activity?.year?.toString() || '0000';
+            return periodB.localeCompare(periodA);
+        });
+  }, [kioskFoundUser, enrollments, activities]);
+
+  const kioskGroupedResults = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    kioskResults.forEach(res => {
+        const period = res.activity?.academicPeriod || res.activity?.year?.toString() || 'Otros';
+        if (!groups[period]) groups[period] = [];
+        groups[period].push(res);
+    });
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [kioskResults]);
+
+  // --- EFECTO: AUTOGENERACIÓN DE CÓDIGO Y FECHA DE TÉRMINO ---
   useEffect(() => {
       if (view === 'create') {
-          // 1. Generar Código Interno
           const words = formData.nombre.trim().split(/\s+/);
           let acronym = '';
           if (words.length === 1 && words[0].length > 0) { acronym = words[0].substring(0, 4).toUpperCase(); } 
@@ -140,11 +185,9 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
               if (parts.length === 3) { 
                   const [y, m, d] = parts; 
                   dateStr = `${d}${m}${y.slice(2)}`; 
-                  
-                  // Calcular 6 semanas para Fecha de Término
                   const start = new Date(formData.startDate + 'T12:00:00');
                   const end = new Date(start);
-                  end.setDate(start.getDate() + 42); // 42 días = 6 semanas
+                  end.setDate(start.getDate() + 42); 
                   proposedEndDate = end.toISOString().split('T')[0];
               }
           } else {
@@ -155,7 +198,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           const ver = formData.version.trim().toUpperCase().replace(/\s/g, '') || 'V1';
           const autoCode = `${acronym}${dateStr}-${ver}`;
           
-          // Actualizamos ambos si estamos creando
           setFormData(prev => ({ 
               ...prev, 
               internalCode: autoCode,
@@ -203,7 +245,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   const handleRefresh = async () => { await executeReload(); };
 
-  // Helper para cargar imagen remota a PDF (Promise)
   const loadImageToPdf = (url: string): Promise<HTMLImageElement> => {
       return new Promise((resolve, reject) => {
           const img = new Image();
@@ -219,28 +260,20 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       setIsGeneratingPdf(true);
       
       try {
-          // El formato es VERTICAL (portrait) para tamaño carta
           const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
           const pageWidth = doc.internal.pageSize.getWidth(); 
           const pageHeight = doc.internal.pageSize.getHeight(); 
-          
-          // Imagen de fondo institucional
           const bgUrl = "https://raw.githubusercontent.com/vdhuerta/assets-aplications/main/Formato_Constancia.png";
           
-          // 1. Cargar fondo
           const bgImg = await loadImageToPdf(bgUrl);
           doc.addImage(bgImg, 'PNG', 0, 0, pageWidth, pageHeight);
+          doc.setTextColor(30, 41, 59);
 
-          // Configuración de texto
-          doc.setTextColor(30, 41, 59); // Color slate-800
-
-          // 1. Nombre completo (Posición: Y=103, X=55)
           doc.setFont("helvetica", "bold");
           doc.setFontSize(17); 
           const fullName = `${user.names} ${user.paternalSurname} ${user.maternalSurname || ''}`.toUpperCase();
           doc.text(fullName, 55, 103, { align: "left" });
 
-          // 2. Fecha de Emisión (Posición: Y=113, X=60)
           const date = new Date();
           const months = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
           const dateText = `Valparaíso, ${date.getDate()} de ${months[date.getMonth()]} de ${date.getFullYear()}`;
@@ -248,44 +281,33 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           doc.setFont("helvetica", "normal");
           doc.text(dateText, 60, 113, { align: "left" });
 
-          // 3. RUT: SE ELIMINA EL TEXTO DEL RUT BAJO LA FECHA (Solicitud del usuario)
-
-          // 4. Nombre del curso (Posición: X=108, Y=140)
           doc.setFont("helvetica", "bold");
           doc.setFontSize(13);
           const splitCourseName = doc.splitTextToSize(selectedCourse.name.toUpperCase(), pageWidth - 40);
           doc.text(splitCourseName, 108, 140, { align: "center" });
 
-          // 5. Horas Cronológicas y RUT (Posición: Y=180, X=108 Centro)
           doc.setFont("helvetica", "normal");
           doc.setFontSize(11);
           const combinedInfo = `Duración: ${selectedCourse.hours} horas cronológicas      RUT: ${user.rut}`;
           doc.text(combinedInfo, 108, 180, { align: "center" });
 
-          // 6. Código de Verificación y QR (AJUSTE: Mover 20mm izquierda y bajar 20mm respecto a la última posición)
-          // Última posición: Código (125, 200) -> Nuevo Y: 220
-          // Última posición: QR (145, 205) -> Nuevo Y: 225
           const certCode = enrollment.certificateCode || `UPLA-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-          
           doc.setFont("courier", "normal");
           doc.setFontSize(8);
           doc.setTextColor(100, 116, 139); 
           doc.text(`ID VERIFICACIÓN: ${certCode}`, 125, 220);
 
-          // Cargar e insertar Código QR
           const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${window.location.origin}/?mode=verify_cert&code=${certCode}`)}`;
           const qrImg = await loadImageToPdf(qrUrl);
           doc.addImage(qrImg, 'PNG', 145, 225, 25, 25);
           
-          // Guardar código si no existía
           if (!enrollment.certificateCode) {
               updateEnrollment(enrollment.id, { certificateCode: certCode });
           }
 
           doc.save(`Certificado_${user.rut}_${selectedCourse.internalCode || 'UPLA'}.pdf`);
       } catch (err) {
-          console.error("Error generating PDF:", err);
-          alert("Error al generar el certificado. Verifique su conexión.");
+          alert("Error al generar el certificado.");
       } finally {
           setIsGeneratingPdf(false);
       }
@@ -426,7 +448,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           setView('list');
           setSelectedCourseId(null);
       } catch (err: any) {
-          console.error("Error al guardar curso en BD:", err);
           alert(`ERROR CRÍTICO: No se pudo crear el curso.`);
       }
   };
@@ -462,6 +483,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   const handleEnrollChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       const { name, value } = e.target;
+      // FIX: Changed setEnrollForm to setManualForm as per state definition
       setManualForm(prev => ({ ...prev, [name]: value }));
       if (name === 'rut' || name === 'paternalSurname') {
           setIsFoundInMaster(false); setIsAlreadyEnrolled(false); setEnrollMsg(null);
@@ -538,17 +560,10 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       }
   };
 
-  // --- NUEVA LÓGICA: DESMATRICULAR DESDE LISTADO ---
   const handleUnenrollFromList = async (enrollmentId: string, studentName: string) => {
     if (confirm(`¿Confirma que desea desmatricular a ${studentName} de este curso?\n\nEl registro del estudiante permanecerá en la Base Maestra.`)) {
-        try {
-            await deleteEnrollment(enrollmentId);
-            await executeReload();
-            setEnrollMsg({ type: 'success', text: 'Estudiante desmatriculado correctamente.' });
-            setTimeout(() => setEnrollMsg(null), 3000);
-        } catch (err) {
-            alert("Error al desmatricular.");
-        }
+        try { await deleteEnrollment(enrollmentId); await executeReload(); setEnrollMsg({ type: 'success', text: 'Estudiante desmatriculado correctamente.' }); setTimeout(() => setEnrollMsg(null), 3000); } 
+        catch (err) { alert("Error al desmatricular."); }
     }
   };
 
@@ -592,7 +607,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                   });
               }
           }
-          if (usersToUpsert.length > 0) { try { await upsertUsers(usersToUpsert); } catch (userErr) { console.warn("User x issue:", userErr); } }
+          if (usersToUpsert.length > 0) { await upsertUsers(usersToUpsert); }
           if (rutsToEnroll.length > 0) {
               try {
                   const result = await bulkEnroll(rutsToEnroll, selectedCourseId);
@@ -601,8 +616,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
               } catch (enrollErr: any) {
                   setEnrollMsg({ type: 'error', text: `Error al matricular: ${enrollErr.message}` });
               }
-          } else {
-              setEnrollMsg({ type: 'success', text: 'Proceso finalizado: Registros ya existentes.' });
           }
           setUploadFile(null);
       };
@@ -618,22 +631,11 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                   <form onSubmit={handleCreateSubmit} className="space-y-6">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="col-span-2"><label className="block text-sm font-bold text-slate-700 mb-1">Nombre del Curso / Asignatura</label><input required type="text" value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#647FBC]"/></div>
-                          
                           <div className="col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
-                              <div>
-                                  <label className="block text-sm font-medium text-slate-700 mb-1">Fecha Inicio</label>
-                                  <input type="date" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/>
-                              </div>
-                              <div>
-                                  <label className="block text-sm font-medium text-slate-700 mb-1">Fecha Término</label>
-                                  <input type="date" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-indigo-50 border-indigo-200"/>
-                              </div>
-                              <div>
-                                  <label className="block text-sm font-medium text-slate-700 mb-1">Versión</label>
-                                  <input type="text" value={formData.version} placeholder="V1" onChange={e => setFormData({...formData, version: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/>
-                              </div>
+                              <div><label className="block text-sm font-medium text-slate-700 mb-1">Fecha Inicio</label><input type="date" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/></div>
+                              <div><label className="block text-sm font-medium text-slate-700 mb-1">Fecha Término</label><input type="date" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-indigo-50 border-indigo-200"/></div>
+                              <div><label className="block text-sm font-medium text-slate-700 mb-1">Versión</label><input type="text" value={formData.version} placeholder="V1" onChange={e => setFormData({...formData, version: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/></div>
                           </div>
-
                           <div className="grid grid-cols-2 gap-4">
                               <div><label className="block text-sm font-medium text-slate-700 mb-1">Código Interno</label><input type="text" value={formData.internalCode} onChange={e => setFormData({...formData, internalCode: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg font-mono text-xs bg-slate-50"/></div>
                               <div><label className="block text-sm font-medium text-slate-700 mb-1">Modalidad</label><select value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg">{listModalities.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
@@ -679,7 +681,184 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   }
 
   return (
-      <div className="animate-fadeIn space-y-6"><div className="flex justify-between items-center"><div><h2 className="text-2xl font-bold text-slate-800">Gestión de Cursos Curriculares</h2><p className="text-sm text-slate-500">Administración de asignaturas académicas y registro de notas.</p></div>{(isAdmin || isAdvisor) && (<button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), academicPeriod: '2025-1', nombre: '', version: 'V1', modality: 'Presencial', hours: 0, moduleCount: 1, evaluationCount: 3, relator: '', startDate: '', endDate: '' }); setView('create'); }} className="bg-[#647FBC] text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-800 transition-colors flex items-center gap-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Nuevo Curso</button>)}</div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{sortedAcademicActivities.map(course => { 
+      <div className="animate-fadeIn space-y-6">
+        <div className="flex justify-between items-center">
+            <div>
+                <h2 className="text-2xl font-bold text-slate-800">Gestión de Cursos Curriculares</h2>
+                <p className="text-sm text-slate-500">Administración de asignaturas académicas y registro de notas.</p>
+            </div>
+            <div className="flex gap-4">
+                {/* BOTÓN CONSULTA ACADÉMICA (NUEVO) */}
+                <button 
+                    onClick={() => { setKioskSearchRut(''); setKioskSearchSurname(''); setKioskFoundUser(null); setShowKioskModal(true); }}
+                    className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-4 py-2 rounded-lg font-bold hover:bg-indigo-100 transition-all flex items-center gap-2 shadow-sm"
+                >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    Consulta Académica
+                </button>
+
+                {(isAdmin || isAdvisor) && (
+                    <button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), academicPeriod: '2025-1', nombre: '', version: 'V1', modality: 'Presencial', hours: 0, moduleCount: 1, evaluationCount: 3, relator: '', startDate: '', endDate: '' }); setView('create'); }} className="bg-[#647FBC] text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-800 transition-colors flex items-center gap-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Nuevo Curso</button>
+                )}
+            </div>
+        </div>
+
+        {/* MODAL CONSULTA ACADÉMICA (NUEVO) */}
+        {showKioskModal && (
+            <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden border border-indigo-200">
+                    <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-lg">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-slate-800 leading-tight">Consulta de Expediente Académico</h3>
+                                <p className="text-xs text-slate-500">Historial completo de participaciones del docente.</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setShowKioskModal(false)} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button>
+                    </div>
+
+                    <div className="p-6 bg-indigo-50 border-b border-indigo-100">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label className="block text-[10px] font-black text-indigo-700 uppercase tracking-widest mb-1.5">Búsqueda por RUT</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="Ingrese RUT..." 
+                                    value={kioskSearchRut} 
+                                    onChange={(e) => { setKioskSearchRut(e.target.value); setKioskSearchSurname(''); }} 
+                                    className="w-full px-4 py-2 border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black text-indigo-700 uppercase tracking-widest mb-1.5">Búsqueda por Apellido Paterno</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="Ingrese Apellido..." 
+                                    value={kioskSearchSurname} 
+                                    onChange={(e) => { setKioskSearchSurname(e.target.value); setKioskSearchRut(''); }} 
+                                    className="w-full px-4 py-2 border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-[#F9F8F6]">
+                        {kioskFoundUser ? (
+                            <div className="space-y-8 animate-fadeIn">
+                                {/* PERFIL DOCENTE */}
+                                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-6">
+                                    <div className="w-20 h-20 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center font-black text-3xl shadow-inner border-2 border-white">
+                                        {kioskFoundUser.photoUrl ? (
+                                            <img src={kioskFoundUser.photoUrl} alt="Avatar" className="w-full h-full object-cover rounded-2xl" />
+                                        ) : kioskFoundUser.names.charAt(0)}
+                                    </div>
+                                    <div className="flex-1">
+                                        <h4 className="text-2xl font-black text-slate-800 leading-tight">{kioskFoundUser.paternalSurname}, {kioskFoundUser.names}</h4>
+                                        <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-slate-500 font-medium">
+                                            <span className="flex items-center gap-1.5"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg> RUT: {kioskFoundUser.rut}</span>
+                                            <span className="flex items-center gap-1.5 uppercase"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg> {kioskFoundUser.faculty}</span>
+                                        </div>
+                                    </div>
+                                    <div className="text-center bg-indigo-50 px-6 py-3 rounded-2xl border border-indigo-100">
+                                        <span className="block text-2xl font-black text-indigo-700">{kioskResults.length}</span>
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Actividades</span>
+                                    </div>
+                                </div>
+
+                                {/* LISTADO AGRUPADO */}
+                                {kioskGroupedResults.map(([period, items]) => (
+                                    <div key={period} className="space-y-4">
+                                        <div className="flex items-center gap-3">
+                                            <h5 className="bg-indigo-600 text-white px-4 py-1 rounded-full text-xs font-black uppercase tracking-widest shadow-md">{period}</h5>
+                                            <div className="h-px flex-1 bg-slate-200"></div>
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-4">
+                                            {items.map((res, i) => {
+                                                const cat = res.activity?.category;
+                                                const isApproved = res.enrollment.state === ActivityState.APROBADO;
+                                                return (
+                                                    <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all group flex flex-col md:flex-row gap-6">
+                                                        <div className="flex-1">
+                                                            <div className="flex items-center gap-2 mb-2">
+                                                                <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${
+                                                                    cat === 'POSTGRADUATE' ? 'bg-purple-50 text-purple-700 border-purple-100' :
+                                                                    cat === 'GENERAL' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                                                                    cat === 'ADVISORY' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                                                                    'bg-indigo-50 text-indigo-700 border-indigo-100'
+                                                                }`}>
+                                                                    {cat === 'POSTGRADUATE' ? 'POSTÍTULO' : cat === 'GENERAL' ? 'EXTENSIÓN' : cat === 'ADVISORY' ? 'ASESORÍA' : 'CURSO'}
+                                                                </span>
+                                                                <span className="text-[10px] text-slate-400 font-mono">{res.activity?.internalCode}</span>
+                                                            </div>
+                                                            <h6 className="font-bold text-slate-800 text-base leading-tight mb-2 group-hover:text-indigo-700 transition-colors">{res.activity?.name}</h6>
+                                                            
+                                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs mt-4 pt-4 border-t border-slate-50">
+                                                                <div>
+                                                                    <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Duración</span>
+                                                                    <span className="font-bold text-slate-600">{res.activity?.hours}h {res.activity?.modality === 'Presencial' ? 'Crono.' : 'Pedag.'}</span>
+                                                                </div>
+                                                                <div>
+                                                                    <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Inicio</span>
+                                                                    <span className="font-bold text-slate-600">{formatDateCL(res.activity?.startDate)}</span>
+                                                                </div>
+                                                                <div>
+                                                                    <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Sesiones / Notas</span>
+                                                                    <span className="font-bold text-slate-600">
+                                                                        {cat === 'ADVISORY' 
+                                                                            ? `${res.enrollment.sessionLogs?.length || 0} Atenciones` 
+                                                                            : `${res.enrollment.grades?.filter(g => g > 0).length || 0} registradas`
+                                                                        }
+                                                                    </span>
+                                                                </div>
+                                                                <div>
+                                                                    <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Asistencia</span>
+                                                                    <span className={`font-black ${(res.enrollment.attendancePercentage || 0) < 75 ? 'text-red-500' : 'text-emerald-600'}`}>{res.enrollment.attendancePercentage || 0}%</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="md:w-48 flex flex-col justify-center items-center gap-3 border-l border-slate-100 pl-6 bg-slate-50/50 rounded-r-2xl">
+                                                            <div className="text-center">
+                                                                <span className="block text-xs font-bold text-slate-400 uppercase mb-1">Nota Final</span>
+                                                                <span className={`text-3xl font-black ${isApproved ? 'text-indigo-600' : 'text-slate-400'}`}>{res.enrollment.finalGrade || '-'}</span>
+                                                            </div>
+                                                            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
+                                                                isApproved ? 'bg-green-100 text-green-700 border-green-200' : 'bg-slate-200 text-slate-600 border-slate-300'
+                                                            }`}>
+                                                                {res.enrollment.state}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+                                <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center text-slate-300">
+                                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                </div>
+                                <div className="max-w-xs">
+                                    <h4 className="font-bold text-slate-400 text-lg uppercase tracking-tight">Sin Selección</h4>
+                                    <p className="text-slate-400 text-xs">Ingrese un RUT o Apellido en los campos superiores para cargar los datos del docente.</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="p-4 bg-indigo-600 text-white text-center">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] italic">Unidad de Acompañamiento Docente • GestorSMEAD</p>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{sortedAcademicActivities.map(course => { 
         const courseEnrs = enrollments.filter(e => e.activityId === course.id);
         const enrolledCount = courseEnrs.length;
         const approvedCount = courseEnrs.filter(e => e.state === ActivityState.APROBADO).length;

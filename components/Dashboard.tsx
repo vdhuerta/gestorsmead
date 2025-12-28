@@ -258,35 +258,45 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
               <span className="h-px flex-1 bg-slate-100"></span>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* CURSOS CURRICULARES */}
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl transition-all p-8 flex flex-col items-center text-center group cursor-pointer" onClick={() => handleNavigate('courses')}>
-                  <div className="w-16 h-16 bg-blue-50 text-[#647FBC] rounded-2xl flex items-center justify-center mb-6 group-hover:bg-[#647FBC] group-hover:text-white transition-colors duration-500 shadow-inner">
-                      <svg className="w-9 h-9" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl transition-all p-6 flex flex-col items-center text-center group cursor-pointer" onClick={() => handleNavigate('courses')}>
+                  <div className="w-14 h-14 bg-blue-50 text-[#647FBC] rounded-2xl flex items-center justify-center mb-4 group-hover:bg-[#647FBC] group-hover:text-white transition-colors duration-500 shadow-inner">
+                      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
                   </div>
-                  <h3 className="text-xl font-black text-slate-800 mb-2">Gestión Curricular</h3>
-                  <p className="text-xs text-slate-500 leading-relaxed mb-6">Administración de cursos de pregrado, ingreso de notas masivas y generación de certificados.</p>
-                  <button className="mt-auto w-full py-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 group-hover:bg-[#647FBC] group-hover:text-white group-hover:border-[#647FBC] transition-all">Ingresar al Módulo</button>
+                  <h3 className="text-lg font-black text-slate-800 mb-1">Gestión Curricular</h3>
+                  <p className="text-[10px] text-slate-500 leading-snug mb-4">Administración de cursos de pregrado, notas y certificados.</p>
+                  <button className="mt-auto w-full py-2 bg-slate-50 border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 group-hover:bg-[#647FBC] group-hover:text-white transition-all">Ingresar</button>
               </div>
 
               {/* POSTÍTULOS */}
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl transition-all p-8 flex flex-col items-center text-center group cursor-pointer" onClick={() => handleNavigate('postgraduate')}>
-                  <div className="w-16 h-16 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-purple-600 group-hover:text-white transition-colors duration-500 shadow-inner">
-                      <svg className="w-9 h-9" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl transition-all p-6 flex flex-col items-center text-center group cursor-pointer" onClick={() => handleNavigate('postgraduate')}>
+                  <div className="w-14 h-14 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors duration-500 shadow-inner">
+                      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
                   </div>
-                  <h3 className="text-xl font-black text-slate-800 mb-2">Postítulos y Diplomados</h3>
-                  <p className="text-xs text-slate-500 leading-relaxed mb-6">Control modular de programas avanzados, ponderaciones personalizadas y seguimiento de diplomados.</p>
-                  <button className="mt-auto w-full py-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 group-hover:bg-purple-600 group-hover:text-white group-hover:border-purple-600 transition-all">Ingresar al Módulo</button>
+                  <h3 className="text-lg font-black text-slate-800 mb-1">Postítulos</h3>
+                  <p className="text-[10px] text-slate-500 leading-snug mb-4">Control modular de programas avanzados y diplomados.</p>
+                  <button className="mt-auto w-full py-2 bg-slate-50 border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 group-hover:bg-purple-600 group-hover:text-white transition-all">Ingresar</button>
               </div>
 
               {/* ASESORÍAS */}
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl transition-all p-8 flex flex-col items-center text-center group cursor-pointer" onClick={() => handleNavigate('advisory')}>
-                  <div className="w-16 h-16 bg-indigo-50 text-indigo-700 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-indigo-700 group-hover:text-white transition-colors duration-500 shadow-inner">
-                      <svg className="w-9 h-9" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl transition-all p-6 flex flex-col items-center text-center group cursor-pointer" onClick={() => handleNavigate('advisory')}>
+                  <div className="w-14 h-14 bg-indigo-50 text-indigo-700 rounded-2xl flex items-center justify-center mb-4 group-hover:bg-indigo-700 group-hover:text-white transition-colors duration-500 shadow-inner">
+                      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
                   </div>
-                  <h3 className="text-xl font-black text-slate-800 mb-2">Asesorías Pedagógicas</h3>
-                  <p className="text-xs text-slate-500 leading-relaxed mb-6">Bitácora individual de acompañamiento docente con firma digital QR y control de horas de atención.</p>
-                  <button className="mt-auto w-full py-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 group-hover:bg-indigo-700 group-hover:text-white group-hover:border-indigo-700 transition-all">Ingresar al Módulo</button>
+                  <h3 className="text-lg font-black text-slate-800 mb-1">Asesorías</h3>
+                  <p className="text-[10px] text-slate-500 leading-snug mb-4">Bitácora individual con firma digital QR y control de horas.</p>
+                  <button className="mt-auto w-full py-2 bg-slate-50 border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 group-hover:bg-indigo-700 group-hover:text-white transition-all">Ingresar</button>
+              </div>
+
+              {/* CUARTA TARJETA (NUEVA - PLACEHOLDER) */}
+              <div className="bg-slate-50 rounded-3xl border border-dashed border-slate-300 p-6 flex flex-col items-center text-center group transition-all opacity-80 hover:opacity-100">
+                  <div className="w-14 h-14 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center mb-4 shadow-inner border border-slate-200 group-hover:bg-white transition-colors duration-500">
+                      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+                  </div>
+                  <h3 className="text-lg font-black text-slate-400 mb-1">Nuevo Módulo</h3>
+                  <p className="text-[10px] text-slate-400 leading-snug mb-4">Módulo en etapa de planificación institucional.</p>
+                  <button disabled className="mt-auto w-full py-2 bg-slate-100 border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-300 cursor-not-allowed">Próximamente</button>
               </div>
           </div>
       </section>
