@@ -56,6 +56,9 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
     const { activities, addActivity, deleteActivity, enrollments, users, getUser, upsertUsers, enrollUser, bulkEnroll, updateEnrollment, deleteEnrollment, config, refreshData } = useData();
     const { isSyncing, executeReload } = useReloadDirective();
     
+    // Lista de Asesores para el desplegable de Relator
+    const advisors = useMemo(() => users.filter(u => u.systemRole === UserRole.ASESOR), [users]);
+
     // Lists needed for enrollment form
     const listFaculties = config.faculties?.length ? config.faculties : FACULTY_LIST;
     const listDepts = config.departments?.length ? config.departments : DEPARTMENT_LIST;
@@ -82,6 +85,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         horas: 0, 
         relator: '', 
         fechaInicio: '',
+        fechaTermino: '', // NUEVO
         linkRecursos: '',
         linkClase: '',
         linkEvaluacion: '',
@@ -176,6 +180,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
             horas: act.hours,
             relator: act.relator || '',
             fechaInicio: act.startDate || '',
+            fechaTermino: act.endDate || '', // CARGAR FECHA TÉRMINO
             linkRecursos: act.linkResources || '',
             linkClase: act.classLink || '',
             linkEvaluacion: act.evaluationLink || '',
@@ -272,7 +277,6 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         }
     };
 
-    // --- NUEVA FUNCIONALIDAD: LIMPIAR ASISTENCIA MASIVA ---
     const handleClearAttendance = async () => {
         if (!selectedActivity) return;
         
@@ -291,10 +295,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                     return;
                 }
                 
-                // Borrado secuencial o por bloque para asegurar que Supabase procese correctamente
                 await Promise.all(toDelete.map(e => deleteEnrollment(e.id)));
-                
-                // Limpiamos memoria y refrescamos vía Directiva de Recarga
                 await executeReload();
                 
                 setEnrollMsg({ type: 'success', text: 'Listado de asistentes limpiado correctamente. Puede subir una nueva lista.' });
@@ -364,7 +365,6 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                     const masterUser = users.find(u => normalizeRut(u.rut) === normRut);
                     const hasNameInFile = rowStrings[1] && rowStrings[1].length > 1;
 
-                    // OPTIMIZACIÓN: Si el usuario es nuevo O la planilla trae información de nombre, actualizamos/creamos
                     if (hasNameInFile || !masterUser) {
                         const excelEmail = rowStrings[4];
                         const masterEmail = masterUser?.email;
@@ -435,7 +435,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         const generatedId = selectedActivity ? selectedActivity.id : finalCode;
 
         const activityToSave: Activity = {
-            id: generatedId, category: 'GENERAL', activityType: finalType, internalCode: finalCode, year: formData.year, name: formData.nombre, version: 'V1', modality: formData.modality, hours: formData.horas, relator: formData.relator, startDate: formData.fechaInicio, linkResources: formData.linkRecursos, classLink: formData.linkClase, evaluationLink: formData.linkEvaluacion, isPublic: formData.isPublic
+            id: generatedId, category: 'GENERAL', activityType: finalType, internalCode: finalCode, year: formData.year, name: formData.nombre, version: 'V1', modality: formData.modality, hours: formData.horas, relator: formData.relator, startDate: formData.fechaInicio, endDate: formData.fechaTermino, linkResources: formData.linkRecursos, classLink: formData.linkClase, evaluationLink: formData.linkEvaluacion, isPublic: formData.isPublic
         };
         
         try {
@@ -479,7 +479,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                             setFormData({
                                 internalCode: '', year: new Date().getFullYear(), activityType: 'Charla', otherType: '',
                                 nombre: '', modality: 'Presencial', horas: 0, relator: '', fechaInicio: '',
-                                linkRecursos: '', linkClase: '', linkEvaluacion: '', isPublic: true
+                                fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '', isPublic: true
                             });
                             setView('create');
                         }} className="bg-teal-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-teal-700 flex items-center gap-2 shadow-lg transition-all active:scale-95">
@@ -504,7 +504,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                     <p>Fecha: {formatDateCL(act.startDate)}</p>
                                     <p className="flex items-center gap-2 mt-1">
                                         <svg className="w-4 h-4 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-14 0 7 7 0 0114 0z" />
                                         </svg>
                                         Participantes: <span className="font-bold text-slate-700">{enrollmentCount}</span>
                                     </p>
@@ -598,8 +598,27 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                 </div>
                                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Modalidad</label><select disabled={!canEditGeneralInfo} value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100"><option value="Presencial">Presencial</option><option value="Híbrido">Híbrido</option><option value="Online">Online</option><option value="Presencia Digital">Presencia Digital</option></select></div>
                                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Horas</label><input type="number" disabled={!canEditGeneralInfo} value={formData.horas} onChange={e => setFormData({...formData, horas: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100"/></div>
-                                <div><label className="block text-sm font-medium text-slate-700 mb-1">Relator</label><input type="text" disabled={!canEditGeneralInfo} value={formData.relator} onChange={e => setFormData({...formData, relator: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100"/></div>
-                                <div><label className="block text-sm font-medium text-slate-700 mb-1">Fecha Inicio</label><input type="date" disabled={!canEditGeneralInfo} value={formData.fechaInicio} onChange={e => setFormData({...formData, fechaInicio: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100"/></div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Relator (Asesor Responsable)</label>
+                                    <select disabled={!canEditGeneralInfo} value={formData.relator} onChange={e => setFormData({...formData, relator: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100 focus:ring-2 focus:ring-teal-500">
+                                        <option value="">Seleccione Asesor...</option>
+                                        {advisors.map(adv => (
+                                            <option key={adv.rut} value={`${adv.names} ${adv.paternalSurname}`}>
+                                                {adv.names} {adv.paternalSurname}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Fecha Inicio</label>
+                                        <input type="date" disabled={!canEditGeneralInfo} value={formData.fechaInicio} onChange={e => setFormData({...formData, fechaInicio: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100"/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Fecha Término</label>
+                                        <input type="date" disabled={!canEditGeneralInfo} value={formData.fechaTermino} onChange={e => setFormData({...formData, fechaTermino: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100"/>
+                                    </div>
+                                </div>
                             </div>
                             <div className="space-y-4 pt-4 border-t border-slate-100">
                                 <h3 className="text-sm font-bold text-teal-600 uppercase tracking-wide flex items-center gap-2"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>Recursos Digitales (Editable)</h3>
@@ -626,7 +645,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-                                <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-slate-700 flex items-center gap-2"><svg className="w-5 h-5 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>Inscripción Manual (Base Maestra)</h4>{isFoundInMaster && <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded border border-green-200">Encontrado</span>}</div>
+                                <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-slate-700 flex items-center gap-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>Inscripción Manual (Base Maestra)</h4>{isFoundInMaster && <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded border border-green-200">Encontrado</span>}</div>
                                 <form onSubmit={handleEnrollSubmit} className="space-y-4">
                                     <h5 className="text-xs font-bold text-slate-400 uppercase border-b border-slate-100 pb-1 mb-2">Identificación Personal</h5>
                                     <div className="grid grid-cols-2 gap-3">

@@ -75,6 +75,38 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const [pendingGrades, setPendingGrades] = useState<Record<string, number[]>>({});
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
 
+  // --- LÓGICA DE CONFIRMACIÓN DE SALIDA (DETECCIÓN DE CAMBIOS) ---
+  const [showExitModal, setShowExitModal] = useState(false);
+  const [targetNav, setTargetNav] = useState<any>(null); // Puede ser string (tab) o function (setSelectedCourseId(null))
+
+  const hasUnsavedChanges = useMemo(() => Object.keys(pendingGrades).length > 0, [pendingGrades]);
+
+  // Sincronizar flag global con App.tsx
+  useEffect(() => {
+      (window as any).isPostgraduateDirty = hasUnsavedChanges;
+      return () => { (window as any).isPostgraduateDirty = false; };
+  }, [hasUnsavedChanges]);
+
+  // Escuchar intentos de navegación desde el menú principal
+  useEffect(() => {
+    const handleNavAttempt = (e: any) => {
+        setTargetNav(e.detail); // e.detail contiene el tab destino
+        setShowExitModal(true);
+    };
+    window.addEventListener('app-nav-attempt', handleNavAttempt);
+    return () => window.removeEventListener('app-nav-attempt', handleNavAttempt);
+  }, []);
+
+  const handleAttemptExit = (action: () => void) => {
+      if (hasUnsavedChanges) {
+          setTargetNav(() => action);
+          setShowExitModal(true);
+      } else {
+          action();
+      }
+  };
+  // -------------------------------------------------------------
+
   const selectedCourse = useMemo(() => postgraduateActivities.find(a => a.id === selectedCourseId), [postgraduateActivities, selectedCourseId]);
 
   const isCourseClosed = useMemo(() => !!selectedCourse?.programConfig?.isClosed, [selectedCourse]);
@@ -175,7 +207,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
         relator: formData.relator, 
         startDate: formData.fechaInicio, 
         endDate: formData.fechaTermino, 
-        linkResources: formData.linkResources, 
+        linkResources: formData.linkRecursos, 
         classLink: formData.linkClase, 
         evaluationLink: formData.linkEvaluacion, 
         isPublic: true, 
@@ -817,7 +849,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   if (view === 'details' && selectedCourse) {
       return (
           <div className="animate-fadeIn space-y-6">
-            <button onClick={() => { setSelectedCourseId(null); setView('list'); }} className="text-slate-500 hover:text-slate-700 mb-4 flex items-center gap-1 text-sm font-bold">← Volver al listado</button>
+            <button onClick={() => handleAttemptExit(() => { setSelectedCourseId(null); setView('list'); })} className="text-slate-500 hover:text-slate-700 mb-4 flex items-center gap-1 text-sm font-bold">← Volver al listado</button>
             <div className={`bg-white border-l-4 rounded-r-xl shadow-sm p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${isCourseClosed ? 'border-slate-500' : 'border-purple-600'}`}>
               <div>
                 <div className="flex items-center gap-2 mb-1">
@@ -850,10 +882,10 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
             
             <div className="mt-8">
               <div className="flex items-end gap-2 border-b border-purple-200 pl-4 mb-0">
-                <button onClick={() => setActiveDetailTab('enrollment')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'enrollment' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Matrícula</button>
-                <button onClick={() => setActiveDetailTab('config')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'config' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Configuración Académica</button>
-                <button onClick={() => setActiveDetailTab('tracking')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'tracking' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Seguimiento</button>
-                {isCourseClosed && <button onClick={() => setActiveDetailTab('acta')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'acta' ? 'bg-white text-indigo-700 border-t-indigo-600 border-x border-indigo-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Acta Final</button>}
+                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('enrollment'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'enrollment' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Matrícula</button>
+                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('config'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'config' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Configuración Académica</button>
+                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('tracking'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'tracking' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Seguimiento</button>
+                {isCourseClosed && <button onClick={() => handleAttemptExit(() => setActiveDetailTab('acta'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'acta' ? 'bg-white text-indigo-700 border-t-indigo-600 border-x border-indigo-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Acta Final</button>}
               </div>
               
               <div className="bg-white rounded-b-xl rounded-tr-xl shadow-sm border border-purple-200 border-t-0 p-8">
@@ -1209,6 +1241,42 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                 )}
               </div>
             </div>
+
+            {/* MODAL DE CONFIRMACIÓN DE SALIDA (CAMBIOS SIN GUARDAR) */}
+            {showExitModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center border border-slate-200">
+                        <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-800 mb-2">Cambios sin guardar</h3>
+                        <p className="text-slate-600 mb-8">Has comenzado a introducir notas. Si sales ahora, perderás los cambios no guardados.</p>
+                        <div className="flex flex-col gap-3">
+                            <button 
+                                onClick={() => { setShowExitModal(false); setTargetNav(null); }}
+                                className="w-full py-3 bg-[#647FBC] text-white rounded-xl font-bold hover:bg-blue-800 transition-colors"
+                            >
+                                Continuar editando
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    (window as any).isPostgraduateDirty = false;
+                                    setShowExitModal(false);
+                                    if (typeof targetNav === 'function') {
+                                        targetNav();
+                                    } else if (typeof targetNav === 'string') {
+                                        window.dispatchEvent(new CustomEvent('force-nav', { detail: targetNav }));
+                                    }
+                                    setTargetNav(null);
+                                }}
+                                className="w-full py-3 bg-white border border-slate-200 text-slate-500 rounded-xl font-bold hover:bg-slate-50 transition-colors"
+                            >
+                                Salir
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
           </div>
       );
   }

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, UserRole } from './types';
 import { LoginSimulator } from './components/LoginSimulator';
@@ -192,6 +193,23 @@ const MainContent: React.FC = () => {
       setUnreadFrom(prev => prev.filter(r => r !== peer.rut));
   };
 
+  // --- LÓGICA DE NAVEGACIÓN SEGURA ---
+  const handleTabChange = (newTab: TabType) => {
+      if (activeTab === 'postgraduate' && (window as any).isPostgraduateDirty) {
+          window.dispatchEvent(new CustomEvent('app-nav-attempt', { detail: newTab }));
+          return;
+      }
+      setActiveTab(newTab);
+  };
+
+  useEffect(() => {
+    const handleForceNav = (e: any) => {
+        setActiveTab(e.detail);
+    };
+    window.addEventListener('force-nav', handleForceNav);
+    return () => window.removeEventListener('force-nav', handleForceNav);
+  }, []);
+  // ------------------------------------
 
   if (signatureParams) {
       return <StudentSignature enrollmentId={signatureParams.eid} sessionId={signatureParams.sid} />;
@@ -274,7 +292,7 @@ const MainContent: React.FC = () => {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard user={user} onNavigate={setActiveTab} />;
+        return <Dashboard user={user} onNavigate={handleTabChange} />;
       
       case 'courses':
         return <CourseManager currentUser={user} />; 
@@ -362,7 +380,7 @@ const MainContent: React.FC = () => {
       <RoleNavbar 
         user={user} 
         activeTab={activeTab} 
-        onTabChange={setActiveTab} 
+        onTabChange={handleTabChange} 
         onLogout={handleLogout} 
         unreadMessagesRuts={unreadFrom}
       />

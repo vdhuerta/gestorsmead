@@ -65,28 +65,34 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   const academicActivities = activities.filter(a => !a.category || a.category === 'ACADEMIC');
 
-  // --- LÓGICA DE ORDENACIÓN POR SEMESTRE ACTUAL ---
+  // --- LÓGICA DE ORDENACIÓN: 2DO SEMESTRE PRIMERO ---
   const sortedAcademicActivities = useMemo(() => {
-    const now = new Date();
-    const month = now.getMonth(); 
-    const currentSemSuffix = (month >= 7) ? "-2" : "-1";
-    const otherSemSuffix = (month >= 7) ? "-1" : "-2";
+    const getSemesterValue = (period?: string) => {
+        if (!period) return 0;
+        const p = period.toLowerCase();
+        // Identificar 2do semestre por sufijo -2 o palabras clave
+        if (p.endsWith('-2') || p.includes('2do') || p.includes('segundo')) return 2;
+        // Identificar 1er semestre por sufijo -1 o palabras clave
+        if (p.endsWith('-1') || p.includes('1er') || p.includes('primero')) return 1;
+        return 0;
+    };
 
     return [...academicActivities].sort((a, b) => {
-        const periodA = a.academicPeriod || '';
-        const periodB = b.academicPeriod || '';
+        // Prioridad 1: Semestre (2 debe ir antes que 1)
+        const semA = getSemesterValue(a.academicPeriod);
+        const semB = getSemesterValue(b.academicPeriod);
+        
+        if (semA !== semB) {
+            return semB - semA; // Descendente: 2 primero, luego 1
+        }
 
-        const isCurrentA = periodA.endsWith(currentSemSuffix);
-        const isCurrentB = periodA.endsWith(currentSemSuffix);
-        const isOtherA = periodA.endsWith(otherSemSuffix);
-        const isOtherB = periodB.endsWith(otherSemSuffix);
+        // Prioridad 2: Año (Más reciente primero)
+        if ((b.year || 0) !== (a.year || 0)) {
+            return (b.year || 0) - (a.year || 0);
+        }
 
-        if (isCurrentA && !isCurrentB) return -1;
-        if (!isCurrentA && isCurrentB) return 1;
-        if (isOtherA && !isOtherB) return -1;
-        if (!isOtherA && isOtherB) return 1;
-        if (a.year !== b.year) return (b.year || 0) - (a.year || 0);
-        return a.name.localeCompare(b.name);
+        // Prioridad 3: Nombre (Alfabético)
+        return (a.name || '').localeCompare(b.name || '', 'es');
     });
   }, [academicActivities]);
 
@@ -483,7 +489,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   const handleEnrollChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       const { name, value } = e.target;
-      // FIX: Changed setEnrollForm to setManualForm as per state definition
       setManualForm(prev => ({ ...prev, [name]: value }));
       if (name === 'rut' || name === 'paternalSurname') {
           setIsFoundInMaster(false); setIsAlreadyEnrolled(false); setEnrollMsg(null);
@@ -780,7 +785,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                 const cat = res.activity?.category;
                                                 const isApproved = res.enrollment.state === ActivityState.APROBADO;
                                                 return (
-                                                    <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all group flex flex-col md:flex-row gap-6">
+                                                    <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all group flex flex-col md:row-row gap-6">
                                                         <div className="flex-1">
                                                             <div className="flex items-center gap-2 mb-2">
                                                                 <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${
@@ -865,7 +870,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
         const advancingCount = courseEnrs.filter(e => e.state === ActivityState.AVANZANDO).length;
         const isSecondSemester = course.academicPeriod?.endsWith("-2") || course.academicPeriod?.toLowerCase().includes("2do") || course.academicPeriod?.toLowerCase().includes("segundo");
 
-        return (<div key={course.id} className={`${isSecondSemester ? 'bg-sky-50' : 'bg-white'} rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow relative overflow-hidden group`}><div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><svg className="w-24 h-24 text-[#647FBC]" fill="currentColor" viewBox="0 0 20 20"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" /></svg></div><div className="relative z-10"><div className="flex justify-between items-start mb-2"><span className={`text-[10px] font-bold uppercase px-2 py-1 rounded border ${isSecondSemester ? 'bg-sky-100 text-sky-700 border-sky-200' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>{course.academicPeriod || course.year}</span><span className="text-xs text-slate-400 font-mono">{course.internalCode}</span></div><h3 className="text-lg font-bold text-slate-800 mb-1 leading-tight h-14 line-clamp-2" title={course.name}>{course.name}</h3><div className="flex items-center gap-4 text-xs text-slate-500 mb-2"><span className="flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>{enrolledCount} Inscritos</span><span className="flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>{course.modality}</span></div><div className="flex items-center gap-2 mb-4">
+        return (<div key={course.id} className={`${isSecondSemester ? 'bg-sky-50' : 'bg-white'} rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow relative overflow-hidden group`}><div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><svg className="w-24 h-24 text-[#647FBC]" fill="currentColor" viewBox="0 0 20 20"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" /></svg></div><div className="relative z-10"><div className="flex justify-between items-start mb-2"><span className={`text-[10px] font-bold uppercase px-2 py-1 rounded border ${isSecondSemester ? 'bg-sky-100 text-sky-700 border-sky-200' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>{course.academicPeriod || course.year}</span><span className="text-xs text-slate-400 font-mono">{course.internalCode}</span></div><h3 className="text-lg font-bold text-slate-800 mb-1 leading-tight h-14 line-clamp-2" title={course.name}>{course.name}</h3><div className="flex items-center gap-4 text-xs text-slate-500 mb-2"><span className="flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-14 0 7 7 0 0114 0z" /></svg>{enrolledCount} Inscritos</span><span className="flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>{course.modality}</span></div><div className="flex items-center gap-2 mb-4">
             <span className="bg-green-50 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded border border-green-100 flex items-center gap-1">
                 <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
                 {approvedCount} APROBADOS

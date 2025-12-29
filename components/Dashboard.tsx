@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, Activity, UserRole, ActivityState } from '../types';
 import { useData } from '../context/DataContext';
@@ -24,7 +25,7 @@ const KpiCardCompact: React.FC<{
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none h-6 flex items-center justify-center text-center px-1">{title}</span>
             
             {isHovered && tooltipContent && (
-                <div className="absolute z-[100] bottom-full left-1/2 -translate-x-1/2 mb-3 w-72 bg-white text-left p-0 rounded-2xl shadow-2xl animate-fadeIn border border-slate-200 overflow-hidden">
+                <div className="absolute z-[100] top-full left-1/2 -translate-x-1/2 mt-3 w-72 bg-white text-left p-0 rounded-2xl shadow-2xl animate-fadeIn border border-slate-200 overflow-hidden">
                     <div className="text-[10px] font-black text-white bg-[#647FBC] uppercase p-3 flex items-center gap-2">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                         Detalle: {title}
@@ -100,14 +101,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     const totalInscritos = academicEnrollments.length;
     const aprobados = academicEnrollments.filter(e => e.state === ActivityState.APROBADO).length;
     
-    const alumnosRiesgo = academicEnrollments.filter(e => 
-        (e.finalGrade && e.finalGrade < (config.minPassingGrade || 4.0)) || 
-        (e.attendancePercentage !== undefined && e.attendancePercentage < (config.minAttendancePercentage || 75))
-    );
+    const alumnosRiesgo = academicEnrollments.filter(e => {
+        const hasGradesEntered = e.finalGrade && e.finalGrade > 0;
+        const hasAttendanceEntered = e.attendancePercentage !== undefined && e.attendancePercentage > 0;
+        if (!hasGradesEntered && !hasAttendanceEntered) return false;
+        const isFailingGrade = hasGradesEntered && e.finalGrade < (config.minPassingGrade || 4.0);
+        const isFailingAttendance = hasAttendanceEntered && e.attendancePercentage < (config.minAttendancePercentage || 75);
+        return isFailingGrade || isFailingAttendance;
+    });
 
     let totalGradesExpected = 0;
     let totalGradesEntered = 0;
-    // Unificar para conteo de notas
     const allEvalActs = [...activeCourses, ...postgraduateActs];
     allEvalActs.forEach(act => {
         const enrs = enrollments.filter(e => e.activityId === act.id);
@@ -118,7 +122,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
         });
     });
 
-    const totalAttendanceSum = academicEnrollments.reduce((acc, e) => acc + (e.attendancePercentage || 0), 0);
+    const activeEnrollmentsWithAtt = academicEnrollments.filter(e => (e.attendancePercentage || 0) > 0);
+    const totalAttendanceSum = activeEnrollmentsWithAtt.reduce((acc, e) => acc + (e.attendancePercentage || 0), 0);
+    const avgAttendance = activeEnrollmentsWithAtt.length > 0 ? Math.round(totalAttendanceSum / activeEnrollmentsWithAtt.length) : 0;
 
     const criticos = allEvalActs.filter(act => {
         const count = enrollments.filter(e => e.activityId === act.id).length;
@@ -132,7 +138,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
         totalEstudiantesRiesgo: alumnosRiesgo.length,
         riesgoList: alumnosRiesgo,
         avanceCalificaciones: totalGradesExpected > 0 ? Math.round((totalGradesEntered / totalGradesExpected) * 100) : 0,
-        asistenciaPromedio: totalInscritos > 0 ? Math.round(totalAttendanceSum / totalInscritos) : 0,
+        asistenciaPromedio: avgAttendance,
         cursosCriticos: criticos.length,
         criticosList: criticos,
         cursosFinalizados: finalizados.length,
@@ -238,17 +244,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
             tooltipContent={
                 <div className="space-y-2">
                     <p className="text-[10px] font-bold text-rose-700 uppercase mb-2">Casos Críticos Detectados:</p>
-                    {advisorKpis.riesgoList.slice(0, 5).map((enr, i) => {
-                        const student = users.find(u => u.rut === enr.rut);
-                        return <div key={i} className="text-[10px] bg-white p-2 rounded border border-rose-100 shadow-sm font-bold">• {student?.paternalSurname}, {student?.names} ({enr.finalGrade || 'S/N'})</div>
-                    })}
+                    {advisorKpis.riesgoList.length > 0 ? (
+                        advisorKpis.riesgoList.slice(0, 5).map((enr, i) => {
+                            const student = users.find(u => u.rut === enr.rut);
+                            return <div key={i} className="text-[10px] bg-white p-2 rounded border border-rose-100 shadow-sm font-bold">• {student?.paternalSurname}, {student?.names} ({enr.finalGrade || 'Baja Asist.'})</div>
+                        })
+                    ) : (
+                        <p className="text-[10px] text-slate-400 italic">No se detectan alumnos en riesgo con datos ingresados.</p>
+                    )}
                 </div>
             }
           />
-          <KpiCardCompact title="Avance Notas" value={advisorKpis.avanceCalificaciones} suffix="%" colorClass="text-indigo-600" />
-          <KpiCardCompact title="Asistencia Prom." value={advisorKpis.asistenciaPromedio} suffix="%" colorClass="text-blue-600" />
-          <KpiCardCompact title="Cursos Críticos" value={advisorKpis.cursosCriticos} colorClass="text-amber-600" />
-          <KpiCardCompact title="Finalizados" value={advisorKpis.cursosFinalizados} colorClass="text-slate-500" />
+          <KpiCardCompact title="Avance Notas" value={advisorKpis.avanceCalificaciones} suffix="%" colorClass="text-indigo-600" tooltipContent={<p className="text-xs leading-relaxed">Porcentaje de calificaciones registradas vs. el total esperado para todos los programas curriculares vigentes.</p>} />
+          <KpiCardCompact title="Asistencia Prom." value={advisorKpis.asistenciaPromedio} suffix="%" colorClass="text-blue-600" tooltipContent={<p className="text-xs leading-relaxed">Promedio de asistencia de todos los alumnos que tienen al menos una sesión registrada.</p>} />
+          <KpiCardCompact title="Cursos Críticos" value={advisorKpis.cursosCriticos} colorClass="text-amber-600" tooltipContent={<div className="space-y-2"><p className="text-[10px] font-bold text-amber-700 uppercase mb-2">Programas con baja matrícula (&lt; 5):</p>{advisorKpis.criticosList.map((act, i) => (<div key={i} className="text-[10px] bg-white p-2 rounded border border-amber-100 shadow-sm font-bold">• {act.name}</div>))}</div>} />
+          <KpiCardCompact title="Finalizados" value={advisorKpis.cursosFinalizados} colorClass="text-slate-500" tooltipContent={<p className="text-xs leading-relaxed">Cantidad de actividades cuya fecha de término es anterior a hoy ({todayStr}).</p>} />
       </div>
 
       {/* --- MÓDULOS DE OPERACIÓN DIRECTA --- */}
@@ -289,14 +299,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                   <button className="mt-auto w-full py-2 bg-slate-50 border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 group-hover:bg-indigo-700 group-hover:text-white transition-all">Ingresar</button>
               </div>
 
-              {/* CUARTA TARJETA (NUEVA - PLACEHOLDER) */}
-              <div className="bg-slate-50 rounded-3xl border border-dashed border-slate-300 p-6 flex flex-col items-center text-center group transition-all opacity-80 hover:opacity-100">
-                  <div className="w-14 h-14 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center mb-4 shadow-inner border border-slate-200 group-hover:bg-white transition-colors duration-500">
-                      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+              {/* INFORME DE PERMANENCIA (EN CONSTRUCCIÓN) */}
+              <div className="bg-slate-50 rounded-3xl border border-slate-200 shadow-inner p-6 flex flex-col items-center text-center opacity-60 cursor-not-allowed">
+                  <div className="w-14 h-14 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center mb-4 shadow-sm">
+                      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
                   </div>
-                  <h3 className="text-lg font-black text-slate-400 mb-1">Nuevo Módulo</h3>
-                  <p className="text-[10px] text-slate-400 leading-snug mb-4">Módulo en etapa de planificación institucional.</p>
-                  <button disabled className="mt-auto w-full py-2 bg-slate-100 border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-300 cursor-not-allowed">Próximamente</button>
+                  <h3 className="text-lg font-black text-slate-400 mb-1">Permanencia</h3>
+                  <p className="text-[10px] text-slate-400 leading-snug mb-4 italic">Pronto disponible: Análisis de retención interanual y ciclo de vida docente.</p>
+                  <button className="mt-auto w-full py-2 bg-slate-200 border border-slate-300 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-400 cursor-not-allowed">En Construcción</button>
               </div>
           </div>
       </section>
