@@ -78,6 +78,8 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
     const [formData, setFormData] = useState({
         internalCode: '',
         year: new Date().getFullYear(),
+        semester: '2025-1', // Nuevo campo semestre (texto)
+        version: 'V1', // Nuevo campo versión (texto)
         activityType: 'Charla',
         otherType: '',
         nombre: '', 
@@ -85,7 +87,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         horas: 0, 
         relator: '', 
         fechaInicio: '',
-        fechaTermino: '', // NUEVO
+        fechaTermino: '',
         linkRecursos: '',
         linkClase: '',
         linkEvaluacion: '',
@@ -116,7 +118,6 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
     const canEditGeneralInfo = isAdmin || isAdvisor || view === 'create'; 
 
     // --- LOGICA DE ORDENACIÓN SOLICITADA ---
-    // Siempre ordenamos por Apellido Paterno Ascendente
     const sortedActivityEnrollments = useMemo(() => {
         const filtered = selectedActivity ? enrollments.filter(e => e.activityId === selectedActivity.id) : [];
         return [...filtered].sort((a, b) => {
@@ -150,13 +151,14 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
             }
 
             if (d && m && y) {
-                const autoCode = `${prefix}-${d}${m}${y}-V1`;
+                const verSuffix = formData.version ? `-${formData.version}` : '';
+                const autoCode = `${prefix}-${d}${m}${y}${verSuffix}`;
                 if (view === 'create') {
                      setFormData(prev => ({ ...prev, internalCode: autoCode }));
                 }
             }
         }
-    }, [formData.activityType, formData.fechaInicio, view]);
+    }, [formData.activityType, formData.fechaInicio, formData.version, view]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -173,6 +175,8 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         setFormData({
             internalCode: act.internalCode || '',
             year: act.year || new Date().getFullYear(),
+            semester: act.academicPeriod || '',
+            version: act.version || 'V1',
             activityType: GENERAL_ACTIVITY_TYPES.includes(act.activityType || '') ? (act.activityType || 'Charla') : 'Otro',
             otherType: !GENERAL_ACTIVITY_TYPES.includes(act.activityType || '') ? (act.activityType || '') : '',
             nombre: act.name,
@@ -180,7 +184,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
             horas: act.hours,
             relator: act.relator || '',
             fechaInicio: act.startDate || '',
-            fechaTermino: act.endDate || '', // CARGAR FECHA TÉRMINO
+            fechaTermino: act.endDate || '',
             linkRecursos: act.linkResources || '',
             linkClase: act.classLink || '',
             linkEvaluacion: act.evaluationLink || '',
@@ -435,7 +439,23 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         const generatedId = selectedActivity ? selectedActivity.id : finalCode;
 
         const activityToSave: Activity = {
-            id: generatedId, category: 'GENERAL', activityType: finalType, internalCode: finalCode, year: formData.year, name: formData.nombre, version: 'V1', modality: formData.modality, hours: formData.horas, relator: formData.relator, startDate: formData.fechaInicio, endDate: formData.fechaTermino, linkResources: formData.linkRecursos, classLink: formData.linkClase, evaluationLink: formData.linkEvaluacion, isPublic: formData.isPublic
+            id: generatedId, 
+            category: 'GENERAL', 
+            activityType: finalType, 
+            internalCode: finalCode, 
+            year: formData.year, 
+            academicPeriod: formData.semester, // Mapeado a academicPeriod
+            version: formData.version, // Mapeado a version
+            name: formData.nombre, 
+            modality: formData.modality, 
+            hours: formData.horas, 
+            relator: formData.relator, 
+            startDate: formData.fechaInicio, 
+            endDate: formData.fechaTermino, 
+            linkResources: formData.linkRecursos, 
+            classLink: formData.linkClase, 
+            evaluationLink: formData.linkEvaluacion, 
+            isPublic: formData.isPublic
         };
         
         try {
@@ -477,7 +497,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                     {(isAdmin || isAdvisor) && (
                         <button onClick={() => {
                             setFormData({
-                                internalCode: '', year: new Date().getFullYear(), activityType: 'Charla', otherType: '',
+                                internalCode: '', year: new Date().getFullYear(), semester: '2025-1', version: 'V1', activityType: 'Charla', otherType: '',
                                 nombre: '', modality: 'Presencial', horas: 0, relator: '', fechaInicio: '',
                                 fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '', isPublic: true
                             });
@@ -500,7 +520,8 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                 <h3 className="font-bold text-slate-800 text-lg mb-2 pr-16 truncate" title={act.name}>{act.name}</h3>
                                 <div className="text-sm text-slate-500 space-y-1 mb-4">
                                     <p className="text-xs font-mono text-slate-400">ID: {act.id}</p>
-                                    <p>Modalidad: {act.modality}</p>
+                                    <p>Semestre: <span className="font-bold text-slate-700">{act.academicPeriod}</span></p>
+                                    <p>Versión: <span className="font-bold text-slate-700">{act.version}</span></p>
                                     <p>Fecha: {formatDateCL(act.startDate)}</p>
                                     <p className="flex items-center gap-2 mt-1">
                                         <svg className="w-4 h-4 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -527,7 +548,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
 
     return (
         <div className="max-w-5xl mx-auto animate-fadeIn">
-            <button onClick={() => setView('list')} className="text-slate-500 hover:text-slate-700 mb-4 flex items-center gap-1 text-sm">← Volver al listado</button>
+            <button onClick={() => setView('list')} className="text-slate-500 hover:text-slate-700 mb-4 flex items-center gap-1 text-sm font-bold">← Volver al listado</button>
             
             {view === 'edit' && (
                 <div className="flex items-end gap-2 border-b border-teal-200 mb-0">
@@ -587,27 +608,53 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                         </div>
                                     )}
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Código Interno</label>
-                                    <input type="text" disabled={!canEditGeneralInfo} value={formData.internalCode} onChange={e => setFormData({...formData, internalCode: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100 focus:ring-2 focus:ring-teal-500 font-mono text-sm"/>
-                                    {(view === 'create' || view === 'edit') && (<p className="text-[10px] text-teal-600 mt-1">Sugerencia automática: TIPO-DDMMAA-V1</p>)}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Código Interno</label>
+                                        <input type="text" disabled={!canEditGeneralInfo} value={formData.internalCode} onChange={e => setFormData({...formData, internalCode: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100 focus:ring-2 focus:ring-teal-500 font-mono text-sm uppercase"/>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">Año</label>
+                                            <input type="number" disabled={!canEditGeneralInfo} value={formData.year} onChange={e => setFormData({...formData, year: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100"/>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">Versión</label>
+                                            <input type="text" placeholder="V1" disabled={!canEditGeneralInfo} value={formData.version} onChange={e => setFormData({...formData, version: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100 font-bold"/>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Año</label>
-                                    <input type="number" disabled={!canEditGeneralInfo} value={formData.year} onChange={e => setFormData({...formData, year: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100"/>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Semestre</label>
+                                        <input type="text" placeholder="Ej: 2025-1" disabled={!canEditGeneralInfo} value={formData.semester} onChange={e => setFormData({...formData, semester: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100 font-bold focus:ring-2 focus:ring-teal-500"/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Modalidad</label>
+                                        <select disabled={!canEditGeneralInfo} value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100">
+                                            <option value="Presencial">Presencial</option>
+                                            <option value="Híbrido">Híbrido</option>
+                                            <option value="Online">Online</option>
+                                            <option value="Presencia Digital">Presencia Digital</option>
+                                        </select>
+                                    </div>
                                 </div>
-                                <div><label className="block text-sm font-medium text-slate-700 mb-1">Modalidad</label><select disabled={!canEditGeneralInfo} value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100"><option value="Presencial">Presencial</option><option value="Híbrido">Híbrido</option><option value="Online">Online</option><option value="Presencia Digital">Presencia Digital</option></select></div>
-                                <div><label className="block text-sm font-medium text-slate-700 mb-1">Horas</label><input type="number" disabled={!canEditGeneralInfo} value={formData.horas} onChange={e => setFormData({...formData, horas: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100"/></div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Relator (Asesor Responsable)</label>
-                                    <select disabled={!canEditGeneralInfo} value={formData.relator} onChange={e => setFormData({...formData, relator: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100 focus:ring-2 focus:ring-teal-500">
-                                        <option value="">Seleccione Asesor...</option>
-                                        {advisors.map(adv => (
-                                            <option key={adv.rut} value={`${adv.names} ${adv.paternalSurname}`}>
-                                                {adv.names} {adv.paternalSurname}
-                                            </option>
-                                        ))}
-                                    </select>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Horas</label>
+                                        <input type="number" disabled={!canEditGeneralInfo} value={formData.horas} onChange={e => setFormData({...formData, horas: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100"/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Relator (Asesor Responsable)</label>
+                                        <select disabled={!canEditGeneralInfo} value={formData.relator} onChange={e => setFormData({...formData, relator: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded disabled:bg-slate-100 focus:ring-2 focus:ring-teal-500">
+                                            <option value="">Seleccione Asesor...</option>
+                                            {advisors.map(adv => (
+                                                <option key={adv.rut} value={`${adv.names} ${adv.paternalSurname}`}>
+                                                    {adv.names} {adv.paternalSurname}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>

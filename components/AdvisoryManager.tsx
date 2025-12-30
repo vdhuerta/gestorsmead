@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Enrollment, User, UserRole, Activity, SessionLog, ActivityState } from '../types';
@@ -141,7 +140,7 @@ interface AdvisoryManagerProps { currentUser?: User; }
 
 export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser }) => {
     const { enrollments, users, addActivity, activities, upsertUsers, enrollUser, updateEnrollment, deleteEnrollment, getUser, config } = useData();
-    const { isSyncing, executeReload } = useReloadDirective(); // DIRECTIVA_RECARGA
+    const { isSyncing, executeReload } = useReloadDirective();
     
     // Lists & Config
     const listFaculties = config.faculties?.length ? config.faculties : FACULTY_LIST;
@@ -153,7 +152,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
 
     const isAdmin = currentUser?.systemRole === UserRole.ADMIN;
 
-    // Lista de Asesores (para el desplegable)
+    // Lista de Asesores (para el desplegable) - Proviene de GESTION ASESORES (role ASESOR)
     const advisorsList = useMemo(() => users.filter(u => u.systemRole === UserRole.ASESOR), [users]);
 
     // States
@@ -184,7 +183,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const [editingLogIndex, setEditingLogIndex] = useState<number | null>(null);
     const [isGeneratingTags, setIsGeneratingTags] = useState(false);
     
-    // Updated Session Form to include advisorName for admins
+    // Updated Session Form to include advisorName
     const [sessionForm, setSessionForm] = useState<{ date: string; duration: number; observation: string; location: string; modality: string; tags: string[]; advisorName: string; }>({ 
         date: new Date().toISOString().split('T')[0], 
         duration: 60, 
@@ -192,7 +191,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         location: '', 
         modality: 'Presencial', 
         tags: [],
-        advisorName: ''
+        advisorName: currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : ''
     });
 
     const [tagInput, setTagInput] = useState('');
@@ -215,7 +214,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         checkAndCreateActivity();
     }, [activities, addActivity]);
 
-    // Data filtering - UPDATED WITH SORTING BY LAST SESSION DATE (DESCENDING)
+    // Data filtering - SORTED BY LAST SESSION DATE (DESCENDING)
     const advisoryEnrollments = useMemo(() => {
         return enrollments
             .filter(e => e.activityId === ADVISORY_ACTIVITY_ID)
@@ -226,7 +225,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                 const dateB = b.sessionLogs && b.sessionLogs.length > 0 
                     ? b.sessionLogs[b.sessionLogs.length - 1].date 
                     : '0000-00-00';
-                return dateB.localeCompare(dateA); // Más actual primero
+                return dateB.localeCompare(dateA); 
             });
     }, [enrollments]);
 
@@ -255,7 +254,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     }, [view, selectedEnrollmentId]);
 
     const handleManualRefresh = async () => {
-        await executeReload(); // APPLY DIRECTIVE
+        await executeReload(); 
         if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId);
     };
 
@@ -307,7 +306,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         const cleanRut = cleanRutFormat(enrollForm.rut);
         const normRut = normalizeRut(cleanRut);
 
-        // --- VALIDACIÓN DE DUPLICADO (SOLICITADA) ---
         const existingEnrollment = advisoryEnrollments.find(e => normalizeRut(e.rut) === normRut);
         if (existingEnrollment) {
             setEnrollMsg({ 
@@ -318,15 +316,12 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             setIsProcessing(false);
             return;
         }
-        // -------------------------------------------
 
         try {
             await upsertUsers([{ ...enrollForm, rut: cleanRut, systemRole: enrollForm.systemRole as UserRole }]);
             await enrollUser(cleanRut, ADVISORY_ACTIVITY_ID);
             
-            // --- NUEVO: ASIGNAR RESPONSABLE ---
             if (currentUser) {
-                // Buscamos la matrícula recién creada para obtener su ID y actualizarla
                 const { data: enrData } = await supabase
                     .from('enrollments')
                     .select('id')
@@ -336,13 +331,12 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                 
                 if (enrData) {
                     await updateEnrollment(enrData.id, { 
-                        responsible: enrollForm.responsible || `${currentUser.names} ${currentUser.paternalSurname}` // Usar seleccionado o actual
+                        responsible: enrollForm.responsible || `${currentUser.names} ${currentUser.paternalSurname}` 
                     });
                 }
             }
-            // --------------------------------------------------
 
-            await executeReload(); // DIRECTIVA_RECARGA
+            await executeReload(); 
 
             setEnrollMsg({ type: 'success', text: 'Expediente creado correctamente.' });
             setTimeout(() => { setShowEnrollModal(false); setIsProcessing(false); }, 1500);
@@ -358,7 +352,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             location: '', 
             modality: 'Presencial', 
             tags: [],
-            advisorName: '' // Se resetea al abrir expediente
+            advisorName: currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : '' 
         }); 
         setTagInput(''); 
         setSignatureStep('form'); 
@@ -366,13 +360,13 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         setEditingLogId(null); 
         setEditingLogIndex(null); 
         setView('manage'); 
-        setShowEnrollModal(false); // Por si venimos de la advertencia de duplicado
+        setShowEnrollModal(false); 
     };
 
     const handleDeleteBitacora = async (id: string, name: string) => { 
         if(window.confirm(`ADVERTENCIA: ¿Está seguro que desea eliminar la bitácora completa de ${name}?`)) {
             await deleteEnrollment(id);
-            await executeReload(); // DIRECTIVA_RECARGA
+            await executeReload(); 
         }
     };
 
@@ -394,10 +388,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         if (!sessionForm.date || !sessionForm.observation) { alert("Por favor complete fecha y observaciones."); return; }
         if (!selectedEnrollmentId) return;
 
-        // Logic for advisor name selection
-        const advisorToUse = isAdmin && sessionForm.advisorName 
-            ? sessionForm.advisorName 
-            : (currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : 'Asesor');
+        const advisorToUse = sessionForm.advisorName || (currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : 'Asesor');
 
         const sessionId = `SES-${Date.now()}`; setCurrentSessionId(sessionId);
         const newLog: any = { 
@@ -418,15 +409,11 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         setSignatureStep('qr-wait');
     };
 
-    // --- NUEVA FUNCIÓN: GUARDAR SIN FIRMA (SF) PARA ADMINISTRADOR ---
     const handleSaveSF = async () => {
         if (!sessionForm.date || !sessionForm.observation) { alert("Por favor complete fecha y observaciones."); return; }
         if (!selectedEnrollmentId) return;
         
-        // Logic for advisor name selection
-        const advisorToUse = isAdmin && sessionForm.advisorName 
-            ? sessionForm.advisorName 
-            : (currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : 'Administrador');
+        const advisorToUse = sessionForm.advisorName || (currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : 'Asesor');
 
         const sessionId = `SES-SF-${Date.now()}`;
         const newLog: SessionLog = {
@@ -436,7 +423,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             observation: sessionForm.observation,
             advisorName: advisorToUse,
             verified: true,
-            authorizedByAdmin: true, // Marcado como autorizado manualmente
+            authorizedByAdmin: true, 
             verificationCode: `ADMIN-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
             signedAt: new Date().toISOString(),
             location: sessionForm.location,
@@ -447,18 +434,26 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
         try {
             await updateEnrollment(selectedEnrollmentId, { sessionLogs: [...(enrollment?.sessionLogs || []), newLog] });
-            await executeReload(); // DIRECTIVA_RECARGA
+            await executeReload(); 
             if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId);
             
-            setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [], advisorName: '' });
+            setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [], advisorName: currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : '' });
             setSignatureStep('form');
-            alert("Registro guardado exitosamente (Autorizado por ADMIN).");
+            alert("Registro guardado exitosamente.");
         } catch (err) {
             alert("Error al guardar registro.");
         }
     };
 
-    const handleCancelSession = () => { if(sessionForm.observation || sessionForm.tags.length > 0) { if(!window.confirm("¿Desea cancelar el registro?")) return; } setEditingLogId(null); setEditingLogIndex(null); setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [], advisorName: '' }); setTagInput(''); setSignatureStep('form'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    const handleCancelSession = () => { 
+        if(sessionForm.observation || sessionForm.tags.length > 0) { if(!window.confirm("¿Desea cancelar el registro?")) return; } 
+        setEditingLogId(null); 
+        setEditingLogIndex(null); 
+        setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [], advisorName: currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : '' }); 
+        setTagInput(''); 
+        setSignatureStep('form'); 
+        window.scrollTo({ top: 0, behavior: 'smooth' }); 
+    };
 
     const handleEditLog = (log: any, index: number) => {
         if (log.id) { setEditingLogId(log.id); setEditingLogIndex(null); } else { setEditingLogId(null); setEditingLogIndex(index); }
@@ -471,18 +466,16 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         if (!enrollment) return;
         const updatedLogs = (enrollment.sessionLogs || []).map((log, i) => {
             const isTarget = (editingLogId && log.id === editingLogId) || (editingLogIndex !== null && i === editingLogIndex);
-            if (isTarget) return { ...log, id: log.id || `SES-LEGACY-${Date.now()}`, date: sessionForm.date, duration: sessionForm.duration, observation: sessionForm.observation, location: sessionForm.location, modality: sessionForm.modality, tags: sessionForm.tags, advisorName: isAdmin && sessionForm.advisorName ? sessionForm.advisorName : log.advisorName };
+            if (isTarget) return { ...log, id: log.id || `SES-LEGACY-${Date.now()}`, date: sessionForm.date, duration: sessionForm.duration, observation: sessionForm.observation, location: sessionForm.location, modality: sessionForm.modality, tags: sessionForm.tags, advisorName: sessionForm.advisorName };
             return log;
         });
         await updateEnrollment(selectedEnrollmentId, { sessionLogs: updatedLogs });
         
-        await executeReload(); // DIRECTIVA_RECARGA
-        if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId); // Refresh local logs specific
+        await executeReload(); 
+        if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId); 
 
-        setEditingLogId(null); setEditingLogIndex(null); setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [], advisorName: '' }); setSignatureStep('form'); alert("Registro actualizado.");
+        setEditingLogId(null); setEditingLogIndex(null); setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [], advisorName: currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : '' }); setSignatureStep('form'); alert("Registro actualizado.");
     };
-
-    const handleCancelEdit = () => { handleCancelSession(); };
 
     const handleDeleteSession = async (e: React.MouseEvent, logId: string | undefined, originalIndex: number) => {
         e.preventDefault();
@@ -531,7 +524,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                         await updateEnrollment(selectedEnrollmentId, { sessionLogs: logs });
                         await executeReload(); 
                         setSignatureStep('success');
-                        setTimeout(() => { setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [], advisorName: '' }); setSignatureStep('form'); }, 3000);
+                        setTimeout(() => { setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [], advisorName: currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : '' }); setSignatureStep('form'); }, 3000);
                     }
                 }
             };
@@ -607,26 +600,24 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                                     <div><label className="block text-xs font-bold text-slate-600 mb-1">Lugar / Plataforma</label><input type="text" placeholder="Ej. Oficina 304, Zoom, Email..." value={sessionForm.location} onChange={e => setSessionForm({...sessionForm, location: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"/></div>
                                                 </div>
 
-                                                {/* NUEVO: CUADRO DESPLEGABLE DE ASESOR RESPONSABLE (SOLO ADMIN) */}
-                                                {isAdmin && (
-                                                    <div className="mb-4">
-                                                        <label className="block text-xs font-bold text-slate-600 mb-1">Asesor Responsable de la Sesión</label>
-                                                        <select 
-                                                            name="advisorName"
-                                                            value={sessionForm.advisorName} 
-                                                            onChange={e => setSessionForm({...sessionForm, advisorName: e.target.value})} 
-                                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
-                                                        >
-                                                            <option value="">Seleccionar Asesor...</option>
-                                                            {advisorsList.map(adv => (
-                                                                <option key={adv.rut} value={`${adv.names} ${adv.paternalSurname}`}>
-                                                                    {adv.names} {adv.paternalSurname}
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                        <p className="text-[10px] text-slate-400 mt-1 italic">Si se deja vacío, se asignará su nombre automáticamente.</p>
-                                                    </div>
-                                                )}
+                                                {/* CAMPO DESPLEGABLE DE ASESOR (Alimentado por nómina de GESTION ASESORES) */}
+                                                <div className="mb-4">
+                                                    <label className="block text-xs font-bold text-slate-600 mb-1">Asesor Responsable de la Sesión</label>
+                                                    <select 
+                                                        name="advisorName"
+                                                        value={sessionForm.advisorName} 
+                                                        onChange={e => setSessionForm({...sessionForm, advisorName: e.target.value})} 
+                                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
+                                                    >
+                                                        <option value="">Seleccionar Asesor...</option>
+                                                        {advisorsList.map(adv => (
+                                                            <option key={adv.rut} value={`${adv.names} ${adv.paternalSurname}`}>
+                                                                {adv.names} {adv.paternalSurname}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    <p className="text-[10px] text-slate-400 mt-1 italic">Este campo se alimenta de la nómina oficial de asesores.</p>
+                                                </div>
 
                                                 <div className="mb-4"><label className="block text-xs font-bold text-slate-600 mb-1">Observaciones / Temática Tratada</label><textarea rows={6} value={sessionForm.observation} onChange={e => setSessionForm({...sessionForm, observation: e.target.value})} placeholder="Describa los puntos principales abordados en la sesión..." className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm resize-y"/></div>
                                                 <div className="mb-4">
