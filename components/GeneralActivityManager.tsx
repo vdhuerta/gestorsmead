@@ -152,13 +152,18 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
 
             if (d && m && y) {
                 const verSuffix = formData.version ? `-${formData.version}` : '';
-                const autoCode = `${prefix}-${d}${m}${y}${verSuffix}`;
+                
+                // NUEVA LÓGICA: Sufijo de Semestre según el campo de texto Semestre
+                const semSuffix = formData.semester.includes('1') ? '-S1' : 
+                                 formData.semester.includes('2') ? '-S2' : '';
+
+                const autoCode = `${prefix}-${d}${m}${y}${verSuffix}${semSuffix}`;
                 if (view === 'create') {
                      setFormData(prev => ({ ...prev, internalCode: autoCode }));
                 }
             }
         }
-    }, [formData.activityType, formData.fechaInicio, formData.version, view]);
+    }, [formData.activityType, formData.fechaInicio, formData.version, formData.semester, view]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -372,7 +377,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                     if (hasNameInFile || !masterUser) {
                         const excelEmail = rowStrings[4];
                         const masterEmail = masterUser?.email;
-                        const fallbackEmail = `upla.${cleanRut.replace(/[^0-9kK]/g, '')}@universidad.cl`;
+                        const fallbackEmail = `upla.${cleanRut.replace(/[^0-9kK]/g, '')}@upla.cl`;
 
                         usersToUpsert.push({ 
                             rut: cleanRut, 
