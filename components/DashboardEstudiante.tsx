@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { User, Activity, ActivityState, Enrollment, UserRole } from '../types';
 import { useData, normalizeRut } from '../context/DataContext';
 import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST } from '../constants';
@@ -160,9 +160,23 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
       campus: '', faculty: '', department: '', career: '', contractType: '',
       teachingSemester: '', academicRole: ''
   });
+  const [suggestions, setSuggestions] = useState<User[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
   const [enrollStatus, setEnrollStatus] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   const todayStr = new Date().toISOString().split('T')[0];
+
+  // Cerrar sugerencias al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+        if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
+            setShowSuggestions(false);
+        }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // FILTROS INDEPENDIENTES
   const openActivities = useMemo(() => {
@@ -176,26 +190,57 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
   const closedActivities = useMemo(() => {
     return activities.filter(a => 
       (a.category === 'ACADEMIC' || a.category === 'POSTGRADUATE') && 
-      a.isPublic !== false &&
+      (a.isPublic !== false) &&
       (a.endDate && a.endDate < todayStr)
     );
   }, [activities, todayStr]);
 
   const handleRutBlur = () => {
-    if (!enrollForm.rut) return;
-    const formatted = cleanRutFormat(enrollForm.rut);
-    const rawSearch = normalizeRut(formatted);
-    setEnrollForm(prev => ({ ...prev, rut: formatted }));
+    setTimeout(() => {
+        if (!enrollForm.rut) return;
+        const formatted = cleanRutFormat(enrollForm.rut);
+        const rawSearch = normalizeRut(formatted);
+        setEnrollForm(prev => ({ ...prev, rut: formatted }));
+        
+        const existingUser = users.find(u => normalizeRut(u.rut) === rawSearch);
+        if (existingUser) {
+            handleSelectUser(existingUser);
+        }
+    }, 200);
+  };
+
+  const handleRutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setEnrollForm(prev => ({ ...prev, rut: val }));
     
-    const existingUser = users.find(u => normalizeRut(u.rut) === rawSearch);
-    if (existingUser) {
-        setEnrollForm({
-            rut: existingUser.rut, names: existingUser.names, paternalSurname: existingUser.paternalSurname, maternalSurname: existingUser.maternalSurname || '',
-            email: existingUser.email || '', phone: existingUser.phone || '', campus: existingUser.campus || '', faculty: existingUser.faculty || '',
-            department: existingUser.department || '', career: existingUser.career || '', contractType: existingUser.contractType || '',
-            teachingSemester: existingUser.teachingSemester || '', academicRole: existingUser.academicRole || ''
-        });
+    const rawInput = normalizeRut(val);
+    if (rawInput.length >= 2) {
+        const matches = users.filter(u => normalizeRut(u.rut).includes(rawInput));
+        setSuggestions(matches.slice(0, 5));
+        setShowSuggestions(true);
+    } else {
+        setSuggestions([]);
+        setShowSuggestions(false);
     }
+  };
+
+  const handleSelectUser = (u: User) => {
+    setEnrollForm({
+        rut: cleanRutFormat(u.rut), // Aseguramos el formato sin puntos en el campo
+        names: u.names, 
+        paternalSurname: u.paternalSurname, 
+        maternalSurname: u.maternalSurname || '',
+        email: u.email || '', 
+        phone: u.phone || '', 
+        campus: u.campus || '', 
+        faculty: u.faculty || '',
+        department: u.department || '', 
+        career: u.career || '', 
+        contractType: u.contractType || '',
+        teachingSemester: u.teachingSemester || '', 
+        academicRole: u.academicRole || ''
+    });
+    setShowSuggestions(false);
   };
 
   const handleOpenEnrollment = (act: Activity) => {
@@ -203,7 +248,7 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
     setEnrollStatus(null);
     if (user.rut !== '9.876.543-2') {
         setEnrollForm({
-            rut: user.rut, names: user.names, paternalSurname: user.paternalSurname, maternalSurname: user.maternalSurname || '',
+            rut: cleanRutFormat(user.rut), names: user.names, paternalSurname: user.paternalSurname, maternalSurname: user.maternalSurname || '',
             email: user.email || '', phone: user.phone || '', campus: user.campus || '', faculty: user.faculty || '',
             department: user.department || '', career: user.career || '', contractType: user.contractType || '',
             teachingSemester: user.teachingSemester || '', academicRole: user.academicRole || ''
@@ -333,7 +378,14 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
                     <button onClick={() => { setActiveSearchRut(null); setKioskRut(''); }} className="absolute top-6 right-6 text-slate-300 hover:text-red-500 transition-colors">
                         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
-                    <h3 className="text-lg font-black text-slate-800 mb-8 flex items-center gap-3">Expediente de: <span className="text-[#647FBC] font-mono">{activeSearchRut}</span></h3>
+                    <h3 className="text-lg font-black text-slate-800 mb-8 flex items-center gap-3 flex-wrap">
+                        Expediente de: 
+                        <span className="text-[#647FBC] font-mono">{activeSearchRut}</span>
+                        {(() => {
+                            const found = users.find(u => normalizeRut(u.rut) === normalizeRut(activeSearchRut));
+                            return found ? <span className="text-slate-500 font-bold ml-1 uppercase">— {found.names} {found.paternalSurname}</span> : null;
+                        })()}
+                    </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {enrollments.filter(e => normalizeRut(e.rut) === normalizeRut(activeSearchRut)).map(enr => {
                             const act = activities.find(a => a.id === enr.activityId);
@@ -468,9 +520,28 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
                             <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-8 relative">
                                 <div className="absolute top-0 left-8 -translate-y-1/2 bg-emerald-100 text-emerald-700 text-[10px] font-black px-4 py-1.5 rounded-full border border-emerald-200 uppercase tracking-widest">1. Datos Personales</div>
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                                    <div className="md:col-span-1">
+                                    <div className="md:col-span-1 relative">
                                         <label className="block text-[10px] font-black text-slate-400 uppercase mb-2">RUT *</label>
-                                        <input required name="rut" placeholder="12.345.678-9" value={enrollForm.rut} onChange={e => setEnrollForm({...enrollForm, rut: e.target.value})} onBlur={handleRutBlur} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 font-mono font-bold shadow-inner bg-slate-50/50"/>
+                                        <input 
+                                            required 
+                                            name="rut" 
+                                            placeholder="12345678-9" 
+                                            autoComplete="off"
+                                            value={enrollForm.rut} 
+                                            onChange={handleRutChange} 
+                                            onBlur={handleRutBlur} 
+                                            className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 font-mono font-bold shadow-inner bg-slate-50/50"
+                                        />
+                                        {showSuggestions && suggestions.length > 0 && (
+                                            <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto left-0">
+                                                {suggestions.map((s) => (
+                                                    <div key={s.rut} onMouseDown={() => handleSelectUser(s)} className="px-4 py-2 hover:bg-emerald-50 cursor-pointer text-xs border-b border-slate-50 last:border-0">
+                                                        <span className="font-bold block text-slate-800">{cleanRutFormat(s.rut)}</span>
+                                                        <span className="text-[10px] text-slate-500">{s.names} {s.paternalSurname}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="md:col-span-1">
                                         <label className="block text-[10px] font-black text-slate-400 uppercase mb-2">Nombres *</label>
