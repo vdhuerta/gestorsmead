@@ -723,7 +723,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                               <div className="bg-rose-50 p-6 rounded-3xl border border-rose-100 shadow-sm">
                                   <div className="flex items-center justify-between mb-4">
                                       <h4 className="text-rose-800 font-black text-xs uppercase tracking-tight">Análisis de Deserción (Churn)</h4>
-                                      <span className="bg-rose-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full">Inactivos > 12 meses</span>
+                                      <span className="bg-rose-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full">Inactivos &gt; 12 meses</span>
                                   </div>
                                   <div className="flex items-end gap-3 mb-4">
                                       <span className="text-4xl font-black text-rose-700">{retentionAnalytics.churnCount}</span>
