@@ -50,6 +50,12 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const { activities, addActivity, deleteActivity, users, enrollments, upsertUsers, enrollUser, bulkEnroll, updateEnrollment, deleteEnrollment, getUser, config, refreshData } = useData();
   const { isSyncing, executeReload } = useReloadDirective();
 
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
+  
+  // Estado para la ventana emergente de clonación exitosa
+  const [cloneSuccessInfo, setCloneSuccessInfo] = useState<{ name: string, period: string } | null>(null);
+
   const isAdmin = currentUser?.systemRole === UserRole.ADMIN;
   const isAdvisor = currentUser?.systemRole === UserRole.ASESOR;
   
@@ -63,35 +69,25 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const listModalities = config.modalities?.length ? config.modalities : ["Presencial", "Online"];
   const listSemesters = config.semesters?.length ? config.semesters : ["1er Semestre", "2do Semestre", "Anual"];
 
-  const academicActivities = activities.filter(a => !a.category || a.category === 'ACADEMIC');
+  // Filtrar actividades académicas por el año seleccionado en el botón de período
+  const academicActivities = useMemo(() => {
+    return activities.filter(a => (a.category === 'ACADEMIC' || !a.category) && a.year === selectedYear);
+  }, [activities, selectedYear]);
 
   // --- LÓGICA DE ORDENACIÓN: 2DO SEMESTRE PRIMERO ---
   const sortedAcademicActivities = useMemo(() => {
     const getSemesterValue = (period?: string) => {
         if (!period) return 0;
         const p = period.toLowerCase();
-        // Identificar 2do semestre por sufijo -2 o palabras clave
         if (p.endsWith('-2') || p.includes('2do') || p.includes('segundo')) return 2;
-        // Identificar 1er semestre por sufijo -1 o palabras clave
         if (p.endsWith('-1') || p.includes('1er') || p.includes('primero')) return 1;
         return 0;
     };
 
     return [...academicActivities].sort((a, b) => {
-        // Prioridad 1: Semestre (2 debe ir antes que 1)
         const semA = getSemesterValue(a.academicPeriod);
         const semB = getSemesterValue(b.academicPeriod);
-        
-        if (semA !== semB) {
-            return semB - semA; // Descendente: 2 primero, luego 1
-        }
-
-        // Prioridad 2: Año (Más reciente primero)
-        if ((b.year || 0) !== (a.year || 0)) {
-            return (b.year || 0) - (a.year || 0);
-        }
-
-        // Prioridad 3: Nombre (Alfabético)
+        if (semA !== semB) return semB - semA; 
         return (a.name || '').localeCompare(b.name || '', 'es');
     });
   }, [academicActivities]);
@@ -201,11 +197,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           }
 
           const ver = formData.version.trim().toUpperCase().replace(/\s/g, '') || 'V1';
-          
-          // --- NUEVA LÓGICA DE SEMESTRE PARA EL CÓDIGO ---
           const semSuffix = formData.academicPeriod.includes('-1') ? '-S1' : 
                            formData.academicPeriod.includes('-2') ? '-S2' : '';
-                           
           const autoCode = `${acronym}${dateStr}-${ver}${semSuffix}`;
           
           setFormData(prev => ({ 
@@ -220,7 +213,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       const jumpId = localStorage.getItem('jumpto_course_id');
       const jumpTab = localStorage.getItem('jumpto_tab_course');
       if (jumpId) {
-          const exists = academicActivities.find(a => a.id === jumpId);
+          const exists = activities.find(a => a.id === jumpId);
           if (exists) {
               setSelectedCourseId(jumpId);
               if (jumpTab === 'tracking') setActiveDetailTab('tracking');
@@ -229,7 +222,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           localStorage.removeItem('jumpto_course_id');
           localStorage.removeItem('jumpto_tab_course');
       }
-  }, [academicActivities]);
+  }, [activities]);
 
   useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
@@ -245,7 +238,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const selectedCourse = academicActivities.find(a => a.id === selectedCourseId);
+  const selectedCourse = activities.find(a => a.id === selectedCourseId);
   const courseEnrollments = enrollments.filter(e => e.activityId === selectedCourseId);
 
   const sortedEnrollments = useMemo(() => {
@@ -475,12 +468,34 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   const handleCloneCourse = async (course: Activity) => {
       if (confirm(`¿Desea clonar el curso "${course.name}"?`)) {
+          const now = new Date();
+          const currentYearVal = now.getFullYear();
+          // Lógica Semestre: Enero-Julio (1), Agosto-Diciembre (2)
+          const currentSemVal = now.getMonth() < 7 ? '1' : '2';
+          const currentPeriodStr = `${currentYearVal}-${currentSemVal}`;
+
           const newId = `ACAD-${Date.now()}`;
-          const clonedActivity: Activity = { ...course, id: newId, name: `${course.name} (Copia)`, internalCode: course.internalCode ? `${course.internalCode}-CPY` : '' };
-          await addActivity(clonedActivity);
-          await executeReload();
-          alert("Curso clonado.");
-          handleEditCourse(clonedActivity); 
+          const clonedActivity: Activity = { 
+              ...course, 
+              id: newId, 
+              name: `${course.name} (Copia)`, 
+              internalCode: course.internalCode ? `${course.internalCode}-CLON` : `CLON-${Date.now()}`,
+              year: currentYearVal,
+              academicPeriod: currentPeriodStr
+          };
+          
+          try {
+            await addActivity(clonedActivity);
+            await executeReload();
+            
+            // Mostrar ventana emergente informativa
+            setCloneSuccessInfo({ 
+                name: course.name, 
+                period: `${currentSemVal === '1' ? '1er' : '2do'} Semestre del ${currentYearVal}` 
+            });
+          } catch (err) {
+            alert("Error al intentar clonar el curso.");
+          }
       }
   };
 
@@ -673,7 +688,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                               <div><label className="block text-sm font-medium text-slate-700 mb-1">Versión</label><input type="text" value={formData.version} placeholder="V1" onChange={e => setFormData({...formData, version: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg"/></div>
                           </div>
                           <div className="grid grid-cols-2 gap-4">
-                              <div><label className="block text-sm font-medium text-slate-700 mb-1">Código Interno</label><input type="text" value={formData.internalCode} onChange={e => setFormData({...formData, internalCode: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg font-mono text-xs bg-slate-50"/></div>
+                              <div><label className="block text-sm font-medium text-slate-700 mb-1">Código Interno</label><input type="text" value={formData.internalCode} onChange={e => setFormData({...formData, internalCode: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-sm uppercase bg-slate-50"/></div>
                               <div><label className="block text-sm font-medium text-slate-700 mb-1">Modalidad</label><select value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg">{listModalities.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
                           </div>
                           <div className="grid grid-cols-2 gap-4">
@@ -699,7 +714,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   if (view === 'details' && selectedCourse) {
       return (
-          <div className="animate-fadeIn space-y-6"><button onClick={() => { setSelectedCourseId(null); setView('list'); }} className="text-slate-500 hover:text-slate-700 mb-4 flex items-center gap-1 text-sm font-bold">← Volver al listado</button><div className="bg-white border-l-4 border-[#647FBC] rounded-r-xl shadow-sm p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"><div><h2 className="text-2xl font-bold text-slate-800">{selectedCourse.name}</h2><p className="text-slate-500 text-sm mt-1">{selectedCourse.modality} • {selectedCourse.year}</p></div><div className="flex items-center gap-4"><div className="flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-lg border border-slate-100"><div className="flex items-center gap-2"><div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-green-500'}`}></div><span className="text-[10px] font-bold uppercase text-slate-500">{isSyncing ? 'Sincronizando...' : 'En Línea'}</span></div><div className="h-4 w-px bg-slate-300 mx-2"></div><button onClick={handleRefresh} className="text-xs font-bold text-[#647FBC] hover:text-blue-800 flex items-center gap-1"><svg className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Actualizar</button></div>{(isAdmin || isAdvisor) && (<button onClick={() => handleEditCourse(selectedCourse)} className="bg-white border border-slate-300 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold hover:bg-slate-50">Editar Curso</button>)}</div></div><div className="mt-8"><div className="flex items-end gap-2 border-b border-[#647FBC]/30 pl-4 mb-0"><button onClick={() => setActiveDetailTab('enrollment')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'enrollment' ? 'bg-white text-[#647FBC] border-t-[#647FBC] border-x border-[#647FBC]/30 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Matrícula</button><button onClick={() => setActiveDetailTab('tracking')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'tracking' ? 'bg-white text-[#647FBC] border-t-[#647FBC] border-x border-[#647FBC]/30 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Seguimiento Académico</button></div><div className="bg-white rounded-b-xl rounded-tr-xl shadow-sm border border-[#647FBC]/30 border-t-0 p-8">{activeDetailTab === 'enrollment' && (<div className="space-y-12 animate-fadeIn w-full"><div className={`bg-slate-50 border rounded-xl p-6 transition-colors ${isAlreadyEnrolled ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}><div className="flex justify-between items-center mb-6"><h3 className={`font-bold text-lg flex items-center gap-2 ${isAlreadyEnrolled ? 'text-red-700' : 'text-slate-800'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>{isAlreadyEnrolled ? 'Gestión de Matrícula Existente' : 'Inscripción Manual (Registro Completo)'}</h3>{isFoundInMaster && !isAlreadyEnrolled && (<span className="text-xs px-2 py-1 rounded border bg-green-50 text-green-700 border-green-200">Datos de Base Maestra</span>)}</div><form onSubmit={handleEnrollSubmit} className="space-y-6"><div className="space-y-2"><h4 className="text-xs font-bold text-slate-400 uppercase">Identificación</h4><div className="grid grid-cols-1 md:grid-cols-4 gap-4"><div className="relative md:col-span-1"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" value={manualForm.rut} onChange={handleEnrollChange} onBlur={handleRutBlur} className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-[#647FBC] ${isAlreadyEnrolled ? 'border-red-300 bg-white text-red-700 font-bold' : ''}`} placeholder="12345678-9" autoComplete="off"/>{showSuggestions && activeSearchField === 'rut' && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">{suggestions.map(s => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div><div className="md:col-span-1"><label className="block text-xs font-bold mb-1">Nombres *</label><input type="text" name="names" value={manualForm.names} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-sm"/></div><div className="md:col-span-1 relative"><label className="block text-xs font-bold mb-1">Ap. Paterno *</label><input type="text" name="paternalSurname" value={manualForm.paternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-[#647FBC]" autoComplete="off" />{showSuggestions && activeSearchField === 'paternalSurname' && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">{suggestions.map(s => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.paternalSurname} {s.maternalSurname}</span><span className="text-slate-500">{s.names} ({s.rut})</span></div>))}</div>)}</div><div className="md:col-span-1"><label className="block text-xs font-bold mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={manualForm.maternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-sm"/></div></div></div><div className="space-y-2"><h4 className="text-xs font-bold text-slate-400 uppercase">Contacto</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-xs font-bold mb-1">Email</label><input type="email" name="email" value={manualForm.email} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-sm"/></div><div><label className="block text-xs font-bold mb-1">Teléfono</label><input type="tel" name="phone" value={manualForm.phone} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-sm"/></div></div></div><div className="space-y-2"><h4 className="text-xs font-bold text-slate-400 uppercase">Ficha Académica</h4><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div><SmartSelect label="Sede" name="campus" value={manualForm.campus} options={config.campuses || ["Valparaíso"]} onChange={handleEnrollChange} /></div><div><SmartSelect label="Facultad" name="faculty" value={manualForm.faculty} options={listFaculties} onChange={handleEnrollChange} /></div><div><SmartSelect label="Departamento" name="department" value={manualForm.department} options={listDepts} onChange={handleEnrollChange} /></div><div><SmartSelect label="Carrera" name="career" value={manualForm.career} options={listCareers} onChange={handleEnrollChange} /></div><div><SmartSelect label="Contrato" name="contractType" value={manualForm.contractType} options={listContracts} onChange={handleEnrollChange} /></div><div><SmartSelect label="Semestre" name="teachingSemester" value={manualForm.teachingSemester} options={listSemesters} onChange={handleEnrollChange} /></div><div><SmartSelect label="Rol Académico" name="academicRole" value={manualForm.academicRole} options={listRoles} onChange={handleEnrollChange} /></div></div></div>{isFoundInMaster && (<div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mt-2"><h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Acciones de Base Maestra (Usuario Existente)</h4><button type="button" onClick={handleUpdateMasterData} disabled={isSyncing} className="w-full bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 px-3 rounded shadow-sm flex items-center justify-center gap-1 transition-colors"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Guardar Cambios (Datos Personales)</button></div>)}{isAlreadyEnrolled ? (<button type="button" onClick={handleUnenroll} disabled={isSyncing} className={`w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-bold shadow transition-colors flex items-center justify-center gap-2 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>Eliminar Matrícula del Curso</button>) : (<button type="submit" disabled={isSyncing} className={`w-full bg-[#647FBC] hover:bg-blue-800 text-white px-4 py-3 rounded-lg text-sm font-bold shadow transition-colors mt-4 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>Matricular Estudiante</button>)}{enrollMsg && <p className={`text-xs text-center font-bold p-2 rounded ${enrollMsg.type === 'success' ? 'text-green-800 bg-green-100' : 'text-red-800 bg-red-100'}`}>{enrollMsg.text}</p>}</form></div><div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm flex flex-col"><h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 border-b border-slate-100 pb-2"><svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>Carga Masiva (CSV / Excel)</h3><div className="flex-1 flex flex-col justify-center space-y-4"><label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadFile ? 'border-green-400 bg-green-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}><div className="flex flex-col items-center justify-center pt-5 pb-6">{uploadFile ? (<><svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg><p className="mb-1 text-xs font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-xs text-slate-500">Click para subir CSV/Excel</p></>)}</div><input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} /></label><div className="flex items-center gap-2 justify-center"><input type="checkbox" checked={hasHeaders} onChange={e => setHasHeaders(e.target.checked)} className="rounded text-[#647FBC] focus:ring-[#647FBC]"/><span className="text-xs text-slate-500">Ignorar encabezados (fila 1)</span></div><button onClick={handleBulkUpload} disabled={!uploadFile} className="w-full bg-slate-800 text-white py-3 rounded-lg font-bold text-sm hover:bg-slate-900 disabled:opacity-50 transition-colors">Procesar Archivo Masivo</button></div></div><div className="overflow-x-auto bg-white rounded-lg border border-slate-200">
+          <div className="animate-fadeIn space-y-6"><button onClick={() => { setSelectedCourseId(null); setView('list'); }} className="text-slate-500 hover:text-slate-700 mb-4 flex items-center gap-1 text-sm font-bold">← Volver al listado</button><div className="bg-white border-l-4 border-[#647FBC] rounded-r-xl shadow-sm p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"><div><h2 className="text-2xl font-bold text-slate-800">{selectedCourse.name}</h2><p className="text-slate-500 text-sm mt-1">{selectedCourse.modality} • {selectedCourse.year}</p></div><div className="flex items-center gap-4"><div className="flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-lg border border-slate-100"><div className="flex items-center gap-2"><div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-green-500'}`}></div><span className="text-[10px] font-bold uppercase text-slate-500">{isSyncing ? 'Sincronizando...' : 'En Línea'}</span></div><div className="h-4 w-px bg-slate-300 mx-2"></div><button onClick={handleRefresh} className="text-xs font-bold text-[#647FBC] hover:text-blue-800 flex items-center gap-1"><svg className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Actualizar</button></div>{(isAdmin || isAdvisor) && (<button onClick={() => handleEditCourse(selectedCourse)} className="bg-white border border-slate-300 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold hover:bg-slate-50">Editar Curso</button>)}</div></div><div className="mt-8"><div className="flex items-end gap-2 border-b border-[#647FBC]/30 pl-4 mb-0"><button onClick={() => setActiveDetailTab('enrollment')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'enrollment' ? 'bg-white text-[#647FBC] border-t-[#647FBC] border-x border-[#647FBC]/30 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Matrícula</button><button onClick={() => setActiveDetailTab('tracking')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'tracking' ? 'bg-white text-[#647FBC] border-t-[#647FBC] border-x border-[#647FBC]/30 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Seguimiento Académico</button></div><div className="bg-white rounded-b-xl rounded-tr-xl shadow-sm border border-[#647FBC]/30 border-t-0 p-8">{activeDetailTab === 'enrollment' && (<div className="space-y-12 animate-fadeIn w-full"><div className={`bg-slate-50 border rounded-xl p-6 transition-colors ${isAlreadyEnrolled ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}><div className="flex justify-between items-center mb-6"><h3 className={`font-bold text-lg flex items-center gap-2 ${isAlreadyEnrolled ? 'text-red-700' : 'text-slate-800'}`}>{isAlreadyEnrolled ? (<><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg> Gestión de Matrícula Existente</>) : ("Inscripción Manual (Registro Completo)")}</h3>{isFoundInMaster && !isAlreadyEnrolled && (<span className="text-xs px-2 py-1 rounded border bg-green-50 text-green-700 border-green-200">Datos de Base Maestra</span>)}</div><form onSubmit={handleEnrollSubmit} className="space-y-6"><div className="space-y-2"><h4 className="text-xs font-bold text-slate-400 uppercase">Identificación</h4><div className="grid grid-cols-1 md:grid-cols-4 gap-4"><div className="relative md:col-span-1"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" value={manualForm.rut} onChange={handleEnrollChange} onBlur={handleRutBlur} className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-[#647FBC] ${isAlreadyEnrolled ? 'border-red-300 bg-white text-red-700 font-bold' : ''}`} placeholder="12345678-9" autoComplete="off"/>{showSuggestions && activeSearchField === 'rut' && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">{suggestions.map(s => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div><div className="md:col-span-1"><label className="block text-xs font-bold mb-1">Nombres *</label><input type="text" name="names" value={manualForm.names} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-sm"/></div><div className="md:col-span-1 relative"><label className="block text-xs font-bold mb-1">Ap. Paterno *</label><input type="text" name="paternalSurname" value={manualForm.paternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-[#647FBC]" autoComplete="off" />{showSuggestions && activeSearchField === 'paternalSurname' && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">{suggestions.map(s => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.paternalSurname} {s.maternalSurname}</span><span className="text-xs text-slate-500">{s.names} ({s.rut})</span></div>))}</div>)}</div><div className="md:col-span-1"><label className="block text-xs font-bold mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={manualForm.maternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-sm"/></div></div></div><div className="space-y-2"><h4 className="text-xs font-bold text-slate-400 uppercase">Contacto</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-xs font-bold mb-1">Email</label><input type="email" name="email" value={manualForm.email} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-sm"/></div><div><label className="block text-xs font-bold mb-1">Teléfono</label><input type="tel" name="phone" value={manualForm.phone} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-sm"/></div></div></div><div className="space-y-2"><h4 className="text-xs font-bold text-slate-400 uppercase">Ficha Académica</h4><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div><SmartSelect label="Sede" name="campus" value={manualForm.campus} options={config.campuses || ["Valparaíso"]} onChange={handleEnrollChange} /></div><div><SmartSelect label="Facultad" name="faculty" value={manualForm.faculty} options={listFaculties} onChange={handleEnrollChange} /></div><div><SmartSelect label="Departamento" name="department" value={manualForm.department} options={listDepts} onChange={handleEnrollChange} /></div><div><SmartSelect label="Carrera" name="career" value={manualForm.career} options={listCareers} onChange={handleEnrollChange} /></div><div><SmartSelect label="Contrato" name="contractType" value={manualForm.contractType} options={listContracts} onChange={handleEnrollChange} /></div><div><SmartSelect label="Semestre" name="teachingSemester" value={manualForm.teachingSemester} options={listSemesters} onChange={handleEnrollChange} /></div><div><SmartSelect label="Rol Académico" name="academicRole" value={manualForm.academicRole} options={listRoles} onChange={handleEnrollChange} /></div></div></div>{isFoundInMaster && (<div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mt-2"><h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Acciones de Base Maestra (Usuario Existente)</h4><button type="button" onClick={handleUpdateMasterData} disabled={isSyncing} className="w-full bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 px-3 rounded shadow-sm flex items-center justify-center gap-1 transition-colors"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Guardar Cambios (Datos Personales)</button></div>)}{isAlreadyEnrolled ? (<button type="button" onClick={handleUnenroll} disabled={isSyncing} className={`w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-bold shadow transition-colors flex items-center justify-center gap-2 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>Eliminar Matrícula del Curso</button>) : (<button type="submit" disabled={isSyncing} className={`w-full bg-[#647FBC] hover:bg-blue-800 text-white px-4 py-3 rounded-lg text-sm font-bold shadow transition-colors mt-4 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>Matricular Estudiante</button>)}{enrollMsg && <p className={`text-xs text-center font-bold p-2 rounded ${enrollMsg.type === 'success' ? 'text-green-800 bg-green-100' : 'text-red-800 bg-red-100'}`}>{enrollMsg.text}</p>}</form></div><div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm flex flex-col"><h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 border-b border-slate-100 pb-2"><svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>Carga Masiva (CSV / Excel)</h3><div className="flex-1 flex flex-col justify-center space-y-4"><label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadFile ? 'border-green-400 bg-green-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}><div className="flex flex-col items-center justify-center pt-5 pb-6">{uploadFile ? (<><svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg><p className="mb-1 text-xs font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-xs text-slate-500">Click para subir CSV/Excel</p></>)}</div><input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} /></label><div className="flex items-center gap-2 justify-center"><input type="checkbox" checked={hasHeaders} onChange={e => setHasHeaders(e.target.checked)} className="rounded text-[#647FBC] focus:ring-[#647FBC]"/><span className="text-xs text-slate-500">Ignorar encabezados (fila 1)</span></div><button onClick={handleBulkUpload} disabled={!uploadFile} className="w-full bg-slate-800 text-white py-3 rounded-lg font-bold text-sm hover:bg-slate-900 disabled:opacity-50 transition-colors">Procesar Archivo Masivo</button></div></div><div className="overflow-x-auto bg-white rounded-lg border border-slate-200">
     <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
         <h4 className="font-bold text-slate-700 text-sm">Estudiantes Matriculados</h4>
         <button 
@@ -714,7 +729,9 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     <table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200"><tr><th className="px-6 py-3">RUT</th><th className="px-6 py-3">Estudiante</th><th className="px-6 py-3">Email</th><th className="px-6 py-3">Estado</th><th className="px-6 py-3 text-center">Acción</th></tr></thead><tbody className="divide-y divide-slate-100">{sortedEnrollments.map(enr => { const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut)); return (<tr key={enr.id} className="hover:bg-slate-50"><td className="px-6 py-3 font-mono text-xs">{enr.rut}</td><td className="px-6 py-3 font-bold text-slate-700">{u ? `${u.paternalSurname} ${u.names}` : 'RUT no en Base Maestra'}</td><td className="px-6 py-3 text-xs text-slate-500">{u?.email || '-'}</td><td className="px-6 py-3"><span className={`px-2 py-1 rounded text-xs font-bold uppercase ${enr.state === ActivityState.APROBADO ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{enr.state}</span></td><td className="px-6 py-3 text-center"><button onClick={() => handleUnenrollFromList(enr.id, u ? `${u.names} ${u.paternalSurname}` : enr.rut)} className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 px-3 py-1.5 rounded text-[10px] font-black uppercase transition-all shadow-sm">Desmatricular</button></td></tr>)})}</tbody></table></div></div>)} {activeDetailTab === 'tracking' && (<div className="animate-fadeIn"><div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"><div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center"><h3 className="font-bold text-slate-700">Sábana de Notas y Asistencia</h3><div className="flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-amber-400' : 'bg-green-500'} animate-pulse`}></span><span className="text-xs text-slate-500 italic">Modo edición por fila activo</span></div></div><div className="overflow-x-auto custom-scrollbar"><table className="w-full text-sm text-left whitespace-nowrap"><thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200"><tr><th className="px-4 py-3 w-60 bg-slate-100 sticky left-0 border-r z-10">Estudiante</th><th className="px-2 py-3 text-center w-32 border-r border-slate-200">Asistencia</th>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, i) => (<th key={i} className="px-2 py-3 text-center w-20 border-r border-slate-200">N{i+1}</th>))}<th className="px-2 py-3 text-center w-20 bg-slate-50 font-bold border-r border-slate-200">Final</th><th className="px-4 py-3 text-center w-28 border-r border-slate-200">Estado</th><th className="px-4 py-3 text-center w-28">Certificado</th></tr></thead><tbody className="divide-y divide-slate-100">{sortedEnrollments.map(enr => { const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut)); 
                 const activeEnr = pendingChanges[enr.id] || enr;
                 
-                return (<tr key={enr.id} className="hover:bg-slate-50 group"><td className="px-4 py-3 sticky left-0 bg-white border-r border-slate-200 z-10 group-hover:bg-slate-50"><div className="font-bold text-slate-700 truncate w-56" title={`${student?.paternalSurname} ${student?.names}`}>{student ? `${student.paternalSurname}, ${student.names}` : 'Sin Info en Base Maestra'}</div><div className="text-[10px] text-slate-400 font-mono">{enr.rut}</div></td><td className="px-4 py-2 text-center border-r border-slate-200"><div className="flex flex-col items-center"><div className="flex gap-1 justify-center mb-1">{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, idx) => (<input key={idx} type="checkbox" checked={!!activeEnr[`attendanceSession${idx+1}`]} onChange={() => handleLocalToggleAttendance(enr, idx)} className="w-3 h-3 text-[#647FBC] rounded border-slate-300 focus:ring-[#647FBC] cursor-pointer"/>))}</div><span className={`text-[10px] font-bold ${(activeEnr.attendancePercentage || 0) < (config.minAttendancePercentage || 75) ? 'text-red-500' : 'text-green-600'}`}>{activeEnr.attendancePercentage || 0}% Asistencia</span></div></td>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, idx) => (<td key={idx} className="px-1 py-2 text-center border-r border-slate-100"><input type="number" step="0.1" min="1" max="7" className={`w-16 text-center border rounded py-1 text-sm font-bold focus:ring-2 focus:ring-[#647FBC] focus:outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${activeEnr.grades?.[idx] && activeEnr.grades[idx] < 4 ? 'text-red-600 border-red-200 bg-red-50' : 'text-slate-700 border-slate-200'}`} value={activeEnr.grades?.[idx] || ''} onChange={(e) => handleLocalUpdateGrade(enr, idx, e.target.value)} disabled={isSyncing}/></td>))}<td className="px-2 py-2 text-center border-r border-slate-200 bg-slate-50 font-bold text-slate-800"><span className={activeEnr.finalGrade && activeEnr.finalGrade < 4 ? 'text-red-600' : ''}>{activeEnr.finalGrade || '-'}</span></td><td className="px-2 py-2 text-center border-r border-slate-200">
+                return (<tr key={enr.id} className="hover:bg-slate-50 group"><td className="px-4 py-3 sticky left-0 bg-white border-r border-slate-200 z-10 group-hover:bg-slate-50"><div className="font-bold text-slate-700 truncate w-56" title={`${student?.paternalSurname} ${student?.names}`}>{student ? `${student.paternalSurname}, ${student.names}` : 'Sin Info en Base Maestra'}</div><div className="text-[10px] text-slate-400 font-mono">{enr.rut}</div></td><td className="px-4 py-2 text-center border-r border-slate-200"><div className="flex flex-col items-center"><div className="flex gap-1 justify-center mb-1">{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, idx) => (<input key={idx} type="checkbox" checked={!!activeEnr[`attendanceSession${idx+1}`]} onChange={() => handleLocalToggleAttendance(enr, idx)} className="w-3 h-3 text-[#647FBC] rounded border-slate-300 focus:ring-[#647FBC] cursor-pointer"/>))}</div><span className={`text-[10px] font-bold ${(activeEnr.attendancePercentage || 0) < (config.minAttendancePercentage || 75) ? 'text-red-500' : 'text-green-600'}`}>{activeEnr.attendancePercentage || 0}% Asistencia</span></div></td>{Array.from({ length: selectedCourse.evaluationCount || 3 }).map((_, idx) => (<td key={idx} className="px-1 py-2 text-center border-r border-slate-100"><input type="number" step="0.1" min="1" max="7" className={`w-16 text-center border rounded py-1 text-sm font-bold focus:ring-2 focus:ring-[#647FBC] focus:outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${activeEnr.grades?.[idx] && activeEnr.grades[idx] < 4 ? 'text-red-600 border-red-200 bg-red-50' : 'text-slate-700 border-slate-200'}`} value={activeEnr.grades?.[idx] || ''} onChange={(e) => handleLocalUpdateGrade(enr, idx, e.target.value)} disabled={isSyncing}/></td>))}<td className="px-2 py-2 text-center border-r border-slate-200 bg-slate-50 font-bold text-slate-800"><span className={activeEnr.finalGrade && activeEnr.finalGrade < 4 ? 'text-red-600' : ''}>
+                {/* FIX: Changed activeGrades.finalGrade to activeEnr.finalGrade */}
+                {activeEnr.finalGrade || '-'}</span></td><td className="px-2 py-2 text-center border-r border-slate-200">
                 {pendingChanges[enr.id] ? (
                     <button 
                         onClick={() => handleCommitRowChanges(enr.id)}
@@ -735,8 +752,21 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                 <h2 className="text-2xl font-bold text-slate-800">Gestión de Cursos Curriculares</h2>
                 <p className="text-sm text-slate-500">Administración de asignaturas académicas y registro de notas.</p>
             </div>
-            <div className="flex gap-4">
-                {/* BOTÓN CONSULTA ACADÉMICA (NUEVO) */}
+            <div className="flex gap-4 items-center">
+                {/* SELECTOR DE PERIODO */}
+                <div className="flex items-center bg-slate-50 rounded-2xl px-4 py-2 border border-slate-200 shadow-inner group">
+                    <label className="text-[10px] font-black text-slate-400 uppercase mr-3">Periodo:</label>
+                    <select 
+                      value={selectedYear} 
+                      onChange={(e) => setSelectedYear(Number(e.target.value))} 
+                      className="text-sm font-black text-[#647FBC] bg-transparent border-none focus:ring-0 p-0 cursor-pointer uppercase"
+                    >
+                        <option value={currentYear}>{currentYear}</option>
+                        <option value={currentYear - 1}>{currentYear - 1}</option>
+                        <option value={currentYear - 2}>{currentYear - 2}</option>
+                    </select>
+                </div>
+
                 <button 
                     onClick={() => { setKioskSearchRut(''); setKioskSearchSurname(''); setKioskFoundUser(null); setKioskRutSuggestions([]); setKioskSurnameSuggestions([]); setShowKioskModal(true); }}
                     className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-4 py-2 rounded-lg font-bold hover:bg-indigo-100 transition-all flex items-center gap-2 shadow-sm"
@@ -751,7 +781,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
             </div>
         </div>
 
-        {/* MODAL CONSULTA ACADÉMICA (NUEVO) */}
+        {/* MODAL CONSULTA ACADÉMICA */}
         {showKioskModal && (
             <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
                 <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden border border-indigo-200">
@@ -844,7 +874,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-[#F9F8F6]">
                         {kioskFoundUser ? (
                             <div className="space-y-8 animate-fadeIn">
-                                {/* PERFIL DOCENTE */}
                                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-6">
                                     <div className="w-20 h-20 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center font-black text-3xl shadow-inner border-2 border-white">
                                         {kioskFoundUser.photoUrl ? (
@@ -863,8 +892,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Actividades</span>
                                     </div>
                                 </div>
-
-                                {/* LISTADO AGRUPADO */}
                                 {kioskGroupedResults.map(([period, items]) => (
                                     <div key={period} className="space-y-4">
                                         <div className="flex items-center gap-3">
@@ -878,7 +905,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                 return (
                                                     <div key={i} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all group flex flex-row items-center gap-4">
                                                         <div className="flex-1 min-w-0 grid grid-cols-12 items-center gap-4">
-                                                            {/* Category & Code */}
                                                             <div className="col-span-2 flex flex-col pl-2">
                                                                 <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border w-fit ${
                                                                     cat === 'POSTGRADUATE' ? 'bg-purple-50 text-purple-700 border-purple-100' :
@@ -890,13 +916,9 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                                 </span>
                                                                 <span className="text-[9px] text-slate-400 font-mono truncate mt-1">{res.activity?.internalCode}</span>
                                                             </div>
-                                                            
-                                                            {/* Name */}
                                                             <div className="col-span-4">
                                                                 <h6 className="font-bold text-slate-800 text-xs leading-tight group-hover:text-indigo-700 transition-colors truncate" title={res.activity?.name}>{res.activity?.name}</h6>
                                                             </div>
-
-                                                            {/* Info inline */}
                                                             <div className="col-span-3 flex gap-4 text-[9px] text-slate-500 font-bold uppercase">
                                                                 <div className="flex flex-col">
                                                                     <span className="text-slate-300">Inicio</span>
@@ -907,8 +929,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                                     <span className="whitespace-nowrap">{res.activity?.hours}h {res.activity?.modality === 'Presencial' ? 'Cr.' : 'Pd.'}</span>
                                                                 </div>
                                                             </div>
-
-                                                            {/* Grade & Status */}
                                                             <div className="col-span-3 flex items-center justify-end gap-3 border-l border-slate-100 pl-4">
                                                                 <div className="text-right">
                                                                     <span className="block text-[8px] font-black text-slate-300 uppercase leading-none">Nota</span>
@@ -940,7 +960,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                             </div>
                         )}
                     </div>
-
                     <div className="p-4 bg-indigo-600 text-white text-center">
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] italic">Unidad de Acompañamiento Docente • GestorSMEAD</p>
                     </div>
@@ -948,22 +967,80 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
             </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{sortedAcademicActivities.map(course => { 
-        const courseEnrs = enrollments.filter(e => e.activityId === course.id);
-        const enrolledCount = courseEnrs.length;
-        const approvedCount = courseEnrs.filter(e => e.state === ActivityState.APROBADO).length;
-        const advancingCount = courseEnrs.filter(e => e.state === ActivityState.AVANZANDO).length;
-        const isSecondSemester = course.academicPeriod?.endsWith("-2") || course.academicPeriod?.toLowerCase().includes("2do") || course.academicPeriod?.toLowerCase().includes("segundo");
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {sortedAcademicActivities.map(course => { 
+            const courseEnrs = enrollments.filter(e => e.activityId === course.id);
+            const enrolledCount = courseEnrs.length;
+            const approvedCount = courseEnrs.filter(e => e.state === ActivityState.APROBADO).length;
+            const advancingCount = courseEnrs.filter(e => e.state === ActivityState.AVANZANDO).length;
+            const isSecondSemester = course.academicPeriod?.endsWith("-2") || course.academicPeriod?.toLowerCase().includes("2do") || course.academicPeriod?.toLowerCase().includes("segundo");
 
-        return (<div key={course.id} className={`${isSecondSemester ? 'bg-sky-50' : 'bg-white'} rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow relative overflow-hidden group`}><div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><svg className="w-24 h-24 text-[#647FBC]" fill="currentColor" viewBox="0 0 20 20"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" /></svg></div><div className="relative z-10"><div className="flex justify-between items-start mb-2"><span className={`text-[10px] font-bold uppercase px-2 py-1 rounded border ${isSecondSemester ? 'bg-sky-100 text-sky-700 border-sky-200' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>{course.academicPeriod || course.year}</span><span className="text-xs text-slate-400 font-mono">{course.internalCode}</span></div><h3 className="text-lg font-bold text-slate-800 mb-1 leading-tight h-14 line-clamp-2" title={course.name}>{course.name}</h3><div className="flex items-center gap-4 text-xs text-slate-500 mb-2"><span className="flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-14 0 7 7 0 0114 0z" /></svg>{enrolledCount} Inscritos</span><span className="flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>{course.modality}</span></div><div className="flex items-center gap-2 mb-4">
-            <span className="bg-green-50 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded border border-green-100 flex items-center gap-1">
-                <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                {approvedCount} APROBADOS
-            </span>
-            <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded border border-indigo-100 flex items-center gap-1">
-                <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" /></svg>
-                {advancingCount} AVANZANDO
-            </span>
-        </div><div className="flex gap-2"><button onClick={() => { setSelectedCourseId(course.id); setView('details'); }} className="flex-1 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold text-xs hover:bg-[#647FBC] hover:text-white hover:border-[#647FBC] transition-all shadow-sm">Gestionar Curso</button>{(isAdmin || isAdvisor) && (<button onClick={() => handleCloneCourse(course)} title="Clonar Curso" className="px-3 py-2 bg-white border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 transition-all shadow-sm"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg></button>)}</div></div></div>)})} {academicActivities.length === 0 && (<div className="col-span-full py-12 text-center bg-slate-50 border border-dashed border-slate-300 rounded-xl"><p className="text-slate-500 font-medium">No hay cursos registrados en el sistema.</p>{(isAdmin || isAdvisor) && <p className="text-xs text-slate-400 mt-1">Utilice el botón "Nuevo Curso" para comenzar.</p>}</div>)}</div></div>
+            return (
+              <div key={course.id} className={`${isSecondSemester ? 'bg-sky-50' : 'bg-white'} rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow relative overflow-hidden group`}>
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <svg className="w-24 h-24 text-[#647FBC]" fill="currentColor" viewBox="0 0 20 20"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" /></svg>
+                </div>
+                <div className="relative z-10">
+                  <div className="flex justify-between items-start mb-2">
+                    <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded border ${isSecondSemester ? 'bg-sky-100 text-sky-700 border-sky-200' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>{course.academicPeriod || course.year}</span>
+                    <span className="text-xs text-slate-400 font-mono">{course.internalCode}</span>
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-800 mb-1 leading-tight h-14 line-clamp-2" title={course.name}>{course.name}</h3>
+                  <div className="flex items-center gap-4 text-xs text-slate-500 mb-2">
+                    <span className="flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-14 0 7 7 0 0114 0z" /></svg>{enrolledCount} Inscritos</span>
+                    <span className="flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>{course.modality}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mb-4">
+                      <span className="bg-green-50 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded border border-green-100 flex items-center gap-1">
+                          <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                          {approvedCount} APROBADOS
+                      </span>
+                      <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded border border-indigo-100 flex items-center gap-1">
+                          <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" /></svg>
+                          {advancingCount} AVANZANDO
+                      </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => { setSelectedCourseId(course.id); setView('details'); }} className="flex-1 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold text-xs hover:bg-[#647FBC] hover:text-white hover:border-[#647FBC] transition-all shadow-sm">Gestionar Curso</button>
+                    {(isAdmin || isAdvisor) && (
+                      <button onClick={() => handleCloneCourse(course)} title="Clonar Curso para Periodo Actual" className="px-3 py-2 bg-white border border-slate-300 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-all shadow-sm">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })} 
+          {academicActivities.length === 0 && (
+            <div className="col-span-full py-12 text-center bg-slate-50 border border-dashed border-slate-300 rounded-xl">
+              <p className="text-slate-500 font-medium">No hay cursos registrados en el sistema para el año {selectedYear}.</p>
+              {(isAdmin || isAdvisor) && <p className="text-xs text-slate-400 mt-1">Cambie el período arriba o utilice el botón "Nuevo Curso" para comenzar.</p>}
+            </div>
+          )}
+        </div>
+
+        {/* VENTANA EMERGENTE INFORMATIVA DE CLONACIÓN EXITOSA */}
+        {cloneSuccessInfo && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                <div className="bg-white rounded-3xl shadow-2xl p-10 max-w-md w-full text-center border border-[#647FBC]/20">
+                    <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner animate-bounce">
+                        <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    </div>
+                    <h3 className="text-2xl font-black text-slate-800 mb-3 uppercase tracking-tight">¡Clonación Exitosa!</h3>
+                    <p className="text-slate-600 mb-8 leading-relaxed text-sm">
+                        El curso <span className="font-bold text-[#647FBC]">"{cloneSuccessInfo.name}"</span> se ha habilitado correctamente para el <span className="font-bold text-[#647FBC]">{cloneSuccessInfo.period}</span>. 
+                        Ya puedes encontrarlo filtrando por el periodo actual.
+                    </p>
+                    <button 
+                        onClick={() => setCloneSuccessInfo(null)}
+                        className="w-full py-4 bg-[#647FBC] hover:bg-blue-800 text-white rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-lg transition-all transform active:scale-95"
+                    >
+                        Continuar
+                    </button>
+                </div>
+            </div>
+        )}
+      </div>
   );
 };

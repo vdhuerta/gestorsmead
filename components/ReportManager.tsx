@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useData } from '../context/DataContext';
 import { User, Enrollment, Activity, ActivityState } from '../types';
@@ -21,17 +20,19 @@ export const ReportManager: React.FC = () => {
     const { enrollments, activities, users } = useData();
     const { isSyncing, executeReload } = useReloadDirective(); // DIRECTIVA_RECARGA
 
+    const currentYear = new Date().getFullYear();
+    const [selectedYear, setSelectedYear] = useState<number>(currentYear);
     const [activeReport, setActiveReport] = useState<'consolidated' | 'effectiveness' | 'preferences' | 'advisoryImpact' | 'frequentTeachers' | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedFaculty, setSelectedFaculty] = useState<string | null>(null);
     const [detailFilter, setDetailFilter] = useState<DetailFilter | null>(null);
 
-    // --- EFECTO: RECARGA AUTOMÁTICA AL ENTRAR A UN INFORME ---
+    // --- EFECTO: RECARGA AUTOMÁTICA AL ENTRAR A UN INFORME O CAMBIAR AÑO ---
     useEffect(() => {
         if (activeReport) {
             executeReload();
         }
-    }, [activeReport]);
+    }, [activeReport, selectedYear]);
 
     // --- HELPER: FORMAT dd-mmm-aa (Spanish) ---
     const formatReportDate = (rawDate: string | undefined): string => {
@@ -48,11 +49,11 @@ export const ReportManager: React.FC = () => {
         }
     };
 
-    // --- LÓGICA FILTRO CONSOLIDADO (Actualizado según requerimiento) ---
+    // --- LÓGICA FILTRO CONSOLIDADO (Filtrado por Año) ---
     const consolidatedList = useMemo(() => {
         return enrollments.filter(enr => {
             const act = activities.find(a => a.id === enr.activityId);
-            if (!act) return false;
+            if (!act || act.year !== selectedYear) return false;
 
             // 1. Estudiantes aprobados en cursos y postítulos
             if ((act.category === 'ACADEMIC' || act.category === 'POSTGRADUATE') && enr.state === ActivityState.APROBADO) return true;
@@ -83,7 +84,7 @@ export const ReportManager: React.FC = () => {
                 displayDate: formatReportDate(relevantDate)
             };
         });
-    }, [enrollments, activities, users]);
+    }, [enrollments, activities, users, selectedYear]);
 
     // Estadísticas de resumen para el informe consolidado
     const consolidatedStats = useMemo(() => {
@@ -107,12 +108,12 @@ export const ReportManager: React.FC = () => {
         return stats;
     }, [consolidatedList]);
 
-    // --- LÓGICA TASA DE EFECTIVIDAD POR FACULTAD ---
+    // --- LÓGICA TASA DE EFECTIVIDAD POR FACULTAD (Filtrado por Año) ---
     const effectivenessData = useMemo(() => {
         const stats: Record<string, { total: number, approved: number }> = {};
         enrollments.forEach(enr => {
             const act = activities.find(a => a.id === enr.activityId);
-            if (!act || (act.category !== 'ACADEMIC' && act.category !== 'POSTGRADUATE')) return;
+            if (!act || act.year !== selectedYear || (act.category !== 'ACADEMIC' && act.category !== 'POSTGRADUATE')) return;
             const user = users.find(u => u.rut === enr.rut);
             const faculty = user?.faculty || 'Sin Facultad / Externo';
             if (!stats[faculty]) stats[faculty] = { total: 0, approved: 0 };
@@ -123,15 +124,15 @@ export const ReportManager: React.FC = () => {
             faculty, total: data.total, approved: data.approved,
             percentage: data.total > 0 ? Math.round((data.approved / data.total) * 100) : 0
         })).sort((a, b) => b.percentage - a.percentage);
-    }, [enrollments, activities, users]);
+    }, [enrollments, activities, users, selectedYear]);
 
-    // --- LÓGICA MATRIZ DE PREFERENCIAS ---
+    // --- LÓGICA MATRIZ DE PREFERENCIAS (Filtrado por Año) ---
     const preferenceMatrix = useMemo(() => {
         const matrix: Record<string, { ACADEMIC: number, POSTGRADUATE: number, GENERAL: number, ADVISORY: number, total: number }> = {};
 
         enrollments.forEach(enr => {
             const act = activities.find(a => a.id === enr.activityId);
-            if (!act) return;
+            if (!act || act.year !== selectedYear) return;
 
             const user = users.find(u => u.rut === enr.rut);
             const faculty = user?.faculty || 'Sin Facultad / Externo';
@@ -148,15 +149,15 @@ export const ReportManager: React.FC = () => {
         return Object.entries(matrix).map(([faculty, stats]) => ({
             faculty, ...stats
         })).sort((a, b) => b.total - a.total);
-    }, [enrollments, activities, users]);
+    }, [enrollments, activities, users, selectedYear]);
 
-    // --- LÓGICA MAPA DE IMPACTO DE ASESORÍAS ---
+    // --- LÓGICA MAPA DE IMPACTO DE ASESORÍAS (Filtrado por Año) ---
     const advisoryImpactData = useMemo(() => {
         const stats: Record<string, { files: number, sessions: number }> = {};
         
         enrollments.forEach(enr => {
             const act = activities.find(a => a.id === enr.activityId);
-            if (!act || act.category !== 'ADVISORY') return;
+            if (!act || act.category !== 'ADVISORY' || act.year !== selectedYear) return;
 
             const user = users.find(u => u.rut === enr.rut);
             const faculty = user?.faculty || 'Sin Facultad / Externo';
@@ -171,16 +172,16 @@ export const ReportManager: React.FC = () => {
             faculty,
             ...data
         })).sort((a, b) => b.sessions - a.sessions);
-    }, [enrollments, activities, users]);
+    }, [enrollments, activities, users, selectedYear]);
 
-    // --- LÓGICA DOCENTES FRECUENTES (FIDELIZACIÓN) ---
+    // --- LÓGICA DOCENTES FRECUENTES (FIDELIZACIÓN - Filtrado por Año) ---
     const frequentTeachersData = useMemo(() => {
         const userApprovedCount: Record<string, number> = {};
         
-        // Contar actividades de interés para fidelización
+        // Contar actividades de interés para fidelización en el año seleccionado
         enrollments.forEach(enr => {
             const act = activities.find(a => a.id === enr.activityId);
-            if (!act) return;
+            if (!act || act.year !== selectedYear) return;
             
             // Criterio: Aprobados (Cursos) o registrados (Extensión/Asesoría)
             const isApproved = enr.state === ActivityState.APROBADO;
@@ -208,7 +209,7 @@ export const ReportManager: React.FC = () => {
             faculty,
             ...data
         })).sort((a, b) => b.frequentCount - a.frequentCount);
-    }, [enrollments, users, activities]);
+    }, [enrollments, users, activities, selectedYear]);
 
     const filteredDrillDown = useMemo(() => {
         if (!detailFilter) return [];
@@ -217,16 +218,18 @@ export const ReportManager: React.FC = () => {
             const faculty = user?.faculty || 'Sin Facultad / Externo';
             if (faculty !== detailFilter.faculty) return false;
 
+            const act = activities.find(a => a.id === enr.activityId);
+            if (!act || act.year !== selectedYear) return false;
+
             if (!detailFilter.category || detailFilter.category === 'TOTAL') return true;
             
-            const act = activities.find(a => a.id === enr.activityId);
-            return act?.category === detailFilter.category;
+            return act.category === detailFilter.category;
         }).map(enr => ({
             ...enr,
             user: users.find(u => u.rut === enr.rut),
             activity: activities.find(a => a.id === enr.activityId)
         }));
-    }, [detailFilter, enrollments, activities, users]);
+    }, [detailFilter, enrollments, activities, users, selectedYear]);
 
     // --- EXPORTAR INFORME FIDELIZACION FACULTAD HTML ---
     const handleExportFacultyHTML = () => {
@@ -240,7 +243,7 @@ export const ReportManager: React.FC = () => {
             const u = users.find(user => user.rut === rut);
             const teacherEnrollments = enrollments.filter(e => {
                 const act = activities.find(a => a.id === e.activityId);
-                if (!act) return false;
+                if (!act || act.year !== selectedYear) return false;
                 const isApproved = e.state === ActivityState.APROBADO;
                 const isExtensionOrAdvisory = act.category === 'GENERAL' || act.category === 'ADVISORY';
                 return e.rut === rut && (isApproved || isExtensionOrAdvisory);
@@ -297,7 +300,7 @@ export const ReportManager: React.FC = () => {
                     </div>
                     
                     <p style="font-size: 14px; margin-bottom: 20px;">
-                        Este documento contiene el listado de docentes que han participado activamente en el ciclo de formación continua institucional, 
+                        Este documento contiene el listado de docentes que han participado activamente en el ciclo de formación continua institucional en el periodo <strong>${selectedYear}</strong>, 
                         cumpliendo con el criterio de fidelización (1 o más actividades).
                     </p>
 
@@ -331,7 +334,7 @@ export const ReportManager: React.FC = () => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.setAttribute("href", url);
-        link.setAttribute("download", `INFORME_FIDELIDAD_${selectedFaculty.replace(/\s+/g, '_').toUpperCase()}_${new Date().toISOString().split('T')[0]}.html`);
+        link.setAttribute("download", `INFORME_FIDELIDAD_${selectedFaculty.replace(/\s+/g, '_').toUpperCase()}_${selectedYear}.html`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -355,7 +358,7 @@ export const ReportManager: React.FC = () => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.setAttribute("href", url);
-        link.setAttribute("download", `REPORTE_CONSOLIDADO_${new Date().toISOString().split('T')[0]}.csv`);
+        link.setAttribute("download", `REPORTE_CONSOLIDADO_${selectedYear}_${new Date().toISOString().split('T')[0]}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -368,10 +371,25 @@ export const ReportManager: React.FC = () => {
                     <h2 className="text-2xl font-bold text-slate-800">Centro de Informes Académicos</h2>
                     <p className="text-sm text-slate-500">Generación de reportes estratégicos y análisis de participación institucional.</p>
                 </div>
-                {/* SYNC INDICATOR */}
-                <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm">
-                    <div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-green-500'}`}></div>
-                    <span className="text-[10px] font-bold uppercase text-slate-500">{isSyncing ? 'Actualizando Datos...' : 'Datos Actualizados'}</span>
+                <div className="flex gap-4 items-center">
+                    {/* SELECTOR DE PERIODO (MISMA ESTETICA QUE INICIO) */}
+                    <div className="flex items-center bg-slate-50 rounded-2xl px-4 py-2 border border-slate-200 shadow-inner group">
+                        <label className="text-[10px] font-black text-slate-400 uppercase mr-3">Periodo:</label>
+                        <select 
+                            value={selectedYear} 
+                            onChange={(e) => setSelectedYear(Number(e.target.value))} 
+                            className="text-sm font-black text-[#647FBC] bg-transparent border-none focus:ring-0 p-0 cursor-pointer uppercase"
+                        >
+                            <option value={currentYear}>{currentYear}</option>
+                            <option value={currentYear - 1}>{currentYear - 1}</option>
+                            <option value={currentYear - 2}>{currentYear - 2}</option>
+                        </select>
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm">
+                        <div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-green-500'}`}></div>
+                        <span className="text-[10px] font-bold uppercase text-slate-500">{isSyncing ? 'Actualizando Datos...' : 'Datos Actualizados'}</span>
+                    </div>
                 </div>
             </div>
 
@@ -385,7 +403,7 @@ export const ReportManager: React.FC = () => {
                         </svg>
                     </div>
                     <h3 className="font-bold text-slate-800 text-lg">Informe Consolidado</h3>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Listado maestro de alumnos con actividades aprobadas, extensión o asesorías.</p>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Listado maestro de alumnos con actividades aprobadas, extensión o asesorías en el periodo {selectedYear}.</p>
                     <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
                         <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Ver Listado</span>
                         <svg className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
@@ -398,7 +416,7 @@ export const ReportManager: React.FC = () => {
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>
                     </div>
                     <h3 className="font-bold text-slate-800 text-lg">Tasa de Efectividad Académica</h3>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Porcentaje de aprobación vs inscripción por unidad académica (Cursos y Postítulos).</p>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Porcentaje de aprobación vs inscripción por unidad académica en {selectedYear}.</p>
                     <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
                         <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Ver Análisis</span>
                         <svg className="w-4 h-4 text-slate-300 group-hover:text-emerald-500 transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
@@ -411,7 +429,7 @@ export const ReportManager: React.FC = () => {
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
                     </div>
                     <h3 className="font-bold text-slate-800 text-lg">Matriz de Preferencias</h3>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Cruzamiento de participación por Tipo de Actividad vs Facultad. ¿Qué prefiere cada unidad?</p>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Cruzamiento de participación por Tipo de Actividad vs Facultad en {selectedYear}.</p>
                     <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
                         <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Ver Matriz</span>
                         <svg className="w-4 h-4 text-slate-300 group-hover:text-blue-500 transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
@@ -424,7 +442,7 @@ export const ReportManager: React.FC = () => {
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                     </div>
                     <h3 className="font-bold text-slate-800 text-lg">Impacto de Asesorías</h3>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Mapa de facultades con mayor demanda de acompañamiento y sesiones realizadas.</p>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Mapa de facultades con mayor demanda de acompañamiento en {selectedYear}.</p>
                     <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
                         <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Ver Mapa de Impacto</span>
                         <svg className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
@@ -437,7 +455,7 @@ export const ReportManager: React.FC = () => {
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-7.714 2.143L11 21l-2.286-6.857L1 12l7.714-2.143L11 3z" /></svg>
                     </div>
                     <h3 className="font-bold text-slate-800 text-lg">Docentes Frecuentes</h3>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Índice de fidelización: Docentes que han aprobado 1 o más actividades en el ciclo.</p>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Índice de fidelización en {selectedYear}: Docentes con 1 o más logros.</p>
                     <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
                         <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider">Ver Fidelización</span>
                         <svg className="w-4 h-4 text-slate-300 group-hover:text-purple-500 transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
@@ -450,11 +468,11 @@ export const ReportManager: React.FC = () => {
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[95vw] h-[90vh] flex flex-col overflow-hidden border border-indigo-200">
                         <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                            <div><h3 className="text-xl font-bold text-slate-800">Informe Consolidado de Participación Académica</h3><p className="text-xs text-slate-500 mt-1">Criterio: Aprobados, Extensión y Asesorías Abiertas.</p></div>
+                            <div><h3 className="text-xl font-bold text-slate-800">Informe Consolidado de Participación Académica ({selectedYear})</h3><p className="text-xs text-slate-500 mt-1">Criterio: Aprobados, Extensión y Asesorías Abiertas.</p></div>
                             <div className="flex items-center gap-3"><button onClick={handleExportCSV} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-sm flex items-center gap-2 transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> Exportar CSV</button><button onClick={() => setActiveReport(null)} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button></div>
                         </div>
 
-                        {/* PANEL DE RESUMEN DE CONTEOS (SOLICITADO) */}
+                        {/* PANEL DE RESUMEN DE CONTEOS */}
                         <div className="px-6 py-4 bg-indigo-50/50 border-b border-indigo-100 flex flex-wrap gap-4 md:gap-8 items-center">
                              <div className="flex items-center gap-3">
                                  <div className="w-10 h-10 bg-indigo-600 text-white rounded-lg flex items-center justify-center shadow-md">
@@ -519,7 +537,7 @@ export const ReportManager: React.FC = () => {
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-emerald-200">
                         <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                            <div><h3 className="text-xl font-bold text-slate-800">Tasa de Efectividad Académica por Facultad</h3><p className="text-xs text-slate-500 mt-1">Porcentaje de aprobación en cursos curriculares desglosado por unidad académica.</p></div>
+                            <div><h3 className="text-xl font-bold text-slate-800">Tasa de Efectividad Académica por Facultad ({selectedYear})</h3><p className="text-xs text-slate-500 mt-1">Porcentaje de aprobación en cursos curriculares desglosado por unidad académica.</p></div>
                             <div className="flex items-center gap-3">
                                 {isSyncing && <div className="text-[10px] text-emerald-600 font-bold animate-pulse">Sincronizando...</div>}
                                 <button onClick={() => { setActiveReport(null); setSelectedFaculty(null); }} className="text-slate-400 hover:text-slate-600 text-3xl font-light leading-none">&times;</button>
@@ -543,7 +561,7 @@ export const ReportManager: React.FC = () => {
                                         <div className="p-6 bg-white border-b border-slate-100 flex justify-between items-start"><div><span className="text-[10px] font-bold text-emerald-600 uppercase mb-1 block">Análisis Detallado</span><h4 className="text-lg font-bold text-slate-800">{selectedFaculty}</h4></div><button onClick={() => setSelectedFaculty(null)} className="md:hidden text-xs font-bold text-slate-500 border border-slate-200 px-2 py-1 rounded">Volver</button></div>
                                         <div className="flex-1 overflow-auto custom-scrollbar p-6">
                                             <table className="w-full text-left text-xs"><thead className="text-slate-400 font-bold uppercase tracking-tighter border-b border-slate-200"><tr><th className="pb-3 pr-4">Docente</th><th className="pb-3 pr-4">Curso / Programa</th><th className="pb-3 text-right">Estado</th></tr></thead><tbody className="divide-y divide-slate-100">
-                                                {enrollments.filter(enr => { const u = users.find(u => u.rut === enr.rut); const f = u?.faculty || 'Sin Facultad / Externo'; const act = activities.find(a => a.id === enr.activityId); return f === selectedFaculty && (act?.category === 'ACADEMIC' || act?.category === 'POSTGRADUATE'); }).map((enr, i) => { const u = users.find(u => u.rut === enr.rut); const act = activities.find(a => a.id === enr.activityId); return (
+                                                {enrollments.filter(enr => { const u = users.find(u => u.rut === enr.rut); const f = u?.faculty || 'Sin Facultad / Externo'; const act = activities.find(a => a.id === enr.activityId); return f === selectedFaculty && act?.year === selectedYear && (act?.category === 'ACADEMIC' || act?.category === 'POSTGRADUATE'); }).map((enr, i) => { const u = users.find(u => u.rut === enr.rut); const act = activities.find(a => a.id === enr.activityId); return (
                                                     <tr key={i} className="hover:bg-white transition-colors"><td className="py-3 pr-4"><div className="font-bold text-slate-700">{u?.names} {u?.paternalSurname}</div><div className="text-[10px] text-slate-400 font-mono">{enr.rut}</div></td><td className="py-3 pr-4"><div className="font-medium text-slate-600">{act?.name}</div><div className="text-[9px] text-slate-400 uppercase">{act?.category}</div></td><td className="py-3 text-right"><span className={`px-2 py-0.5 rounded-full font-bold text-[9px] uppercase border ${enr.state === ActivityState.APROBADO ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{enr.state}</span></td></tr>
                                                 );})}
                                             </tbody></table>
@@ -562,7 +580,7 @@ export const ReportManager: React.FC = () => {
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden border border-blue-200">
                         <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                             <div>
-                                <h3 className="text-xl font-bold text-slate-800">Matriz de Preferencias: Actividad vs Facultad</h3>
+                                <h3 className="text-xl font-bold text-slate-800">Matriz de Preferencias: Actividad vs Facultad ({selectedYear})</h3>
                                 <p className="text-xs text-slate-500 mt-1">Análisis cruzado del volumen de participación por tipo de formación.</p>
                             </div>
                             <div className="flex items-center gap-3">
@@ -655,7 +673,7 @@ export const ReportManager: React.FC = () => {
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-indigo-300">
                         <div className="p-6 bg-indigo-50 border-b border-indigo-200 flex justify-between items-center">
                             <div>
-                                <h3 className="text-xl font-bold text-indigo-900">Mapa de Impacto de Asesorías Individuales</h3>
+                                <h3 className="text-xl font-bold text-indigo-900">Mapa de Impacto de Asesorías Individuales ({selectedYear})</h3>
                                 <p className="text-xs text-indigo-700 mt-1">Análisis de acompañamiento pedagógico por unidad académica (Facultad).</p>
                             </div>
                             <div className="flex items-center gap-3">
@@ -722,7 +740,7 @@ export const ReportManager: React.FC = () => {
                                                     const u = users.find(u => u.rut === enr.rut);
                                                     const f = u?.faculty || 'Sin Facultad / Externo';
                                                     const act = activities.find(a => a.id === enr.activityId);
-                                                    return f === selectedFaculty && act?.category === 'ADVISORY';
+                                                    return f === selectedFaculty && act?.category === 'ADVISORY' && act?.year === selectedYear;
                                                 }).map((enr, i) => {
                                                     const u = users.find(user => user.rut === enr.rut);
                                                     const sessionCount = enr.sessionLogs?.length || 0;
@@ -751,7 +769,7 @@ export const ReportManager: React.FC = () => {
                                 ) : (
                                     <div className="text-center p-12">
                                         <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-                                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                                         </div>
                                         <h4 className="font-bold text-slate-400">Análisis Institucional</h4>
                                         <p className="text-xs text-slate-400 mt-1 max-w-[250px] mx-auto">Seleccione una facultad para visualizar el detalle de los docentes que reciben acompañamiento.</p>
@@ -775,7 +793,7 @@ export const ReportManager: React.FC = () => {
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden border border-purple-300">
                         <div className="p-6 bg-purple-50 border-b border-purple-200 flex justify-between items-center">
                             <div>
-                                <h3 className="text-xl font-bold text-purple-900">Índice de Docentes Frecuentes (Fidelización)</h3>
+                                <h3 className="text-xl font-bold text-purple-900">Índice de Docentes Frecuentes (Fidelización - {selectedYear})</h3>
                                 <p className="text-xs text-purple-700 mt-1">Identificación de docentes con 1 o más actividades aprobadas por unidad académica.</p>
                             </div>
                             <div className="flex items-center gap-3">
@@ -819,7 +837,7 @@ export const ReportManager: React.FC = () => {
                                     ))}
                                     {frequentTeachersData.length === 0 && (
                                         <div className="py-20 text-center text-slate-400 italic text-sm">
-                                            No hay datos suficientes para calcular el índice de fidelización.
+                                            No hay datos suficientes para calcular el índice de fidelización en {selectedYear}.
                                         </div>
                                     )}
                                 </div>
@@ -862,7 +880,7 @@ export const ReportManager: React.FC = () => {
                                                         const u = users.find(user => user.rut === rut);
                                                         const teacherEnrollments = enrollments.filter(e => {
                                                             const act = activities.find(a => a.id === e.activityId);
-                                                            if (!act) return false;
+                                                            if (!act || act.year !== selectedYear) return false;
                                                             const isApproved = e.state === ActivityState.APROBADO;
                                                             const isExtensionOrAdvisory = act.category === 'GENERAL' || act.category === 'ADVISORY';
                                                             return e.rut === rut && (isApproved || isExtensionOrAdvisory);
@@ -931,7 +949,7 @@ export const ReportManager: React.FC = () => {
                                             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-14 0 7 7 0 0114 0z" /></svg>
                                         </div>
                                         <h4 className="font-bold text-slate-400">Análisis de Fidelización</h4>
-                                        <p className="text-xs text-slate-400 mt-1 max-w-[250px] mx-auto">Seleccione una unidad académica para listar a sus docentes con 1 o más actividades en el ciclo formativo.</p>
+                                        <p className="text-xs text-slate-400 mt-1 max-w-[250px] mx-auto">Seleccione una unidad académica para listar a sus docentes con 1 o más actividades en el ciclo formativo del año {selectedYear}.</p>
                                     </div>
                                 )}
                             </div>

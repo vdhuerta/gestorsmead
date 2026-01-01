@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole, ProgramModule, ProgramConfig } from '../types';
@@ -48,6 +47,9 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const { activities, addActivity, deleteActivity, users, enrollments, upsertUsers, enrollUser, bulkEnroll, updateEnrollment, deleteEnrollment, getUser, config, refreshData } = useData();
   const { isSyncing, executeReload } = useReloadDirective();
   
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
+
   const isAdmin = currentUser?.systemRole === UserRole.ADMIN;
   
   const listFaculties = config.faculties?.length ? config.faculties : FACULTY_LIST;
@@ -58,7 +60,8 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const listModalities = config.modalities?.length ? config.modalities : ["Presencial", "B-Learning", "E-Learning", "Autoinstruccional", "Presencia Digital"];
   const listSemesters = config.semesters?.length ? config.semesters : ["1er Semestre", "2do Semestre", "TAV Invierno", "TAV Verano", "Anual"];
 
-  const postgraduateActivities = activities.filter(a => a.category === 'POSTGRADUATE');
+  // FILTRO POR AÑO SELECCIONADO
+  const postgraduateActivities = activities.filter(a => a.category === 'POSTGRADUATE' && a.year === selectedYear);
 
   const [view, setView] = useState<ViewState>('list');
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
@@ -773,7 +776,23 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
           <div className="animate-fadeIn space-y-6">
               <div className="flex justify-between items-center">
                   <div><h2 className="text-2xl font-bold text-slate-800">Gestión de Postítulos y Diplomados</h2><p className="text-sm text-slate-500">Administración avanzada de programas académicos modulares.</p></div>
-                  <button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '' }); setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75, isClosed: false }); setView('create'); }} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 flex items-center gap-2 shadow-lg"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Nuevo Programa</button>
+                  <div className="flex gap-4 items-center">
+                      {/* SELECTOR DE PERIODO */}
+                      <div className="flex items-center bg-slate-50 rounded-2xl px-4 py-2 border border-slate-200 shadow-inner group">
+                          <label className="text-[10px] font-black text-slate-400 uppercase mr-3">Periodo:</label>
+                          <select 
+                            value={selectedYear} 
+                            onChange={(e) => setSelectedYear(Number(e.target.value))} 
+                            className="text-sm font-black text-[#647FBC] bg-transparent border-none focus:ring-0 p-0 cursor-pointer uppercase"
+                          >
+                              <option value={currentYear}>{currentYear}</option>
+                              <option value={currentYear - 1}>{currentYear - 1}</option>
+                              <option value={currentYear - 2}>{currentYear - 2}</option>
+                          </select>
+                      </div>
+
+                      <button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '' }); setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75, isClosed: false }); setView('create'); }} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 flex items-center gap-2 shadow-lg"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Nuevo Programa</button>
+                  </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {postgraduateActivities.map(act => (
@@ -787,7 +806,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                           <button onClick={() => { setSelectedCourseId(act.id); setView('details'); }} className="w-full bg-slate-50 border border-slate-300 text-slate-700 py-2 rounded-lg font-medium hover:bg-white hover:border-purple-500 hover:text-purple-600 transition-colors text-sm">Gestionar Programa</button>
                       </div>
                   ))}
-                  {postgraduateActivities.length === 0 && (<div className="col-span-full py-12 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">No hay programas de postítulo registrados.</div>)}
+                  {postgraduateActivities.length === 0 && (<div className="col-span-full py-12 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">No hay programas de postítulo registrados para este periodo ({selectedYear}).</div>)}
               </div>
           </div>
       );

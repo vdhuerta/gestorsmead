@@ -55,6 +55,9 @@ const normalizeValue = (val: string, masterList: string[]): string => {
 export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ currentUser }) => {
     const { activities, addActivity, deleteActivity, enrollments, users, getUser, upsertUsers, enrollUser, bulkEnroll, updateEnrollment, deleteEnrollment, config, refreshData } = useData();
     const { isSyncing, executeReload } = useReloadDirective();
+
+    const currentYear = new Date().getFullYear();
+    const [selectedYear, setSelectedYear] = useState<number>(currentYear);
     
     // Lista de Asesores para el desplegable de Relator
     const advisors = useMemo(() => users.filter(u => u.systemRole === UserRole.ASESOR), [users]);
@@ -67,8 +70,8 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
     const listRoles = config.academicRoles?.length ? config.academicRoles : ACADEMIC_ROLES;
     const listSemesters = config.semesters?.length ? config.semesters : ["1er Semestre", "2do Semestre", "Anual"];
 
-    // FILTER: Only General Activities
-    const generalActivities = activities.filter(a => a.category === 'GENERAL');
+    // FILTER: Only General Activities by selected year
+    const generalActivities = activities.filter(a => a.category === 'GENERAL' && a.year === selectedYear);
     
     const [view, setView] = useState<ViewState>('list');
     const [activeTab, setActiveTab] = useState<TabType>('details');
@@ -499,19 +502,35 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                         <h2 className="text-2xl font-bold text-slate-800">Gestión de Actividades Generales</h2>
                         <p className="text-sm text-slate-500">Charlas, Talleres, Webinars y otras instancias de extensión.</p>
                     </div>
-                    {(isAdmin || isAdvisor) && (
-                        <button onClick={() => {
-                            setFormData({
-                                internalCode: '', year: new Date().getFullYear(), semester: '2025-1', version: 'V1', activityType: 'Charla', otherType: '',
-                                nombre: '', modality: 'Presencial', horas: 0, relator: '', fechaInicio: '',
-                                fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '', isPublic: true
-                            });
-                            setView('create');
-                        }} className="bg-teal-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-teal-700 flex items-center gap-2 shadow-lg transition-all active:scale-95">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                            Nueva Actividad
-                        </button>
-                    )}
+                    <div className="flex gap-4 items-center">
+                        {/* SELECTOR DE PERIODO (NUEVO) */}
+                        <div className="flex items-center bg-slate-50 rounded-2xl px-4 py-2 border border-slate-200 shadow-inner group">
+                            <label className="text-[10px] font-black text-slate-400 uppercase mr-3">Periodo:</label>
+                            <select 
+                              value={selectedYear} 
+                              onChange={(e) => setSelectedYear(Number(e.target.value))} 
+                              className="text-sm font-black text-[#647FBC] bg-transparent border-none focus:ring-0 p-0 cursor-pointer uppercase"
+                            >
+                                <option value={currentYear}>{currentYear}</option>
+                                <option value={currentYear - 1}>{currentYear - 1}</option>
+                                <option value={currentYear - 2}>{currentYear - 2}</option>
+                            </select>
+                        </div>
+
+                        {(isAdmin || isAdvisor) && (
+                            <button onClick={() => {
+                                setFormData({
+                                    internalCode: '', year: new Date().getFullYear(), semester: '2025-1', version: 'V1', activityType: 'Charla', otherType: '',
+                                    nombre: '', modality: 'Presencial', horas: 0, relator: '', fechaInicio: '',
+                                    fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '', isPublic: true
+                                });
+                                setView('create');
+                            }} className="bg-teal-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-teal-700 flex items-center gap-2 shadow-lg transition-all active:scale-95">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                Nueva Actividad
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -729,7 +748,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                             <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col">
                                 <h4 className="font-bold text-slate-700 flex items-center gap-2 mb-4"><svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>Carga Masiva de Asistencia</h4>
                                 <div className="flex-1 flex flex-col justify-center space-y-4">
-                                    <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-xl cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}><div className="flex flex-col items-center justify-center pt-5 pb-6">{uploadFile ? (<><svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="mb-1 text-xs font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-xs text-slate-500">Click para subir CSV/Excel</p></>)}</div><input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} /></label>
+                                    <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}><div className="flex flex-col items-center justify-center pt-5 pb-6">{uploadFile ? (<><svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="mb-1 text-xs font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-xs text-slate-500">Click para subir CSV/Excel</p></>)}</div><input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} /></label>
                                     <div className="flex items-center gap-2 justify-center"><input type="checkbox" checked={hasHeaders} onChange={e => setHasHeaders(e.target.checked)} className="rounded text-teal-600 focus:ring-teal-500"/><span className="text-xs text-slate-500">Ignorar encabezados (fila 1)</span></div>
                                     <button type="button" onClick={handleBulkUpload} disabled={!uploadFile || isProcessing || isSyncing} className={`w-full bg-slate-800 text-white py-2 rounded-lg font-bold text-sm hover:bg-slate-900 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 ${isProcessing ? 'cursor-wait' : ''}`}>{(isProcessing || isSyncing) ? (<><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Procesando...</>) : 'Procesar Archivo'}</button>
                                 </div>
