@@ -228,12 +228,50 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
   const handleSaveConfig = async () => {
       if (!selectedCourseId || !selectedCourse) return;
-      const updatedActivity: Activity = { ...selectedCourse, programConfig: programConfig };
+
+      const oldConfig = selectedCourse.programConfig;
+      const newConfig = programConfig;
+
       try {
+          // 1. Guardar la nueva estructura de la actividad
+          const updatedActivity: Activity = { ...selectedCourse, programConfig: newConfig };
           await addActivity(updatedActivity);
+
+          // 2. Realizar migración física de las notas para evitar el error de desplazamiento
+          // Si existía una configuración previa con módulos, re-mapeamos los arreglos de notas
+          if (oldConfig && oldConfig.modules && oldConfig.modules.length > 0) {
+              for (const enr of courseEnrollments) {
+                  const oldGrades = enr.grades || [];
+                  const mappedByModuleId: Record<string, number[]> = {};
+                  
+                  // Mapear notas actuales a sus IDs de módulo originales
+                  let currentOffset = 0;
+                  oldConfig.modules.forEach(m => {
+                      mappedByModuleId[m.id] = oldGrades.slice(currentOffset, currentOffset + (m.evaluationCount || 0));
+                      currentOffset += (m.evaluationCount || 0);
+                  });
+
+                  // Reconstruir el arreglo plano basándonos en la nueva estructura
+                  const nextGrades: number[] = [];
+                  newConfig.modules.forEach(m => {
+                      const prevModuleGrades = mappedByModuleId[m.id] || [];
+                      for (let i = 0; i < (m.evaluationCount || 0); i++) {
+                          // Si el módulo existía, mantenemos la nota; si es nuevo o creció, ponemos 0
+                          nextGrades.push(prevModuleGrades[i] || 0);
+                      }
+                  });
+                  
+                  // Solo actualizar si hubo un cambio real en el arreglo plano para optimizar tráfico
+                  if (JSON.stringify(nextGrades) !== JSON.stringify(oldGrades)) {
+                      await updateEnrollment(enr.id, { grades: nextGrades });
+                  }
+              }
+          }
+
           await executeReload();
-          alert("Configuración Académica guardada exitosamente.");
+          alert("Estructura académica y calificaciones sincronizadas exitosamente.");
       } catch (err) {
+          console.error("Error en sincronización académica:", err);
           alert("Error al guardar configuración. Revise su conexión.");
       }
   };
@@ -286,7 +324,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
           setView('list'); 
           setSelectedCourseId(null); 
       } else if (passwordInput !== null) { 
-          alert("Contraseña incorrecta. Acción cancelada."); 
+          alert("Contraseña incorrecta. Acción de cancelada."); 
       }
   };
 
