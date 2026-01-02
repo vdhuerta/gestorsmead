@@ -220,6 +220,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
     };
   }, [yearEnrollments, activeCourses, postgraduateActs, enrollments, activities, config, todayStr]);
 
+  // --- LÓGICA DE AGRUPACIÓN DE ALUMNOS EN RIESGO POR CURSO ---
+  const atRiskByCourse = useMemo(() => {
+    const groups: Record<string, { activity: Activity, count: number }> = {};
+    advisorKpis.riesgoList.forEach(enr => {
+        if (!groups[enr.activityId]) {
+            const act = activities.find(a => a.id === enr.activityId);
+            if (act) {
+                groups[enr.activityId] = { activity: act, count: 0 };
+            }
+        }
+        if (groups[enr.activityId]) {
+            groups[enr.activityId].count++;
+        }
+    });
+    return Object.values(groups).sort((a, b) => b.count - a.count);
+  }, [advisorKpis.riesgoList, activities]);
+
   // --- LÓGICA DE ORDENACIÓN: 2DO SEMESTRE ANTES QUE EL 1RO ---
   const getSemesterPriority = (period?: string) => {
       if (!period) return 3;
@@ -317,12 +334,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
             colorClass="text-rose-600"
             tooltipContent={
                 <div className="space-y-2">
-                    <p className="text-[10px] font-bold text-rose-700 uppercase mb-2">Casos Críticos Detectados:</p>
-                    {advisorKpis.riesgoList.length > 0 ? (
-                        advisorKpis.riesgoList.slice(0, 5).map((enr, i) => {
-                            const student = users.find(u => u.rut === enr.rut);
-                            return <div key={i} className="text-[10px] bg-white p-2 rounded border border-rose-100 shadow-sm font-bold">• {student?.paternalSurname}, {student?.names} ({enr.finalGrade || 'Baja Asist.'})</div>
-                        })
+                    <p className="text-[10px] font-bold text-rose-700 uppercase mb-2">Cursos con Casos Críticos:</p>
+                    {atRiskByCourse.length > 0 ? (
+                        atRiskByCourse.map((item, i) => (
+                            <button 
+                                key={i} 
+                                onClick={() => {
+                                    localStorage.setItem('jumpto_course_id', item.activity.id);
+                                    handleNavigate(item.activity.category === 'POSTGRADUATE' ? 'postgraduate' : 'courses');
+                                }}
+                                className="w-full text-left text-[10px] bg-white p-2 rounded border border-rose-100 shadow-sm font-bold hover:bg-rose-50 transition-colors flex justify-between items-center group"
+                            >
+                                <span className="truncate pr-2">{item.activity.name}</span>
+                                <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-full text-[9px]">{item.count}</span>
+                            </button>
+                        ))
                     ) : (
                         <p className="text-[10px] text-slate-400 italic">No se detectan alumnos en riesgo con datos ingresados.</p>
                     )}
