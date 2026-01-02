@@ -162,6 +162,7 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
     const notifications = useMemo(() => {
         const list: { type: 'course-closing'|'course-active'|'chat'|'kpi-risk'|'kpi-critical'|'advisory', title: string, subtitle: string, urgency: 'high'|'medium'|'info', date?: string }[] = [];
         const today = new Date();
+        const currentYear = today.getFullYear();
         const todayStr = today.toISOString().split('T')[0];
 
         // 1. CHAT - Mensajes sin leer
@@ -175,7 +176,7 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
             });
         });
 
-        // 2. CURSOS - Cierres Proximos (Cuenta Regresiva 5 dias)
+        // 2. CURSOS - Cierres Proximos y Activos (Filtro por fecha, no necesariamente por año fijo para cubrir transiciones)
         activities.forEach(act => {
             if (act.endDate) {
                 const end = new Date(act.endDate + 'T12:00:00');
@@ -205,13 +206,18 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
             }
         });
 
-        // 3. KPIs - Alumnos en Riesgo & Cursos Críticos
+        // 3. KPIs - Alumnos en Riesgo & Cursos Críticos (FILTRADOS POR AÑO ACTUAL)
         const minGrade = config.minPassingGrade || 4.0;
         const minAtt = config.minAttendancePercentage || 75;
 
-        // Cursos Críticos (< 5 alumnos)
-        activities.filter(a => a.category === 'ACADEMIC' && a.year === today.getFullYear()).forEach(act => {
+        // IDs de actividades del año actual para filtrar inscripciones
+        const activitiesThisYear = activities.filter(a => a.year === currentYear);
+        const activityIdsThisYear = new Set(activitiesThisYear.map(a => a.id));
+
+        // Cursos Críticos (Baja matrícula en el año actual)
+        activitiesThisYear.filter(a => a.category === 'ACADEMIC' || a.category === 'POSTGRADUATE').forEach(act => {
             const count = enrollments.filter(e => e.activityId === act.id).length;
+            // Solo alertar si el curso ya empezó o está a punto de empezar y tiene menos de 5 alumnos
             if (count > 0 && count < 5) {
                 list.push({
                     type: 'kpi-critical',
@@ -222,10 +228,19 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
             }
         });
 
-        // Alumnos en Riesgo (Análisis de Matrícula)
-        const atRiskCount = enrollments.filter(e => {
-            const isFailingGrade = e.finalGrade !== undefined && e.finalGrade > 0 && e.finalGrade < minGrade;
-            const isFailingAttendance = e.attendancePercentage !== undefined && e.attendancePercentage > 0 && e.attendancePercentage < minAtt;
+        // Alumnos en Riesgo (Solo del año actual y si tienen datos ingresados)
+        const enrollmentsThisYear = enrollments.filter(e => activityIdsThisYear.has(e.activityId));
+        
+        const atRiskCount = enrollmentsThisYear.filter(e => {
+            // Un alumno está en riesgo si ha empezado (tiene notas o asistencia) pero no llega al mínimo
+            const hasStartedGrades = e.finalGrade !== undefined && e.finalGrade > 0;
+            const hasStartedAttendance = e.attendancePercentage !== undefined && e.attendancePercentage > 0;
+            
+            if (!hasStartedGrades && !hasStartedAttendance) return false;
+
+            const isFailingGrade = hasStartedGrades && e.finalGrade! < minGrade;
+            const isFailingAttendance = hasStartedAttendance && e.attendancePercentage! < minAtt;
+            
             return isFailingGrade || isFailingAttendance;
         }).length;
 
@@ -233,7 +248,7 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
             list.push({
                 type: 'kpi-risk',
                 title: '🚨 Alerta de Rendimiento',
-                subtitle: `Hay ${atRiskCount} alumnos en riesgo académico (nota/asistencia) para revisar.`,
+                subtitle: `Hay ${atRiskCount} alumnos en riesgo académico en el periodo ${currentYear}.`,
                 urgency: 'high'
             });
         }
