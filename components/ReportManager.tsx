@@ -826,6 +826,13 @@ export const ReportManager: React.FC = () => {
                                     <span className="text-[9px] font-bold text-slate-400 uppercase">Asesorías</span>
                                 </div>
                              </div>
+
+                             <div className="hidden lg:block flex-1 p-3 bg-white/40 rounded-xl border border-slate-100">
+                                <p className="text-[10px] text-slate-500 leading-tight italic">
+                                    <span className="font-bold text-blue-600">Nota:</span> Estos datos representan la distribución de participaciones por tipo de actividad y unidad académica. 
+                                    Un docente puede estar contabilizado en múltiples categorías si ha participado en programas distintos.
+                                </p>
+                             </div>
                         </div>
 
                         <div className="flex-1 flex overflow-hidden">
