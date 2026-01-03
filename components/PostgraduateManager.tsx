@@ -1,8 +1,10 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole, ProgramModule, ProgramConfig } from '../types';
-import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST } from '../constants';
+import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST, PEI_COMPETENCIES, PMI_COMPETENCIES } from '../constants';
 import { SmartSelect } from './SmartSelect'; 
+import { suggestCompetencies, CompetencySuggestion } from '../services/geminiService';
 // @ts-ignore
 import { read, utils } from 'xlsx';
 import { useReloadDirective } from '../hooks/useReloadDirective';
@@ -68,32 +70,37 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('enrollment');
   
   const [formData, setFormData] = useState({
-    internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: ''
+    internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '',
+    competencyCodes: [] as string[]
   });
 
   const [programConfig, setProgramConfig] = useState<ProgramConfig & { isClosed?: boolean }>({
       programType: 'Diplomado', modules: [], globalAttendanceRequired: 75, isClosed: false
   });
 
+  // IA States
+  const [syllabusFile, setSyllabusFile] = useState<File | null>(null);
+  const [isAnalyzingIA, setIsAnalyzingIA] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<CompetencySuggestion[]>([]);
+  const [showAiReview, setShowAiReview] = useState(false);
+
   const [pendingGrades, setPendingGrades] = useState<Record<string, number[]>>({});
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
 
   // --- LÓGICA DE CONFIRMACIÓN DE SALIDA (DETECCIÓN DE CAMBIOS) ---
   const [showExitModal, setShowExitModal] = useState(false);
-  const [targetNav, setTargetNav] = useState<any>(null); // Puede ser string (tab) o function (setSelectedCourseId(null))
+  const [targetNav, setTargetNav] = useState<any>(null);
 
   const hasUnsavedChanges = useMemo(() => Object.keys(pendingGrades).length > 0, [pendingGrades]);
 
-  // Sincronizar flag global con App.tsx
   useEffect(() => {
       (window as any).isPostgraduateDirty = hasUnsavedChanges;
       return () => { (window as any).isPostgraduateDirty = false; };
   }, [hasUnsavedChanges]);
 
-  // Escuchar intentos de navegación desde el menú principal
   useEffect(() => {
     const handleNavAttempt = (e: any) => {
-        setTargetNav(e.detail); // e.detail contiene el tab destino
+        setTargetNav(e.detail);
         setShowExitModal(true);
     };
     window.addEventListener('app-nav-attempt', handleNavAttempt);
@@ -108,7 +115,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
           action();
       }
   };
-  // -------------------------------------------------------------
 
   const selectedCourse = useMemo(() => postgraduateActivities.find(a => a.id === selectedCourseId), [postgraduateActivities, selectedCourseId]);
 
@@ -187,6 +193,53 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       setProgramConfig(prev => ({ ...prev, modules: prev.modules.map(m => m.id === moduleId ? { ...m, classDates: (m.classDates || []).filter(d => d !== date) } : m) }));
   };
 
+  const handleToggleCompetence = (code: string) => {
+    setFormData(prev => ({
+        ...prev,
+        competencyCodes: prev.competencyCodes.includes(code)
+            ? prev.competencyCodes.filter(c => c !== code)
+            : [...prev.competencyCodes, code]
+    }));
+  };
+
+  const handleAnalyzeSyllabus = async () => {
+    if (!syllabusFile) { alert("Por favor suba primero el programa (PDF o TXT)."); return; }
+    setIsAnalyzingIA(true);
+    try {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const simulatedText = syllabusFile.type.includes('pdf') 
+                ? `Análisis de programa de postítulo: ${syllabusFile.name}. Contenido pedagógico simulado para sugerir competencias UPLA.`
+                : e.target?.result as string;
+            
+            const suggestions = await suggestCompetencies(simulatedText);
+            if (suggestions.length > 0) {
+                setAiSuggestions(suggestions);
+                setShowAiReview(true);
+            } else {
+                alert("La IA no ha podido identificar tributaciones claras en el programa proporcionado.");
+            }
+            setIsAnalyzingIA(false);
+        };
+        if (syllabusFile.type.includes('pdf')) reader.readAsArrayBuffer(syllabusFile);
+        else reader.readAsText(syllabusFile);
+    } catch (err) {
+        alert("Error al conectar con Gemini AI.");
+        setIsAnalyzingIA(false);
+    }
+  };
+
+  const applyAiSuggestions = () => {
+    const suggestedCodes = aiSuggestions.map(s => s.code);
+    setFormData(prev => ({
+        ...prev,
+        competencyCodes: Array.from(new Set([...prev.competencyCodes, ...suggestedCodes]))
+    }));
+    setShowAiReview(false);
+    setAiSuggestions([]);
+    alert("Competencias aplicadas exitosamente.");
+  };
+
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = formData.internalCode.trim().toUpperCase().replace(/\s+/g, '-');
@@ -214,13 +267,14 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
         classLink: formData.linkClase, 
         evaluationLink: formData.linkEvaluacion, 
         isPublic: true, 
-        programConfig: programConfig 
+        programConfig: programConfig,
+        competencyCodes: formData.competencyCodes
     };
     
     await addActivity(newActivity);
     await executeReload();
     if (view === 'edit') { setView('details'); } else {
-        setFormData({ internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '' });
+        setFormData({ internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '', competencyCodes: [] });
         setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75, isClosed: false });
         setView('list');
     }
@@ -228,46 +282,32 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
   const handleSaveConfig = async () => {
       if (!selectedCourseId || !selectedCourse) return;
-
       const oldConfig = selectedCourse.programConfig;
       const newConfig = programConfig;
-
       try {
-          // 1. Guardar la nueva estructura de la actividad
           const updatedActivity: Activity = { ...selectedCourse, programConfig: newConfig };
           await addActivity(updatedActivity);
-
-          // 2. Realizar migración física de las notas para evitar el error de desplazamiento
-          // Si existía una configuración previa con módulos, re-mapeamos los arreglos de notas
           if (oldConfig && oldConfig.modules && oldConfig.modules.length > 0) {
               for (const enr of courseEnrollments) {
                   const oldGrades = enr.grades || [];
                   const mappedByModuleId: Record<string, number[]> = {};
-                  
-                  // Mapear notas actuales a sus IDs de módulo originales
                   let currentOffset = 0;
                   oldConfig.modules.forEach(m => {
                       mappedByModuleId[m.id] = oldGrades.slice(currentOffset, currentOffset + (m.evaluationCount || 0));
                       currentOffset += (m.evaluationCount || 0);
                   });
-
-                  // Reconstruir el arreglo plano basándonos en la nueva estructura
                   const nextGrades: number[] = [];
                   newConfig.modules.forEach(m => {
                       const prevModuleGrades = mappedByModuleId[m.id] || [];
                       for (let i = 0; i < (m.evaluationCount || 0); i++) {
-                          // Si el módulo existía, mantenemos la nota; si es nuevo o creció, ponemos 0
                           nextGrades.push(prevModuleGrades[i] || 0);
                       }
                   });
-                  
-                  // Solo actualizar si hubo un cambio real en el arreglo plano para optimizar tráfico
                   if (JSON.stringify(nextGrades) !== JSON.stringify(oldGrades)) {
                       await updateEnrollment(enr.id, { grades: nextGrades });
                   }
               }
           }
-
           await executeReload();
           alert("Estructura académica y calificaciones sincronizadas exitosamente.");
       } catch (err) {
@@ -278,7 +318,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
   const handleToggleCloseCourse = async () => {
       if (!selectedCourse) return;
-      
       if (!isCourseClosed) {
           if (confirm("¿Está seguro de CERRAR este postítulo? Se inhabilitará la edición de notas y asistencia.")) {
               const newConfig = { ...programConfig, isClosed: true };
@@ -306,7 +345,23 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const handleEditCourse = () => {
     if (!selectedCourse) return;
     const sem = selectedCourse.academicPeriod ? selectedCourse.academicPeriod.split('-')[1] || 'ANUAL' : 'ANUAL';
-    setFormData({ internalCode: selectedCourse.internalCode || '', year: selectedCourse.year || new Date().getFullYear(), semester: sem, nombre: selectedCourse.name, version: selectedCourse.version || 'V1', modality: selectedCourse.modality, horas: selectedCourse.hours, relator: selectedCourse.relator || '', fechaInicio: selectedCourse.startDate || '', fechaTermino: selectedCourse.endDate || '', linkRecursos: selectedCourse.linkResources || '', linkClase: selectedCourse.classLink || '', linkEvaluacion: selectedCourse.evaluationLink || '' });
+    setFormData({ 
+        internalCode: selectedCourse.internalCode || '', 
+        year: selectedCourse.year || new Date().getFullYear(), 
+        semester: sem, 
+        nombre: selectedCourse.name, 
+        version: selectedCourse.version || 'V1', 
+        modality: selectedCourse.modality, 
+        horas: selectedCourse.hours, 
+        relator: selectedCourse.relator || '', 
+        fechaInicio: selectedCourse.startDate || '', 
+        fechaTermino: selectedCourse.endDate || '', 
+        linkRecursos: selectedCourse.linkResources || '', 
+        linkClase: selectedCourse.classLink || '', 
+        linkEvaluacion: selectedCourse.evaluationLink || '',
+        competencyCodes: selectedCourse.competencyCodes || []
+    });
+    setSyllabusFile(null);
     if (selectedCourse.programConfig) { setProgramConfig(selectedCourse.programConfig); } 
     else { setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75, isClosed: false }); }
     setView('edit');
@@ -434,7 +489,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       if (!uploadFile || !selectedCourseId) return;
       const reader = new FileReader(); 
       const isExcel = uploadFile.name.endsWith('.xlsx') || uploadFile.name.endsWith('.xls');
-      
       reader.onload = async (e) => {
           let rows: any[][] = [];
           if (isExcel) { 
@@ -449,25 +503,19 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                   rows = lines.map(line => line.split(delimiter)); 
               } 
           }
-          
           if (rows.length < 1) return;
-          
           const usersToUpsert: User[] = []; 
           const rutsToEnroll: string[] = []; 
           let startRow = hasHeaders ? 1 : 0;
-          
           for (let i = startRow; i < rows.length; i++) {
               const row = rows[i]; 
               const rowStrings = row.map(cell => cell !== undefined && cell !== null ? String(cell).trim() : '');
               if (rowStrings.length < 1 || !rowStrings[0]) continue;
-              
               const cleanRut = cleanRutFormat(rowStrings[0]); 
               const normRut = normalizeRut(cleanRut);
               rutsToEnroll.push(cleanRut);
-              
               const masterUser = users.find(u => normalizeRut(u.rut) === normRut);
               const hasNameInFile = rowStrings[1] && rowStrings[1].length > 1;
-
               if (hasNameInFile || !masterUser) {
                   usersToUpsert.push({ 
                       rut: cleanRut, 
@@ -487,7 +535,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                   });
               }
           }
-          
           if (usersToUpsert.length > 0) { await upsertUsers(usersToUpsert); }
           const result = await bulkEnroll(rutsToEnroll, selectedCourseId);
           await executeReload();
@@ -510,7 +557,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       const moduleGrades = grades.slice(startIdx, startIdx + count);
       const validGrades = moduleGrades.filter(g => g > 0);
       if (validGrades.length === 0) return "-";
-      
       if (module.evaluationWeights && module.evaluationWeights.length === count) {
           let weightedSum = 0;
           let weightTotal = 0;
@@ -522,7 +568,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
               } 
           });
           if (weightTotal === 0) return "-";
-          
           const rawAvg = weightedSum / weightTotal;
           return (Math.floor(rawAvg * 10) / 10).toFixed(1); 
       }
@@ -544,7 +589,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
           }
       });
       if (totalWeightUsed === 0) return "-";
-      
       const rawFinal = totalWeightedScore / totalWeightUsed;
       return (Math.floor(rawFinal * 10) / 10).toFixed(1);
   };
@@ -555,28 +599,20 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       if (!enrollment || enrollment.situation === 'INACTIVO') return;
       const globalIndex = getGlobalGradeIndex(moduleIndex, noteIndex);
       const totalSlots = programConfig.modules.reduce((acc, m) => acc + (m.evaluationCount || 0), 0);
-      
       const currentGrades = pendingGrades[enrollmentId] ? [...pendingGrades[enrollmentId]] : [...(enrollment.grades || [])];
       while(currentGrades.length < totalSlots) currentGrades.push(0);
-      
       let grade = parseFloat(value.replace(',', '.'));
       if (value.trim() === '' || isNaN(grade)) grade = 0;
       if (grade > 7.0) grade = 7.0;
       if (grade < 0) grade = 0;
-      
       currentGrades[globalIndex] = parseFloat(grade.toFixed(1));
-      
-      setPendingGrades(prev => ({
-          ...prev,
-          [enrollmentId]: currentGrades
-      }));
+      setPendingGrades(prev => ({ ...prev, [enrollmentId]: currentGrades }));
   };
 
   const hasChangesInModule = (moduleIndex: number) => {
       if (isCourseClosed) return false;
       const start = getGlobalGradeIndex(moduleIndex, 0);
       const count = programConfig.modules[moduleIndex].evaluationCount || 0;
-      
       return Object.keys(pendingGrades).some(eid => {
           const enr = courseEnrollments.find(e => e.id === eid);
           if (!enr) return false;
@@ -591,7 +627,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const handleBatchCommitModule = async (moduleIndex: number) => {
       const start = getGlobalGradeIndex(moduleIndex, 0);
       const count = programConfig.modules[moduleIndex].evaluationCount || 0;
-      
       const toUpdate = Object.keys(pendingGrades).filter(eid => {
           const enr = courseEnrollments.find(e => e.id === eid);
           if (!enr || enr.situation === 'INACTIVO') return false;
@@ -601,16 +636,13 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
           while(originalSlice.length < count) originalSlice.push(0);
           return JSON.stringify(currentSlice) !== JSON.stringify(originalSlice);
       });
-
       if (toUpdate.length === 0) return;
-
       setIsProcessingBatch(true);
       try {
           for (const eid of toUpdate) {
               const newGrades = pendingGrades[eid];
               const finalGradeStr = calculateFinalProgramGrade(newGrades);
               const finalGrade = finalGradeStr !== "-" ? parseFloat(finalGradeStr) : 0;
-              
               await updateEnrollment(eid, { 
                   grades: newGrades, 
                   finalGrade: finalGrade, 
@@ -663,47 +695,37 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
   const pendingStats = useMemo(() => {
     if (!selectedCourse || !programConfig.modules.length) return { total: 0, byModule: [] };
-    
     const activeEnrolled = sortedEnrollments.filter(e => e.situation !== 'INACTIVO');
     const enrolledCount = activeEnrolled.length;
-    
     let totalPending = 0;
     const byModule = programConfig.modules.map((mod, modIdx) => {
         const startIdx = getGlobalGradeIndex(modIdx, 0);
         const count = mod.evaluationCount;
-        
         let modFilled = 0;
         activeEnrolled.forEach(enr => {
             const grades = pendingGrades[enr.id] || enr.grades || [];
             const modGrades = grades.slice(startIdx, startIdx + count);
             modFilled += modGrades.filter(g => g !== undefined && g !== null && g > 0).length;
         });
-        
         const modTotal = enrolledCount * count;
         const modPending = Math.max(0, modTotal - modFilled);
         totalPending += modPending;
-        
         return { name: mod.name, pending: modPending };
     });
-    
     return { total: totalPending, byModule };
   }, [selectedCourse, programConfig.modules, sortedEnrollments, pendingGrades]);
 
   const handleDownloadActa = () => {
     if (!selectedCourse) return;
-    
     const verificationCode = `SMEAD-${selectedCourse.internalCode}-${Date.now().toString().slice(-4)}`;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`${window.location.origin}/?mode=verify_acta&code=${verificationCode}`)}`;
-    
     const coordinadores = users.filter(u => u.academicRole?.toLowerCase().includes("coordinación") || u.academicRole?.toLowerCase().includes("coordinador"));
     const encargadoPrincipal = selectedCourse.relator || (coordinadores.length > 0 ? `${coordinadores[0].names} ${coordinadores[0].paternalSurname}` : "COORDINADOR UNIDAD");
-    
     const rowsHTML = sortedEnrollments.map(enr => {
         const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut));
         const activeGrades = enr.grades || [];
         const moduleAverages = programConfig.modules.map((_, idx) => calculateModuleAverage(activeGrades, idx));
         const finalGrade = calculateFinalProgramGrade(activeGrades);
-        
         return `
             <tr>
                 <td style="font-weight: bold; border: 1px solid #ddd; padding: 8px;">${enr.rut}</td>
@@ -715,7 +737,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
             </tr>
         `;
     }).join('');
-
     const htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -744,62 +765,17 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                 <div class="acta-title">Acta Final de Calificaciones - Postítulos SMEAD</div>
                 <div style="font-size: 14px; font-weight: bold; margin-top: 5px;">${selectedCourse.name}</div>
             </div>
-            
             <div class="course-info">
-                <div>
-                    <strong>CÓDIGO:</strong> ${selectedCourse.internalCode} <br>
-                    <strong>VERSIÓN:</strong> ${selectedCourse.version} <br>
-                    <strong>AÑO / SEMESTRE:</strong> ${selectedCourse.academicPeriod}
-                </div>
-                <div style="text-align: right;">
-                    <strong>MODALIDAD:</strong> ${selectedCourse.modality} <br>
-                    <strong>DURACIÓN:</strong> ${selectedCourse.hours} Horas <br>
-                    <strong>FECHA CIERRE:</strong> ${new Date().toLocaleDateString()}
-                </div>
+                <div><strong>CÓDIGO:</strong> ${selectedCourse.internalCode} <br><strong>VERSIÓN:</strong> ${selectedCourse.version} <br><strong>AÑO / SEMESTRE:</strong> ${selectedCourse.academicPeriod}</div>
+                <div style="text-align: right;"><strong>MODALIDAD:</strong> ${selectedCourse.modality} <br><strong>DURACIÓN:</strong> ${selectedCourse.hours} Horas <br><strong>FECHA CIERRE:</strong> ${new Date().toLocaleDateString()}</div>
             </div>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th>RUT</th>
-                        <th>NOMBRE DEL DOCENTE / ESTUDIANTE</th>
-                        ${programConfig.modules.map(m => `<th>${m.name}<br>(${m.weight}%)</th>`).join('')}
-                        <th>PROMEDIO FINAL</th>
-                        <th>% ASISTENCIA</th>
-                        <th>SITUACIÓN</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rowsHTML}
-                </tbody>
-            </table>
-
-            <div class="signatures">
-                <div class="sig-box">
-                    <strong>${encargadoPrincipal.toUpperCase()}</strong><br>
-                    Director / Coordinador de Programa / UAD
-                </div>
-            </div>
-
-            <div class="verification-container">
-                <div class="verification-text">
-                    <strong>CÓDIGO DE VERIFICACIÓN:</strong> ${verificationCode}<br>
-                    Validado digitalmente por GestorSMEAD en conformidad con el registro institucional.<br>
-                    Este documento constituye un registro oficial inalterable.
-                </div>
-                <div class="qr-box">
-                    <img src="${qrUrl}" alt="QR Verificación">
-                    <span style="font-size: 8px; font-weight: bold; color: #6b21a8;">ESCANEAR PARA VALIDAR</span>
-                </div>
-            </div>
-
-            <div class="footer">
-                Documento generado el ${new Date().toLocaleString()} - Sistema de Gestión de Actividades Formativas UAD
-            </div>
+            <table><thead><tr><th>RUT</th><th>NOMBRE DEL DOCENTE / ESTUDIANTE</th>${programConfig.modules.map(m => `<th>${m.name}<br>(${m.weight}%)</th>`).join('')}<th>PROMEDIO FINAL</th><th>% ASISTENCIA</th><th>SITUACIÓN</th></tr></thead><tbody>${rowsHTML}</tbody></table>
+            <div class="signatures"><div class="sig-box"><strong>${encargadoPrincipal.toUpperCase()}</strong><br>Director / Coordinador de Programa / UAD</div></div>
+            <div class="verification-container"><div class="verification-text"><strong>CÓDIGO DE VERIFICACIÓN:</strong> ${verificationCode}<br>Validado digitalmente por GestorSMEAD en conformidad con el registro institucional.<br>Este documento constituye un registro oficial inalterable.</div><div class="qr-box"><img src="${qrUrl}" alt="QR Verificación"><span style="font-size: 8px; font-weight: bold; color: #6b21a8;">ESCANEAR PARA VALIDAR</span></div></div>
+            <div class="footer">Documento generado el ${new Date().toLocaleString()} - Sistema de Gestión de Actividades Formativas UAD</div>
         </body>
         </html>
     `;
-
     const blob = new Blob([htmlContent], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -815,29 +791,21 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
               <div className="flex justify-between items-center">
                   <div><h2 className="text-2xl font-bold text-slate-800">Gestión de Postítulos y Diplomados</h2><p className="text-sm text-slate-500">Administración avanzada de programas académicos modulares.</p></div>
                   <div className="flex gap-4 items-center">
-                      {/* SELECTOR DE PERIODO */}
                       <div className="flex items-center bg-slate-50 rounded-2xl px-4 py-2 border border-slate-200 shadow-inner group">
                           <label className="text-[10px] font-black text-slate-400 uppercase mr-3">Periodo:</label>
-                          <select 
-                            value={selectedYear} 
-                            onChange={(e) => setSelectedYear(Number(e.target.value))} 
-                            className="text-sm font-black text-[#647FBC] bg-transparent border-none focus:ring-0 p-0 cursor-pointer uppercase"
-                          >
+                          <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="text-sm font-black text-[#647FBC] bg-transparent border-none focus:ring-0 p-0 cursor-pointer uppercase">
                               <option value={currentYear}>{currentYear}</option>
                               <option value={currentYear - 1}>{currentYear - 1}</option>
                               <option value={currentYear - 2}>{currentYear - 2}</option>
                           </select>
                       </div>
-
-                      <button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '' }); setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75, isClosed: false }); setView('create'); }} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 flex items-center gap-2 shadow-lg"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Nuevo Programa</button>
+                      <button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), semester: 'ANUAL', nombre: '', version: 'V1', modality: listModalities[0], horas: 0, relator: '', fechaInicio: '', fechaTermino: '', linkRecursos: '', linkClase: '', linkEvaluacion: '', competencyCodes: [] }); setProgramConfig({ programType: 'Diplomado', modules: [], globalAttendanceRequired: 75, isClosed: false }); setView('create'); }} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 flex items-center gap-2 shadow-lg"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Nuevo Programa</button>
                   </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {postgraduateActivities.map(act => (
                       <div key={act.id} className={`bg-white rounded-xl shadow-sm border p-6 hover:border-purple-300 transition-colors relative overflow-hidden ${act.programConfig?.isClosed ? 'border-slate-300 bg-slate-50' : 'border-slate-200'}`}>
-                          {act.programConfig?.isClosed && (
-                              <div className="absolute top-0 right-0 bg-slate-800 text-white text-[9px] font-black px-2 py-1 rounded-bl-lg uppercase tracking-widest z-10">CERRADO</div>
-                          )}
+                          {act.programConfig?.isClosed && (<div className="absolute top-0 right-0 bg-slate-800 text-white text-[9px] font-black px-2 py-1 rounded-bl-lg uppercase tracking-widest z-10">CERRADO</div>)}
                           <div className="flex justify-between items-start mb-4"><span className="px-2 py-1 rounded text-xs font-bold bg-purple-50 text-purple-700 border border-purple-100">{act.programConfig?.programType || 'Postítulo'}</span><span className="text-xs text-slate-400 font-mono" title="ID">{act.id}</span></div>
                           <h3 className={`font-bold text-lg mb-2 truncate ${act.programConfig?.isClosed ? 'text-slate-500' : 'text-slate-800'}`} title={act.name}>{act.name}</h3>
                           <div className="text-sm text-slate-500 space-y-1 mb-4"><p className="flex items-center gap-2"><span className="font-bold text-xs text-purple-600">DIR:</span> {act.relator || 'Sin Director'}</p><p className="flex items-center gap-2">Modules: {act.programConfig?.modules?.length || 0}</p><p className="flex items-center gap-2">Inicio: {formatDateCL(act.startDate)}</p></div>
@@ -883,6 +851,93 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                               </div>
                           </div>
                       </div>
+
+                      {/* SUBIDA DE PROGRAMA Y ANÁLISIS IA */}
+                      <div className="space-y-4 pt-6 border-t-2 border-slate-50">
+                          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide">Programa de Asignatura (Análisis Inteligente)</h3>
+                          <div className="flex flex-col md:flex-row gap-4 items-center bg-slate-50 p-6 rounded-2xl border border-slate-100 shadow-inner">
+                              <div className="flex-1 w-full">
+                                  <label className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-xl cursor-pointer transition-all ${syllabusFile ? 'border-indigo-400 bg-indigo-50' : 'border-slate-300 bg-white hover:bg-slate-50'}`}>
+                                      <div className="flex flex-col items-center justify-center pt-2">
+                                          {syllabusFile ? (
+                                              <div className="flex items-center gap-2">
+                                                  <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0116 0z" /></svg>
+                                                  <p className="text-xs font-bold text-indigo-700 truncate max-w-[200px]">{syllabusFile.name}</p>
+                                              </div>
+                                          ) : (
+                                              <>
+                                                  <svg className="w-6 h-6 text-slate-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                  <p className="text-[10px] text-slate-500 font-bold uppercase">Subir Programa (PDF/TXT)</p>
+                                              </>
+                                          )}
+                                      </div>
+                                      <input type="file" className="hidden" accept=".pdf,.txt" onChange={(e) => setSyllabusFile(e.target.files ? e.target.files[0] : null)} />
+                                  </label>
+                              </div>
+                              <button 
+                                type="button" 
+                                onClick={handleAnalyzeSyllabus}
+                                disabled={isAnalyzingIA || !syllabusFile}
+                                className={`flex items-center gap-2 px-6 py-4 rounded-xl text-xs font-black uppercase transition-all shadow-md h-24 ${isAnalyzingIA || !syllabusFile ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:-translate-y-0.5'}`}
+                              >
+                                  <svg className={`w-5 h-5 ${isAnalyzingIA ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                  {isAnalyzingIA ? 'Analizando...' : 'Analizar Programa'}
+                              </button>
+                          </div>
+                      </div>
+
+                      {/* TAXONOMÍA DE COMPETENCIAS UPLA */}
+                      <div className="space-y-6 pt-6 border-t-2 border-slate-50">
+                          <div>
+                              <h3 className="text-lg font-black text-[#647FBC] uppercase tracking-tight">TAXONOMÍA DE COMPETENCIAS UPLA</h3>
+                              <p className="text-xs text-slate-400">Vincule el programa con el Plan Estratégico y de Mejora Institucional.</p>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+                              {/* BLOQUE PEI */}
+                              <div className="space-y-4">
+                                  <div className="flex items-center gap-2 mb-2">
+                                      <span className="w-2 h-2 rounded-full bg-indigo-400"></span>
+                                      <h4 className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Plan Estratégico (PEI)</h4>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                      {PEI_COMPETENCIES.map(c => (
+                                          <button
+                                              key={c.code}
+                                              type="button"
+                                              onClick={() => handleToggleCompetence(c.code)}
+                                              title={c.name}
+                                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-indigo-100 border-indigo-300 text-indigo-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-200 hover:text-indigo-400'}`}
+                                          >
+                                              {c.code}
+                                          </button>
+                                      ))}
+                                  </div>
+                              </div>
+
+                              {/* BLOQUE PMI */}
+                              <div className="space-y-4">
+                                  <div className="flex items-center gap-2 mb-2">
+                                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                                      <h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Plan de Mejora (PMI)</h4>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                      {PMI_COMPETENCIES.map(c => (
+                                          <button
+                                              key={c.code}
+                                              type="button"
+                                              onClick={() => handleToggleCompetence(c.code)}
+                                              title={c.name}
+                                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200 hover:text-indigo-400'}`}
+                                          >
+                                              {c.code}
+                                          </button>
+                                      ))}
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+
                       <div className="flex justify-between pt-6 border-t border-slate-100">
                           {isEditMode ? (
                               <>
@@ -899,6 +954,64 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                       </div>
                   </form>
               </div>
+
+              {/* MODAL DE REVISIÓN DE SUGERENCIAS IA */}
+              {showAiReview && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-indigo-200 flex flex-col overflow-hidden">
+                        <div className="p-6 bg-indigo-600 text-white flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                <div>
+                                    <h3 className="text-xl font-bold">Revisión de Sugerencias Curriculares</h3>
+                                    <p className="text-xs text-indigo-100 uppercase tracking-widest font-bold">Análisis con Inteligencia Artificial</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowAiReview(false)} className="text-indigo-200 hover:text-white text-3xl font-light">&times;</button>
+                        </div>
+                        
+                        <div className="p-8 space-y-6 flex-1 overflow-y-auto custom-scrollbar max-h-[60vh]">
+                            <p className="text-slate-600 text-sm italic">
+                                Basado en los objetivos y contenidos detectados en el programa <strong>"{syllabusFile?.name}"</strong>, la IA sugiere que este programa de postítulo tributa a las siguientes competencias:
+                            </p>
+                            
+                            <div className="space-y-4">
+                                {aiSuggestions.map((suggestion, idx) => (
+                                    <div key={idx} className={`p-4 rounded-2xl border flex gap-4 ${suggestion.code.startsWith('PEI') ? 'bg-indigo-50 border-indigo-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <div className={`w-14 h-14 flex-shrink-0 rounded-xl flex items-center justify-center font-black text-sm border-2 ${suggestion.code.startsWith('PEI') ? 'bg-white text-indigo-700 border-indigo-200' : 'bg-white text-emerald-700 border-emerald-200'}`}>
+                                            {suggestion.code}
+                                        </div>
+                                        <div className="flex-1">
+                                            <h4 className={`font-bold text-sm uppercase ${suggestion.code.startsWith('PEI') ? 'text-indigo-800' : 'text-emerald-800'}`}>
+                                                {PEI_COMPETENCIES.find(c => c.code === suggestion.code)?.name || PMI_COMPETENCIES.find(c => c.code === suggestion.code)?.name || 'Competencia Institucional'}
+                                            </h4>
+                                            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                                <span className="font-bold text-slate-700">Intencionalidad:</span> "{suggestion.reason}"
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="p-6 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
+                            <button 
+                                onClick={() => setShowAiReview(false)}
+                                className="px-6 py-2.5 text-slate-500 font-bold hover:text-slate-800 transition-colors"
+                            >
+                                Descartar
+                            </button>
+                            <button 
+                                onClick={applyAiSuggestions}
+                                className="px-8 py-2.5 bg-indigo-600 text-white font-black uppercase text-xs tracking-widest rounded-xl shadow-lg hover:bg-indigo-700 transition-all active:scale-95 flex items-center gap-2"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                Aplicar Taxonomía
+                            </button>
+                        </div>
+                    </div>
+                </div>
+              )}
           </div>
       );
   }
@@ -944,7 +1057,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                 <button onClick={() => handleAttemptExit(() => setActiveDetailTab('tracking'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'tracking' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Seguimiento</button>
                 {isCourseClosed && <button onClick={() => handleAttemptExit(() => setActiveDetailTab('acta'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'acta' ? 'bg-white text-indigo-700 border-t-indigo-600 border-x border-indigo-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Acta Final</button>}
               </div>
-              
               <div className="bg-white rounded-b-xl rounded-tr-xl shadow-sm border border-purple-200 border-t-0 p-8">
                 {activeDetailTab === 'enrollment' && (
                   <div className="space-y-8">
@@ -965,7 +1077,9 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                     {showSuggestions && activeSearchField === 'rut' && suggestions.length > 0 && (
                                     <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
                                         <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por RUT</div>
-                                        {suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span></div>))}
+                                        {suggestions.map((s) => (
+                                            <div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span></div>
+                                        ))}
                                     </div>
                                     )}
                                 </div>
@@ -997,7 +1111,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                 <div><label className="block text-xs font-medium text-slate-700 mb-1">Sede / Campus</label><input type="text" name="campus" value={manualForm.campus} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
                                 <SmartSelect label="Facultad" name="faculty" value={manualForm.faculty} options={listFaculties} onChange={handleManualFormChange} />
                                 <SmartSelect label="Departamento" name="department" value={manualForm.department} options={listDepts} onChange={handleManualFormChange} />
-                                <SmartSelect label="Carrera" name="career" value={manualForm.career} options={listCareers} onChange={handleManualFormChange} />
+                                <SmartSelect label="Carrera Profesional" name="career" value={manualForm.career} options={listCareers} onChange={handleManualFormChange} />
                                 <SmartSelect label="Tipo Contrato" name="contractType" value={manualForm.contractType} options={listContracts} onChange={handleManualFormChange} />
                                 <SmartSelect label="Semestre Docencia" name="teachingSemester" value={manualForm.teachingSemester} options={listSemesters} onChange={handleManualFormChange} />
                             </div>
@@ -1025,7 +1139,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                         </form>
                         </div>
                     )}
-                    
                     {!isCourseClosed && (
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
                         <h3 className="font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100 flex items-center gap-2"><svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>Carga Masiva (CSV / Excel)</h3>
@@ -1044,7 +1157,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                         </div>
                         </div>
                     )}
-                    
                     <div className="overflow-hidden rounded-xl border border-slate-200">
                       <table className={`w-full text-sm text-left ${isCourseClosed ? 'opacity-50' : ''}`}>
                         <thead className="bg-slate-50 text-slate-700">
@@ -1069,271 +1181,79 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                   <div className="animate-fadeIn space-y-4">
                     <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-center gap-4">
                       <div><h3 className="font-bold text-purple-800 text-lg">Seguimiento Académico Modular</h3><p className="text-xs text-purple-600">Gestión de calificaciones por módulo y cálculo de promedio final.</p></div>
-                      
-                      <button 
-                          onClick={handleToggleCloseCourse}
-                          className={`px-4 py-2 rounded-lg font-black uppercase text-xs shadow-md transition-all active:scale-95 flex items-center gap-2 ${isCourseClosed ? 'bg-rose-600 text-white hover:bg-rose-700 animate-pulse' : 'bg-slate-800 text-white hover:bg-black'}`}
-                      >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isCourseClosed ? "M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" : "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"} /></svg>
-                          {isCourseClosed ? 'REABRIR CURSO' : 'CERRAR POSTÍTULO'}
-                      </button>
-
+                      <button onClick={handleToggleCloseCourse} className={`px-4 py-2 rounded-lg font-black uppercase text-xs shadow-md transition-all active:scale-95 flex items-center gap-2 ${isCourseClosed ? 'bg-rose-600 text-white hover:bg-rose-700 animate-pulse' : 'bg-slate-800 text-white hover:bg-black'}`}><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>{isCourseClosed ? 'REABRIR CURSO' : 'CERRAR POSTÍTULO'}</button>
                       <div className="flex gap-4 text-center">
                         <div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm"><span className="block text-xl font-bold text-slate-700">{sortedEnrollments.length}</span><span className="text-[10px] font-bold text-slate-400 uppercase">Matriculados</span></div>
                         <div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm"><span className="block text-xl font-bold text-slate-700">{programConfig.modules.length}</span><span className="text-[10px] font-bold text-slate-400 uppercase">Módulos</span></div>
-                        
-                        <div className="bg-white px-4 py-2 rounded-lg border border-rose-100 shadow-sm relative group cursor-help">
-                            <span className="block text-xl font-bold text-rose-600">{pendingStats.total}</span>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Notas Pendientes</span>
-                            
-                            <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-rose-200 shadow-2xl rounded-xl z-50 p-4 hidden group-hover:block animate-fadeIn">
-                                <div className="text-[10px] font-black text-rose-700 uppercase border-b border-rose-50 pb-2 mb-2 flex items-center gap-2">
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                    Notas Faltantes por Módulo
-                                </div>
-                                <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar">
-                                    {pendingStats.byModule.map((m, idx) => (
-                                        <div key={idx} className="flex justify-between items-center text-[11px] border-b border-slate-50 pb-1 last:border-0">
-                                            <span className="truncate text-slate-600 font-medium pr-2">{m.name}</span>
-                                            <span className={`font-black ${m.pending > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                                                {m.pending > 0 ? `${m.pending} pend.` : 'Al día'}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
+                        <div className="bg-white px-4 py-2 rounded-lg border border-rose-100 shadow-sm relative group cursor-help"><span className="block text-xl font-bold text-rose-600">{pendingStats.total}</span><span className="text-[10px] font-bold text-slate-400 uppercase">Notas Pendientes</span><div className="absolute top-full right-0 mt-2 w-64 bg-white border border-rose-200 shadow-2xl rounded-xl z-50 p-4 hidden group-hover:block animate-fadeIn"><div className="text-[10px] font-black text-rose-700 uppercase border-b border-rose-50 pb-2 mb-2 flex items-center gap-2"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>Notas Faltantes por Módulo</div><div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar">{pendingStats.byModule.map((m, idx) => (<div key={idx} className="flex justify-between items-center text-[11px] border-b border-slate-50 pb-1 last:border-0"><span className="truncate text-slate-600 font-medium pr-2">{m.name}</span><span className={`font-black ${m.pending > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{m.pending > 0 ? `${m.pending} pend.` : 'Al día'}</span></div>))}</div></div></div>
                       </div>
                     </div> 
-                    {programConfig.modules.length === 0 ? (
-                      <div className="text-center py-12 border border-dashed border-slate-300 rounded-xl bg-slate-50 text-slate-500">Debe configurar los Módulos en la pestaña "Configuración Académica" antes de ingresar notas.</div>
-                    ) : (
-                      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                        <div className="overflow-x-auto custom-scrollbar">
-                          <table className="w-full text-sm text-left whitespace-nowrap">
-                            <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
-                              {(() => { 
-                                const allProgramDates = programConfig.modules.flatMap(mod => (mod.classDates || []).map(date => ({ date, moduleId: mod.id, moduleName: mod.name, relatorRut: mod.relatorRut })) ).sort((a, b) => a.date.localeCompare(b.date)); 
-                                return (
-                                  <>
-                                    <tr>
-                                      <th className="px-2 py-3 bg-white sticky left-0 z-20 border-r border-slate-200 w-[200px] min-w-[200px] truncate">Estudiante</th>
-                                      <th className="px-4 py-3 text-center border-r border-slate-200 w-[100px] bg-slate-50">Situación</th>
-                                      {programConfig.modules.map((mod, idx) => (
-                                        <th key={mod.id} colSpan={(mod.evaluationCount || 0) + 1} className={`px-2 py-2 text-center border-r border-slate-200 ${idx % 2 === 0 ? 'bg-purple-50/50' : 'bg-white'}`}>
-                                          <div className="flex flex-col">
-                                            <span className="text-xs uppercase text-purple-700 mb-1 truncate max-w-[150px]" title={mod.name}>{mod.name}</span>
-                                            <span className="text-[10px] bg-white border border-purple-100 rounded px-1 w-fit mx-auto text-purple-900 font-black">{mod.weight}%</span>
-                                          </div>
-                                        </th>
-                                      ))}
-                                      <th className="px-4 py-3 text-center min-w-[80px] bg-slate-100">Final</th>
-                                      <th className="px-4 py-3 text-center min-w-[100px]">Estado</th>
-                                      {allProgramDates.map((d, i) => { 
-                                        const academic = users.find(u => u.rut === d.relatorRut); 
-                                        const surname = academic?.paternalSurname || 'S/D'; 
-                                        const dateDisplay = formatDateCL(d.date).split('-').slice(0,2).join('-'); 
-                                        return (
-                                          <th key={`${d.moduleId}-${d.date}`} className="px-1 py-2 text-center border-r border-slate-200 w-[60px] min-w-[60px]">
-                                            <div className="flex flex-col items-center justify-center">
-                                              <span className="text-[9px] font-bold text-slate-600 uppercase truncate max-w-[55px]" title={surname}>{surname}</span>
-                                              <span className="text-[9px] text-slate-400">{dateDisplay}</span>
-                                            </div>
-                                          </th>
-                                        ); 
-                                      })} 
-                                      <th className="px-2 py-3 text-center min-w-[80px] bg-slate-100 border-l border-slate-200">% Asist.</th>
-                                    </tr>
-                                    <tr className="bg-slate-100 text-xs text-slate-500 border-b border-slate-200">
-                                      <th className="bg-slate-50 sticky left-0 z-20 border-r border-slate-200"></th>
-                                      <th className="bg-slate-50 border-r border-slate-200"></th>
-                                      {programConfig.modules.map((mod, modIdx) => (
-                                        <React.Fragment key={`sub-${mod.id}`}>
-                                          {Array.from({ length: mod.evaluationCount }).map((_, noteIdx) => (<th key={`${mod.id}-n${noteIdx}`} className="px-1 py-1 text-center w-[50px] min-w-[50px] font-normal border-r border-slate-100">N{noteIdx + 1} <span className="text-[8px] text-purple-600 block font-bold">{mod.evaluationWeights?.[noteIdx] || '-'}%</span></th>))}
-                                          <th className="px-2 py-1 text-center w-[50px] min-w-[50px] font-bold text-purple-700 bg-purple-50/30 border-r border-slate-200">Prom</th>
-                                        </React.Fragment>
-                                      ))}
-                                      <th className="bg-slate-100"></th>
-                                      <th></th>
-                                      {allProgramDates.map((d) => <th key={`sub-${d.date}`} className="bg-slate-50"></th>)}
-                                      <th className="bg-slate-100 border-l border-slate-200"></th>
-                                    </tr>
-                                  </>
-                                ); 
-                              })()}
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {sortedEnrollments.map((enr) => { 
-                                const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut)); 
-                                const isInactive = enr.situation === 'INACTIVO';
-                                const activeGrades = pendingGrades[enr.id] || enr.grades || [];
-                                const finalGrade = calculateFinalProgramGrade(activeGrades); 
-                                const allProgramDates = programConfig.modules.flatMap(mod => (mod.classDates || []).map(date => ({ date, moduleId: mod.id })) ).sort((a, b) => a.date.localeCompare(b.date)); 
-                                const totalDatesCount = allProgramDates.length; 
-                                let presentCount = 0; 
-                                allProgramDates.forEach((_, idx) => { if (enr[`attendanceSession${idx + 1}` as keyof Enrollment]) presentCount++; }); 
-                                const dynamicPercentage = totalDatesCount > 0 ? Math.round((presentCount / totalDatesCount) * 100) : 0; 
-                                return (
-                                  <tr key={enr.id} className={`hover:bg-purple-50/20 transition-colors ${isInactive || isCourseClosed ? 'grayscale opacity-60 bg-slate-50' : ''}`}>
-                                    <td className="px-2 py-2 font-medium sticky left-0 bg-white border-r border-slate-200 z-10 w-[200px] min-w-[200px] truncate">
-                                      <div className="flex flex-col truncate">
-                                        <span className={`truncate ${isCourseClosed ? 'text-slate-400 font-bold' : 'text-slate-700'}`} title={`${student?.names} ${student?.paternalSurname}`}>{student ? `${student.paternalSurname} ${student.maternalSurname || ''}, ${student.names}` : enr.rut}</span>
-                                        <span className="text-[10px] text-slate-400 font-mono">{enr.rut}</span>
-                                      </div>
-                                    </td>
-                                    <td className="px-2 py-2 text-center border-r border-slate-200">
-                                      <button 
-                                        disabled={isSyncing || isCourseClosed}
-                                        onClick={() => handleToggleSituation(enr.id, enr.situation)}
-                                        className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${
-                                          isInactive 
-                                          ? 'bg-rose-50 text-rose-600 border-rose-100 shadow-sm' 
-                                          : 'bg-emerald-50 text-emerald-600 border-emerald-100 shadow-sm'
-                                        } ${isSyncing || isCourseClosed ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                      >
-                                        {isInactive ? 'INACTIVO' : 'ACTIVO'}
-                                      </button>
-                                    </td>
-                                    {programConfig.modules.map((mod, modIdx) => (
-                                      <React.Fragment key={`row-${enr.id}-${mod.id}`}>
-                                        {Array.from({ length: mod.evaluationCount }).map((_, noteIdx) => { 
-                                          const globalIdx = getGlobalGradeIndex(modIdx, noteIdx); 
-                                          const gradeVal = activeGrades[globalIdx]; 
-                                          return (
-                                            <td key={`${enr.id}-${mod.id}-${noteIdx}`} className="px-1 py-2 text-center border-r border-slate-50">
-                                              <input type="number" step="0.1" min="1" max="7" disabled={isInactive || isSyncing || isCourseClosed} className={`w-full min-w-[40px] text-center border border-slate-200 rounded py-1 text-sm font-bold px-0 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal && gradeVal < 4.0 ? 'text-red-500' : 'text-slate-700'} ${isInactive || isCourseClosed ? 'cursor-not-allowed bg-slate-100 opacity-50' : ''}`} value={gradeVal || ''} onChange={(e) => handleUpdateGradeLocal(enr.id, modIdx, noteIdx, e.target.value)} />
-                                            </td>
-                                          ); 
-                                        })}
-                                        <td className="px-2 py-2 text-center border-r border-slate-200 bg-purple-50/10">
-                                          <span className={`text-xs font-bold ${parseFloat(calculateModuleAverage(activeGrades, modIdx)) < 4.0 ? 'text-red-500' : 'text-purple-700'}`}>{calculateModuleAverage(activeGrades, modIdx)}</span>
-                                        </td>
-                                      </React.Fragment>
-                                    ))}
-                                    <td className="px-4 py-3 text-center font-bold text-slate-800 bg-slate-50 border-l border-slate-200">
-                                      <span className={parseFloat(finalGrade) < 4.0 && finalGrade !== '-' ? 'text-red-600' : ''}>{finalGrade}</span>
-                                    </td>
-                                    <td className="px-4 py-3 text-center">
-                                      <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${enr.state === ActivityState.APROBADO ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{enr.state}</span>
-                                    </td>
-                                    {allProgramDates.map((d, i) => { 
-                                      const sessionKey = `attendanceSession${i + 1}` as keyof Enrollment; 
-                                      const isChecked = enr[sessionKey]; 
-                                      return (
-                                        <td key={`att-${enr.id}-${i}`} className="px-1 py-2 text-center border-r border-slate-100">
-                                          <input type="checkbox" checked={!!isChecked} disabled={isInactive || isSyncing || isCourseClosed} onChange={() => handleToggleAttendance(enr.id, i)} className={`rounded text-purple-600 focus:ring-purple-500 cursor-pointer w-4 h-4 ${isInactive || isCourseClosed ? 'cursor-not-allowed opacity-30' : ''}`}/>
-                                        </td>
-                                      ); 
-                                    })} 
-                                    <td className="px-2 py-2 text-center font-bold text-slate-700 bg-slate-50 border-l border-slate-200">
-                                      <span className={dynamicPercentage < 75 ? 'text-red-500' : 'text-green-600'}>{dynamicPercentage}%</span>
-                                    </td>
-                                  </tr>
-                                ); 
-                              })}
-
-                              <tr className="bg-slate-50 font-bold border-t-2 border-slate-200 sticky bottom-0 z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-                                  <td className="px-2 py-4 bg-slate-100 sticky left-0 border-r border-slate-200 z-40 text-right text-[10px] text-slate-500 uppercase tracking-widest flex items-center justify-end gap-2 h-full">
-                                      <span>Acciones Módulo</span>
-                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-                                  </td>
-                                  <td className="bg-slate-100 border-r border-slate-200"></td>
-                                  {programConfig.modules.map((mod, modIdx) => {
-                                      const hasChanges = hasChangesInModule(modIdx);
-                                      return (
-                                          <td key={`batch-save-${modIdx}`} colSpan={(mod.evaluationCount || 0) + 1} className="px-2 py-3 text-center border-r border-slate-200">
-                                              <button 
-                                                  type="button"
-                                                  disabled={!hasChanges || isProcessingBatch || isCourseClosed}
-                                                  onClick={() => handleBatchCommitModule(modIdx)}
-                                                  className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-md transition-all transform active:scale-95 border-2 ${
-                                                      hasChanges 
-                                                      ? 'bg-purple-600 text-white hover:bg-purple-700 animate-pulse border-white' 
-                                                      : 'bg-slate-200 text-slate-400 cursor-not-allowed border-transparent'
-                                                  }`}
-                                              >
-                                                  {isProcessingBatch ? 'Procesando...' : 'Ingresar/Grabar'}
-                                              </button>
-                                          </td>
-                                      );
-                                  })}
-                                  <td colSpan={2 + (programConfig.modules.flatMap(m => m.classDates || []).length) + 2} className="bg-slate-50"></td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {activeDetailTab === 'acta' && isCourseClosed && (
-                    <div className="animate-fadeIn space-y-8 max-w-4xl mx-auto py-10">
-                        <div className="bg-indigo-50 border border-indigo-200 rounded-3xl p-10 flex flex-col items-center text-center shadow-sm">
-                            <div className="w-20 h-20 bg-indigo-600 text-white rounded-2xl flex items-center justify-center mb-6 shadow-xl">
-                                <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                            </div>
-                            <h3 className="text-2xl font-black text-indigo-900 mb-2">Acta Final de Calificaciones</h3>
-                            <p className="text-slate-600 max-w-lg mb-8 leading-relaxed">Este documento constituye el registro oficial de calificaciones y promedios finales del programa, inhabilitado para futuras modificaciones debido al cierre del curso.</p>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-md mb-10">
-                                <div className="bg-white p-4 rounded-xl border border-indigo-100 shadow-inner">
-                                    <span className="block text-[10px] font-black text-slate-400 uppercase mb-1">Inscritos</span>
-                                    <span className="text-2xl font-black text-indigo-700">{courseEnrollments.length}</span>
-                                </div>
-                                <div className="bg-white p-4 rounded-xl border border-indigo-100 shadow-inner">
-                                    <span className="block text-[10px] font-black text-slate-400 uppercase mb-1">Aprobados</span>
-                                    <span className="text-2xl font-black text-emerald-600">{courseEnrollments.filter(e => e.state === ActivityState.APROBADO).length}</span>
-                                </div>
-                            </div>
-
-                            <button 
-                                onClick={handleDownloadActa}
-                                className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-sm tracking-widest shadow-2xl hover:bg-indigo-700 hover:-translate-y-1 transition-all active:scale-95 flex items-center gap-3"
-                            >
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                Descargar Acta Oficial (.html)
-                            </button>
-                        </div>
-                    </div>
-                )}
+                    {programConfig.modules.length === 0 ? (<div className="text-center py-12 border border-dashed border-slate-300 rounded-xl bg-slate-50 text-slate-500">Debe configurar los Módulos en la pestaña "Configuración Académica" antes de ingresar notas.</div>) : (
+                      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"><div className="overflow-x-auto custom-scrollbar"><table className="w-full text-sm text-left whitespace-nowrap"><thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">{(() => { const allProgramDates = programConfig.modules.flatMap(mod => (mod.classDates || []).map(date => ({ date, moduleId: mod.id, moduleName: mod.name, relatorRut: mod.relatorRut })) ).sort((a, b) => a.date.localeCompare(b.date)); return (<><tr><th className="px-2 py-3 bg-white sticky left-0 z-20 border-r border-slate-200 w-[200px] min-w-[200px] truncate">Estudiante</th><th className="px-4 py-3 text-center border-r border-slate-200 w-[100px] bg-slate-50">Situación</th>{programConfig.modules.map((mod, idx) => (<th key={mod.id} colSpan={(mod.evaluationCount || 0) + 1} className={`px-2 py-2 text-center border-r border-slate-200 ${idx % 2 === 0 ? 'bg-purple-50/50' : 'bg-white'}`}><div className="flex flex-col"><span className="text-xs uppercase text-purple-700 mb-1 truncate max-w-[150px]" title={mod.name}>{mod.name}</span><span className="text-[10px] bg-white border border-purple-100 rounded px-1 w-fit mx-auto text-purple-900 font-black">{mod.weight}%</span></div></th>))}<th className="px-4 py-3 text-center min-w-[80px] bg-slate-100">Final</th><th className="px-4 py-3 text-center min-w-[100px]">Estado</th>{allProgramDates.map((d, i) => { const academic = users.find(u => u.rut === d.relatorRut); const surname = academic?.paternalSurname || 'S/D'; const dateDisplay = formatDateCL(d.date).split('-').slice(0,2).join('-'); return (<th key={`${d.moduleId}-${d.date}`} className="px-1 py-2 text-center border-r border-slate-200 w-[60px] min-w-[60px]"><div className="flex flex-col items-center justify-center"><span className="text-[9px] font-bold text-slate-600 uppercase truncate max-w-[55px]" title={surname}>{surname}</span><span className="text-[9px] text-slate-400">{dateDisplay}</span></div></th>); })} <th className="px-2 py-3 text-center min-w-[80px] bg-slate-100 border-l border-slate-200">% Asist.</th></tr><tr className="bg-slate-100 text-xs text-slate-500 border-b border-slate-200"><th className="bg-slate-50 sticky left-0 z-20 border-r border-slate-200"></th><th className="bg-slate-50 border-r border-slate-200"></th>{programConfig.modules.map((mod, modIdx) => (<React.Fragment key={`sub-${mod.id}`}>{Array.from({ length: mod.evaluationCount }).map((_, noteIdx) => (<th key={`${mod.id}-n${noteIdx}`} className="px-1 py-1 text-center w-[50px] min-w-[50px] font-normal border-r border-slate-100">N{noteIdx + 1} <span className="text-[8px] text-purple-600 block font-bold">{mod.evaluationWeights?.[noteIdx] || '-'}%</span></th>))}<th className="px-2 py-1 text-center w-[50px] min-w-[50px] font-bold text-purple-700 bg-purple-50/30 border-r border-slate-200">Prom</th></React.Fragment>))}<th className="bg-slate-100"></th><th></th>{allProgramDates.map((d) => <th key={`sub-${d.date}`} className="bg-slate-50"></th>)}<th className="bg-slate-100 border-l border-slate-200"></th></tr></>); })()}</thead><tbody className="divide-y divide-slate-100">{sortedEnrollments.map((enr) => { const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut)); const isInactive = enr.situation === 'INACTIVO'; const activeGrades = pendingGrades[enr.id] || enr.grades || []; const finalGrade = calculateFinalProgramGrade(activeGrades); const allProgramDates = programConfig.modules.flatMap(mod => (mod.classDates || []).map(date => ({ date, moduleId: mod.id })) ).sort((a, b) => a.date.localeCompare(b.date)); const totalDatesCount = allProgramDates.length; let presentCount = 0; allProgramDates.forEach((_, idx) => { if (enr[`attendanceSession${idx + 1}` as keyof Enrollment]) presentCount++; }); const dynamicPercentage = totalDatesCount > 0 ? Math.round((presentCount / totalDatesCount) * 100) : 0; return (<tr key={enr.id} className={`hover:bg-purple-50/20 transition-colors ${isInactive || isCourseClosed ? 'grayscale opacity-60 bg-slate-50' : ''}`}><td className="px-2 py-2 font-medium sticky left-0 bg-white border-r border-slate-200 z-10 w-[200px] min-w-[200px] truncate"><div className="flex flex-col truncate"><span className={`truncate ${isCourseClosed ? 'text-slate-400 font-bold' : 'text-slate-700'}`} title={`${student?.names} ${student?.paternalSurname}`}>{student ? `${student.paternalSurname} ${student.maternalSurname || ''}, ${student.names}` : enr.rut}</span><span className="text-[10px] text-slate-400 font-mono">{enr.rut}</span></div></td><td className="px-2 py-2 text-center border-r border-slate-200"><button disabled={isSyncing || isCourseClosed} onClick={() => handleToggleSituation(enr.id, enr.situation)} className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${isInactive ? 'bg-rose-50 text-rose-600 border-rose-100 shadow-sm' : 'bg-emerald-50 text-emerald-600 border-emerald-100 shadow-sm'} ${isSyncing || isCourseClosed ? 'opacity-50 cursor-not-allowed' : ''}`}>{isInactive ? 'INACTIVO' : 'ACTIVO'}</button></td>{programConfig.modules.map((mod, modIdx) => (<React.Fragment key={`row-${enr.id}-${mod.id}`}>{Array.from({ length: mod.evaluationCount }).map((_, noteIdx) => { const globalIdx = getGlobalGradeIndex(modIdx, noteIdx); const gradeVal = activeGrades[globalIdx]; return (<td key={`${enr.id}-${mod.id}-${noteIdx}`} className="px-1 py-2 text-center border-r border-slate-50"><input type="number" step="0.1" min="1" max="7" disabled={isInactive || isSyncing || isCourseClosed} className={`w-full min-w-[40px] text-center border border-slate-200 rounded py-1 text-sm font-bold px-0 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${gradeVal && gradeVal < 4.0 ? 'text-red-500' : 'text-slate-700'} ${isInactive || isCourseClosed ? 'cursor-not-allowed bg-slate-100 opacity-50' : ''}`} value={gradeVal || ''} onChange={(e) => handleUpdateGradeLocal(enr.id, modIdx, noteIdx, e.target.value)} /></td>); })}<td className="px-2 py-2 text-center border-r border-slate-200 bg-purple-50/10"><span className={`text-xs font-bold ${parseFloat(calculateModuleAverage(activeGrades, modIdx)) < 4.0 ? 'text-red-500' : 'text-purple-700'}`}>{calculateModuleAverage(activeGrades, modIdx)}</span></td></React.Fragment>))}<td className="px-4 py-3 text-center font-bold text-slate-800 bg-slate-50 border-l border-slate-200"><span className={parseFloat(finalGrade) < 4.0 && finalGrade !== '-' ? 'text-red-600' : ''}>{finalGrade}</span></td><td className="px-4 py-3 text-center"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${enr.state === ActivityState.APROBADO ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{enr.state}</span></td>{allProgramDates.map((d, i) => { const sessionKey = `attendanceSession${i + 1}` as keyof Enrollment; const isChecked = enr[sessionKey]; return (<td key={`att-${enr.id}-${i}`} className="px-1 py-2 text-center border-r border-slate-100"><input type="checkbox" checked={!!isChecked} disabled={isInactive || isSyncing || isCourseClosed} onChange={() => handleToggleAttendance(enr.id, i)} className={`rounded text-purple-600 focus:ring-purple-500 cursor-pointer w-4 h-4 ${isInactive || isCourseClosed ? 'cursor-not-allowed opacity-30' : ''}`}/></td>); })}<td className="px-2 py-2 text-center font-bold text-slate-700 bg-slate-50 border-l border-slate-200"><span className={dynamicPercentage < 75 ? 'text-red-500' : 'text-green-600'}>{dynamicPercentage}%</span></td></tr>); })}<tr className="bg-slate-50 font-bold border-t-2 border-slate-200 sticky bottom-0 z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]"><td className="px-2 py-4 bg-slate-100 sticky left-0 border-r border-slate-200 z-40 text-right text-[10px] text-slate-500 uppercase tracking-widest flex items-center justify-end gap-2 h-full"><span>Acciones Módulo</span><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg></td><td className="bg-slate-100 border-r border-slate-200"></td>{programConfig.modules.map((mod, modIdx) => { const hasChanges = hasChangesInModule(modIdx); return (<td key={`batch-save-${modIdx}`} colSpan={(mod.evaluationCount || 0) + 1} className="px-2 py-3 text-center border-r border-slate-200"><button type="button" disabled={!hasChanges || isProcessingBatch || isCourseClosed} onClick={() => handleBatchCommitModule(modIdx)} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-md transition-all transform active:scale-95 border-2 ${hasChanges ? 'bg-purple-600 text-white hover:bg-purple-700 animate-pulse border-white' : 'bg-slate-200 text-slate-400 cursor-not-allowed border-transparent'}`}>{isProcessingBatch ? 'Procesando...' : 'Ingresar/Grabar'}</button></td>); }) }<td colSpan={2 + (programConfig.modules.flatMap(m => m.classDates || []).length) + 2} className="bg-slate-50"></td></tr></tbody></table></div></div>)}</div>)}
+                {activeDetailTab === 'acta' && isCourseClosed && (<div className="animate-fadeIn space-y-8 max-w-4xl mx-auto py-10"><div className="bg-indigo-50 border border-indigo-200 rounded-3xl p-10 flex flex-col items-center text-center shadow-sm"><div className="w-20 h-20 bg-indigo-600 text-white rounded-2xl flex items-center justify-center mb-6 shadow-xl"><svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div><h3 className="text-2xl font-black text-indigo-900 mb-2">Acta Final de Calificaciones</h3><p className="text-slate-600 max-w-lg mb-8 leading-relaxed">Este documento constituye el registro oficial de calificaciones y promedios finales del programa, inhabilitado para futuras modificaciones debido al cierre del curso.</p><div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-md mb-10"><div className="bg-white p-4 rounded-xl border border-indigo-100 shadow-inner"><span className="block text-[10px] font-black text-slate-400 uppercase mb-1">Inscritos</span><span className="text-2xl font-black text-indigo-700">{courseEnrollments.length}</span></div><div className="bg-white p-4 rounded-xl border border-indigo-100 shadow-inner"><span className="block text-[10px] font-black text-slate-400 uppercase mb-1">Aprobados</span><span className="text-2xl font-black text-emerald-600">{courseEnrollments.filter(e => e.state === ActivityState.APROBADO).length}</span></div></div><button onClick={handleDownloadActa} className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-sm tracking-widest shadow-2xl hover:bg-indigo-700 hover:-translate-y-1 transition-all active:scale-95 flex items-center gap-3"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>Descargar Acta Oficial (.html)</button></div></div>)}
               </div>
             </div>
 
-            {/* MODAL DE CONFIRMACIÓN DE SALIDA (CAMBIOS SIN GUARDAR) */}
-            {showExitModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-                    <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center border border-slate-200">
-                        <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            {/* MODAL DE CONEXIÓN CON IA REVISIÓN SUGERENCIAS */}
+            {showAiReview && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-indigo-200 flex flex-col overflow-hidden">
+                        <div className="p-6 bg-indigo-600 text-white flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                <div>
+                                    <h3 className="text-xl font-bold">Revisión de Sugerencias Curriculares</h3>
+                                    <p className="text-xs text-indigo-100 uppercase tracking-widest font-bold">Análisis con Inteligencia Artificial</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowAiReview(false)} className="text-indigo-200 hover:text-white text-3xl font-light">&times;</button>
                         </div>
-                        <h3 className="text-xl font-bold text-slate-800 mb-2">Cambios sin guardar</h3>
-                        <p className="text-slate-600 mb-8">Has comenzado a introducir notas. Si sales ahora, perderás los cambios no guardados.</p>
-                        <div className="flex flex-col gap-3">
+                        
+                        <div className="p-8 space-y-6 flex-1 overflow-y-auto custom-scrollbar max-h-[60vh]">
+                            <p className="text-slate-600 text-sm italic">
+                                Basado en los objetivos y contenidos detectados en el programa <strong>"{syllabusFile?.name}"</strong>, la IA sugiere que este programa de postítulo tributa a las siguientes competencias:
+                            </p>
+                            
+                            <div className="space-y-4">
+                                {aiSuggestions.map((suggestion, idx) => (
+                                    <div key={idx} className={`p-4 rounded-2xl border flex gap-4 ${suggestion.code.startsWith('PEI') ? 'bg-indigo-50 border-indigo-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <div className={`w-14 h-14 flex-shrink-0 rounded-xl flex items-center justify-center font-black text-sm border-2 ${suggestion.code.startsWith('PEI') ? 'bg-white text-indigo-700 border-indigo-200' : 'bg-white text-emerald-700 border-emerald-200'}`}>
+                                            {suggestion.code}
+                                        </div>
+                                        <div className="flex-1">
+                                            <h4 className={`font-bold text-sm uppercase ${suggestion.code.startsWith('PEI') ? 'text-indigo-800' : 'text-emerald-800'}`}>
+                                                {PEI_COMPETENCIES.find(c => c.code === suggestion.code)?.name || PMI_COMPETENCIES.find(c => c.code === suggestion.code)?.name || 'Competencia Institucional'}
+                                            </h4>
+                                            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                                <span className="font-bold text-slate-700">Intencionalidad:</span> "{suggestion.reason}"
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="p-6 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
                             <button 
-                                onClick={() => { setShowExitModal(false); setTargetNav(null); }}
-                                className="w-full py-3 bg-[#647FBC] text-white rounded-xl font-bold hover:bg-blue-800 transition-colors"
+                                onClick={() => setShowAiReview(false)}
+                                className="px-6 py-2.5 text-slate-500 font-bold hover:text-slate-800 transition-colors"
                             >
-                                Continuar editando
+                                Descartar
                             </button>
                             <button 
-                                onClick={() => {
-                                    (window as any).isPostgraduateDirty = false;
-                                    setShowExitModal(false);
-                                    if (typeof targetNav === 'function') {
-                                        targetNav();
-                                    } else if (typeof targetNav === 'string') {
-                                        window.dispatchEvent(new CustomEvent('force-nav', { detail: targetNav }));
-                                    }
-                                    setTargetNav(null);
-                                }}
-                                className="w-full py-3 bg-white border border-slate-200 text-slate-500 rounded-xl font-bold hover:bg-slate-50 transition-colors"
+                                onClick={applyAiSuggestions}
+                                className="px-8 py-2.5 bg-indigo-600 text-white font-black uppercase text-xs tracking-widest rounded-xl shadow-lg hover:bg-indigo-700 transition-all active:scale-95 flex items-center gap-2"
                             >
-                                Salir
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                Aplicar Taxonomía
                             </button>
                         </div>
                     </div>
                 </div>
-            )}
+              )}
+
+            {/* MODAL DE CONFIRMACIÓN DE SALIDA (CAMBIOS SIN GUARDAR) */}
+            {showExitModal && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fadeIn"><div className="bg-white rounded-2xl shadow-2xl p-8 max-sm w-full text-center border border-slate-200"><div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg></div><h3 className="text-xl font-bold text-slate-800 mb-2">Cambios sin guardar</h3><p className="text-slate-600 mb-8">Has comenzado a introducir notas. Si sales ahora, perderás los cambios no guardados.</p><div className="flex flex-col gap-3"><button onClick={() => { setShowExitModal(false); setTargetNav(null); }} className="w-full py-3 bg-[#647FBC] text-white rounded-xl font-bold hover:bg-blue-800 transition-colors">Continuar editando</button><button onClick={() => { (window as any).isPostgraduateDirty = false; setShowExitModal(false); if (typeof targetNav === 'function') { targetNav(); } else if (typeof targetNav === 'string') { window.dispatchEvent(new CustomEvent('force-nav', { detail: targetNav })); } setTargetNav(null); }} className="w-full py-3 bg-white border border-slate-200 text-slate-500 rounded-xl font-bold hover:bg-slate-50 transition-colors">Salir</button></div></div></div>)}
           </div>
       );
   }
