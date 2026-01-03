@@ -104,6 +104,9 @@ export interface Activity {
   
   // Configuración Específica para Postítulos
   programConfig?: ProgramConfig; 
+
+  // NUEVO: Tributación de Competencias (PEI/PMI)
+  competencyCodes?: string[];
 }
 
 export interface SessionLog {

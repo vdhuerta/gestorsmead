@@ -1,6 +1,6 @@
 
-import { GoogleGenAI } from "@google/genai";
-import { SCHEMA_TABLES } from '../constants';
+import { GoogleGenAI, Type } from "@google/genai";
+import { SCHEMA_TABLES, PEI_COMPETENCIES, PMI_COMPETENCIES } from '../constants';
 
 // Prepare a system prompt that understands the schema
 const schemaContext = JSON.stringify(SCHEMA_TABLES, null, 2);
@@ -17,27 +17,85 @@ Si te piden SQL, genera sintaxis estándar de PostgreSQL compatible con esta est
 RESPONDE SIEMPRE EN ESPAÑOL.
 `;
 
+export interface CompetencySuggestion {
+  code: string;
+  reason: string;
+}
+
+/**
+ * Analiza el contenido de un programa de asignatura para sugerir competencias PEI y PMI.
+ * Ahora incluye razonamiento pedagógico para cada sugerencia.
+ */
+export const suggestCompetencies = async (syllabusText: string): Promise<CompetencySuggestion[]> => {
+    if (!process.env.API_KEY) return [];
+
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
+    const peiList = PEI_COMPETENCIES.map(c => `${c.code}: ${c.name}`).join(", ");
+    const pmiList = PMI_COMPETENCIES.map(c => `${c.code}: ${c.name}`).join(", ");
+
+    const analyzerPrompt = `
+Eres un experto curricular de la Universidad de Playa Ancha (UPLA).
+Analiza el siguiente extracto de un programa de asignatura y sugiere a qué competencias del PEI (Plan Estratégico Institucional) y ejes del PMI (Plan de Mejora Institucional) tributa.
+
+LISTA DE COMPETENCIAS PEI: [${peiList}]
+LISTA DE EJES PMI: [${pmiList}]
+
+CONTENIDO DEL PROGRAMA:
+"${syllabusText}"
+
+INSTRUCCIONES:
+1. Identifica los códigos que apliquen.
+2. Para cada código, explica brevemente (máximo 15 palabras) por qué los objetivos o contenidos del programa se alinean con esa competencia (intencionalidad).
+3. Retorna ÚNICAMENTE un arreglo JSON de objetos con la estructura: {"code": "CODIGO", "reason": "EXPLICACION BREVE"}.
+4. Si no encuentras una relación clara, no incluyas el objeto.
+5. El resultado debe ser EXCLUSIVAMENTE el JSON.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: analyzerPrompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: { 
+                      type: Type.OBJECT,
+                      properties: {
+                        code: { type: Type.STRING },
+                        reason: { type: Type.STRING }
+                      }
+                    }
+                }
+            }
+        });
+
+        const result = JSON.parse(response.text || "[]");
+        return result;
+    } catch (error) {
+        console.error("Error al analizar programa con Gemini:", error);
+        return [];
+    }
+};
+
 export const askAiAboutModel = async (userQuestion: string): Promise<string> => {
-  // Always obtain the API key exclusively from process.env.API_KEY
   if (!process.env.API_KEY) {
     return "Modo Demo: Falta la API Key. Por favor configura la variable de entorno para habilitar las funciones de IA.";
   }
 
-  // FIX: Initialize GoogleGenAI with a named parameter as per guidelines
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   try {
-    // FIX: Using recommended model 'gemini-3-flash-preview' for basic text tasks/Q&A
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: userQuestion,
       config: {
         systemInstruction: systemInstruction,
-        temperature: 0.3, // Keep it factual
+        temperature: 0.3,
       }
     });
 
-    // FIX: Access .text property directly (not a method) from GenerateContentResponse
     return response.text || "No se generó respuesta.";
   } catch (error) {
     console.error("Gemini API Error:", error);

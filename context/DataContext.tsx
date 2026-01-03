@@ -1,3 +1,4 @@
+
 import { Activity, ActivityState, Enrollment, SystemConfig, User } from '../types';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
@@ -75,17 +76,16 @@ const mapActivityFromDB = (a: any): Activity => ({
     modality: a.modality,
     hours: a.hours,
     moduleCount: a.module_count,
-    // FIX: Changed evaluation_count to evaluationCount to match Activity interface
     evaluationCount: a.evaluation_count,
     startDate: a.start_date,
     endDate: a.end_date,
     relator: a.relator,
     linkResources: a.link_resources,
     classLink: a.class_link,
-    // FIX: Changed evaluation_link to evaluationLink to match Activity interface
     evaluationLink: a.evaluation_link, 
     isPublic: a.is_public,
-    programConfig: a.program_config 
+    programConfig: a.program_config,
+    competencyCodes: a.competency_codes || [] // Se agrega mapeo del campo de base de datos
 });
 
 const mapEnrollmentFromDB = (e: any): Enrollment => ({
@@ -182,7 +182,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         class_link: activity.classLink,
         evaluation_link: activity.evaluationLink, 
         is_public: activity.isPublic,
-        program_config: activity.programConfig || null
+        program_config: activity.programConfig || null,
+        competency_codes: activity.competencyCodes || [] // Se agrega persistencia del campo
     });
     if (error) throw error;
   };

@@ -1,6 +1,28 @@
+
 import { SchemaTable, SystemConfig, User, Activity, Enrollment, UserRole, ActivityState } from './types';
 
 // --- Lists for Dropdowns ---
+
+export const PEI_COMPETENCIES = [
+  { code: 'PEI-B1', name: 'Liderazgo' },
+  { code: 'PEI-B2', name: 'Inteligencia Emocional' },
+  { code: 'PEI-B3', name: 'Gestión de Conflictos' },
+  { code: 'PEI-B4', name: 'Trabajo en Equipo' },
+  { code: 'PEI-T1', name: 'Modelo Educativo' },
+  { code: 'PEI-T2', name: 'Planificación Estratégica' },
+  { code: 'PEI-T3', name: 'Mejora Continua' },
+  { code: 'PEI-T4', name: 'Análisis de Datos' },
+  { code: 'PEI-T5', name: 'Derechos Humanos' },
+  { code: 'PEI-T6', name: 'Probidad' }
+];
+
+export const PMI_COMPETENCIES = [
+  { code: 'PMI-1', name: 'Estatuto Administrativo' },
+  { code: 'PMI-2', name: 'Género' },
+  { code: 'PMI-3', name: 'Inclusión' },
+  { code: 'PMI-4', name: 'Ley Karin' },
+  { code: 'PMI-5', name: 'Probidad y Transparencia' }
+];
 
 export const GENERAL_ACTIVITY_TYPES = [
   "Charla",
@@ -189,6 +211,7 @@ export const SCHEMA_TABLES: SchemaTable[] = [
       { name: 'program_config', type: 'JSONB', description: 'Configuración JSON para módulos de Postítulos' },
       { name: 'fecha_inicio', type: 'DATE', description: 'Inicio real' },
       { name: 'relator', type: 'VARCHAR(100)', description: 'Instructor a cargo' },
+      { name: 'competency_codes', type: 'TEXT[]', description: 'Códigos PEI/PMI asociados' },
     ]
   },
   {
@@ -370,6 +393,9 @@ export const SUPABASE_SQL_SCRIPT = `
 
 ALTER TABLE public.activities 
 ADD COLUMN IF NOT EXISTS program_config jsonb;
+
+ALTER TABLE public.activities 
+ADD COLUMN IF NOT EXISTS competency_codes text[] DEFAULT '{}';
 
 ALTER TABLE public.enrollments 
 ADD COLUMN IF NOT EXISTS state text DEFAULT 'Inscrito';

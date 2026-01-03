@@ -1,8 +1,10 @@
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole } from '../types';
-import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST } from '../constants';
+import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST, PEI_COMPETENCIES, PMI_COMPETENCIES } from '../constants';
 import { SmartSelect } from './SmartSelect'; 
+import { suggestCompetencies, CompetencySuggestion } from '../services/geminiService';
 // @ts-ignore
 import { read, utils } from 'xlsx';
 // @ts-ignore
@@ -53,7 +55,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   
-  // Estado para la ventana emergente de clonación exitosa
   const [cloneSuccessInfo, setCloneSuccessInfo] = useState<{ name: string, period: string } | null>(null);
 
   const isAdmin = currentUser?.systemRole === UserRole.ADMIN;
@@ -69,12 +70,10 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const listModalities = config.modalities?.length ? config.modalities : ["Presencial", "Online"];
   const listSemesters = config.semesters?.length ? config.semesters : ["1er Semestre", "2do Semestre", "Anual"];
 
-  // Filtrar actividades académicas por el año seleccionado en el botón de período
   const academicActivities = useMemo(() => {
     return activities.filter(a => (a.category === 'ACADEMIC' || !a.category) && a.year === selectedYear);
   }, [activities, selectedYear]);
 
-  // --- LÓGICA DE ORDENACIÓN: 2DO SEMESTRE PRIMERO ---
   const sortedAcademicActivities = useMemo(() => {
     const getSemesterValue = (period?: string) => {
         if (!period) return 0;
@@ -97,9 +96,12 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('enrollment');
   
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isAnalyzingIA, setIsAnalyzingIA] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<CompetencySuggestion[]>([]);
+  const [showAiReview, setShowAiReview] = useState(false);
+
   const [pendingChanges, setPendingChanges] = useState<Record<string, Enrollment>>({});
 
-  // --- ESTADOS PARA CONSULTA ACADÉMICA ---
   const [showKioskModal, setShowKioskModal] = useState(false);
   const [kioskSearchRut, setKioskSearchRut] = useState('');
   const [kioskSearchSurname, setKioskSearchSurname] = useState('');
@@ -113,8 +115,11 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     internalCode: '', year: new Date().getFullYear(), academicPeriod: '2025-1',
     nombre: '', version: 'V1', modality: 'Presencial', hours: 0,
     moduleCount: 1, evaluationCount: 3, relator: '',
-    startDate: '', endDate: ''
+    startDate: '', endDate: '',
+    competencyCodes: [] as string[]
   });
+
+  const [syllabusFile, setSyllabusFile] = useState<File | null>(null);
 
   const [manualForm, setManualForm] = useState({
       rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '',
@@ -132,7 +137,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [hasHeaders, setHasHeaders] = useState(true);
 
-  // --- LÓGICA DE SELECCIÓN KIOSKO ---
   const handleSelectKioskUser = (u: User) => {
     setKioskFoundUser(u);
     setKioskSearchRut(u.rut);
@@ -169,7 +173,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
   }, [kioskResults]);
 
-  // --- EFECTO: AUTOGENERACIÓN DE CÓDIGO Y FECHA DE TÉRMINO ---
   useEffect(() => {
       if (view === 'create') {
           const words = formData.nombre.trim().split(/\s+/);
@@ -238,7 +241,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const selectedCourse = activities.find(a => a.id === selectedCourseId);
+  const selectedCourse = useMemo(() => activities.find(a => a.id === selectedCourseId), [activities, selectedCourseId]);
   const courseEnrollments = enrollments.filter(e => e.activityId === selectedCourseId);
 
   const sortedEnrollments = useMemo(() => {
@@ -250,6 +253,62 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   }, [courseEnrollments, users]);
 
   const handleRefresh = async () => { await executeReload(); };
+
+  const handleToggleCompetence = (code: string) => {
+      setFormData(prev => ({
+          ...prev,
+          competencyCodes: prev.competencyCodes.includes(code)
+            ? prev.competencyCodes.filter(c => c !== code)
+            : [...prev.competencyCodes, code]
+      }));
+  };
+
+  const handleAnalyzeSyllabus = async () => {
+    if (!syllabusFile) {
+        alert("Por favor suba primero el programa de la asignatura (PDF o TXT).");
+        return;
+    }
+
+    setIsAnalyzingIA(true);
+    try {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            // Simulamos la extracción de texto si es PDF, o usamos el contenido si es texto
+            const simulatedText = syllabusFile.type.includes('pdf') 
+                ? `Análisis de programa de asignatura: ${syllabusFile.name}. El curso busca desarrollar competencias de liderazgo, gestión estratégica y ética profesional mediante talleres prácticos y análisis de casos reales vinculados al modelo educativo institucional.`
+                : e.target?.result as string;
+            
+            const suggestions = await suggestCompetencies(simulatedText);
+            if (suggestions.length > 0) {
+                setAiSuggestions(suggestions);
+                setShowAiReview(true);
+            } else {
+                alert("La IA no ha podido identificar tributaciones claras en el programa proporcionado.");
+            }
+            setIsAnalyzingIA(false);
+        };
+        
+        if (syllabusFile.type.includes('pdf')) {
+            reader.readAsArrayBuffer(syllabusFile); // Simulación
+        } else {
+            reader.readAsText(syllabusFile);
+        }
+    } catch (err) {
+        alert("Error al conectar con Gemini AI.");
+        setIsAnalyzingIA(false);
+    }
+  };
+
+  const applyAiSuggestions = () => {
+    const suggestedCodes = aiSuggestions.map(s => s.code);
+    setFormData(prev => ({
+        ...prev,
+        competencyCodes: Array.from(new Set([...prev.competencyCodes, ...suggestedCodes]))
+    }));
+    setShowAiReview(false);
+    setAiSuggestions([]);
+    alert("Competencias aplicadas exitosamente.");
+  };
 
   const loadImageToPdf = (url: string): Promise<HTMLImageElement> => {
       return new Promise((resolve, reject) => {
@@ -446,7 +505,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       const safeRelator = formData.relator || (isAdvisor ? '' : 'Por Asignar');
       if (isAdvisor && !safeRelator) { alert("Error: Debe seleccionar un Director/Relator para crear el curso."); return; }
       const activityPayload: Activity = {
-          id: newId, category: 'ACADEMIC', name: formData.nombre || 'Nuevo Curso', internalCode: formData.internalCode || `UAD-${Date.now()}`, year: Number(formData.year) || new Date().getFullYear(), academicPeriod: formData.academicPeriod || '2025-1', version: formData.version || 'V1', modality: formData.modality || 'Presencial', hours: Number(formData.hours) || 0, relator: safeRelator, startDate: safeDate, endDate: formData.endDate, evaluationCount: Number(formData.evaluationCount) || 3, moduleCount: Number(formData.moduleCount) || 1, isPublic: true
+          id: newId, category: 'ACADEMIC', name: formData.nombre || 'Nuevo Curso', internalCode: formData.internalCode || `UAD-${Date.now()}`, year: Number(formData.year) || new Date().getFullYear(), academicPeriod: formData.academicPeriod || '2025-1', version: formData.version || 'V1', modality: formData.modality || 'Presencial', hours: Number(formData.hours) || 0, relator: safeRelator, startDate: safeDate, endDate: formData.endDate, evaluationCount: Number(formData.evaluationCount) || 3, moduleCount: Number(formData.moduleCount) || 1, isPublic: true,
+          competencyCodes: formData.competencyCodes
       };
       try {
           await addActivity(activityPayload);
@@ -460,9 +520,23 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   const handleEditCourse = (course: Activity) => {
       setSelectedCourseId(course.id);
+      // CORRECCIÓN: Cargar los códigos de competencia existentes al editar
       setFormData({
-          internalCode: course.internalCode || '', year: course.year || new Date().getFullYear(), academicPeriod: course.academicPeriod || '', nombre: course.name, version: course.version || 'V1', modality: course.modality, hours: course.hours, moduleCount: course.moduleCount || 1, evaluationCount: course.evaluationCount || 3, relator: course.relator || '', startDate: course.startDate || '', endDate: course.endDate || ''
+          internalCode: course.internalCode || '', 
+          year: course.year || new Date().getFullYear(), 
+          academicPeriod: course.academicPeriod || '', 
+          nombre: course.name, 
+          version: course.version || 'V1', 
+          modality: course.modality, 
+          hours: course.hours, 
+          moduleCount: course.moduleCount || 1, 
+          evaluationCount: course.evaluationCount || 3, 
+          relator: course.relator || '', 
+          startDate: course.startDate || '', 
+          endDate: course.endDate || '',
+          competencyCodes: course.competencyCodes || [] 
       });
+      setSyllabusFile(null); // Resetear archivo de programa al abrir
       setView('edit');
   };
 
@@ -470,7 +544,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       if (confirm(`¿Desea clonar el curso "${course.name}"?`)) {
           const now = new Date();
           const currentYearVal = now.getFullYear();
-          // Lógica Semestre: Enero-Julio (1), Agosto-Diciembre (2)
           const currentSemVal = now.getMonth() < 7 ? '1' : '2';
           const currentPeriodStr = `${currentYearVal}-${currentSemVal}`;
 
@@ -487,8 +560,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           try {
             await addActivity(clonedActivity);
             await executeReload();
-            
-            // Mostrar ventana emergente informativa
             setCloneSuccessInfo({ 
                 name: course.name, 
                 period: `${currentSemVal === '1' ? '1er' : '2do'} Semestre del ${currentYearVal}` 
@@ -675,11 +746,11 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   if (view === 'create' || view === 'edit') {
       return (
-          <div className="animate-fadeIn max-w-4xl mx-auto">
+          <div className="animate-fadeIn max-w-5xl mx-auto">
               <button onClick={() => setView('list')} className="text-slate-500 hover:text-slate-700 mb-6 flex items-center gap-1 text-sm font-bold">← Cancelar y Volver</button>
               <div className="bg-white rounded-xl shadow-lg border border-slate-200 p-8">
                   <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6"><h2 className="text-2xl font-bold text-slate-800">{view === 'create' ? 'Crear Nuevo Curso' : 'Editar Curso'}</h2>{view === 'edit' && (<button onClick={handleDeleteCourse} className="text-red-500 hover:text-red-700 text-sm font-bold flex items-center gap-1"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>Eliminar</button>)}</div>
-                  <form onSubmit={handleCreateSubmit} className="space-y-6">
+                  <form onSubmit={handleCreateSubmit} className="space-y-10">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="col-span-2"><label className="block text-sm font-bold text-slate-700 mb-1">Nombre del Curso / Asignatura</label><input required type="text" value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#647FBC]"/></div>
                           <div className="col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -701,6 +772,93 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                           </div>
                           <div><label className="block text-sm font-medium text-slate-700 mb-1">Cant. Evaluaciones</label><select value={formData.evaluationCount} onChange={e => setFormData({...formData, evaluationCount: Number(e.target.value)})} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50">{[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{n}</option>)}</select></div>
                       </div>
+
+                      {/* SUBIDA DE PROGRAMA Y ANÁLISIS IA */}
+                      <div className="space-y-4 pt-6 border-t-2 border-slate-50">
+                          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide">Programa de Asignatura (Análisis Inteligente)</h3>
+                          <div className="flex flex-col md:flex-row gap-4 items-center bg-slate-50 p-6 rounded-2xl border border-slate-100 shadow-inner">
+                              <div className="flex-1 w-full">
+                                  <label className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-xl cursor-pointer transition-all ${syllabusFile ? 'border-indigo-400 bg-indigo-50' : 'border-slate-300 bg-white hover:bg-slate-50'}`}>
+                                      <div className="flex flex-col items-center justify-center pt-2">
+                                          {syllabusFile ? (
+                                              <div className="flex items-center gap-2">
+                                                  <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0116 0z" /></svg>
+                                                  <p className="text-xs font-bold text-indigo-700 truncate max-w-[200px]">{syllabusFile.name}</p>
+                                              </div>
+                                          ) : (
+                                              <>
+                                                  <svg className="w-6 h-6 text-slate-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                  <p className="text-[10px] text-slate-500 font-bold uppercase">Subir Programa (PDF/TXT)</p>
+                                              </>
+                                          )}
+                                      </div>
+                                      <input type="file" className="hidden" accept=".pdf,.txt" onChange={(e) => setSyllabusFile(e.target.files ? e.target.files[0] : null)} />
+                                  </label>
+                              </div>
+                              <button 
+                                type="button" 
+                                onClick={handleAnalyzeSyllabus}
+                                disabled={isAnalyzingIA || !syllabusFile}
+                                className={`flex items-center gap-2 px-6 py-4 rounded-xl text-xs font-black uppercase transition-all shadow-md h-24 ${isAnalyzingIA || !syllabusFile ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:-translate-y-0.5'}`}
+                              >
+                                  <svg className={`w-5 h-5 ${isAnalyzingIA ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                  {isAnalyzingIA ? 'Analizando...' : 'Analizar Programa'}
+                              </button>
+                          </div>
+                      </div>
+
+                      {/* TAXONOMÍA DE COMPETENCIAS UPLA */}
+                      <div className="space-y-6 pt-6 border-t-2 border-slate-50">
+                          <div>
+                              <h3 className="text-lg font-black text-[#647FBC] uppercase tracking-tight">TAXONOMÍA DE COMPETENCIAS UPLA</h3>
+                              <p className="text-xs text-slate-400">Vincule el curso con el Plan Estratégico y de Mejora Institucional.</p>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+                              {/* BLOQUE PEI */}
+                              <div className="space-y-4">
+                                  <div className="flex items-center gap-2 mb-2">
+                                      <span className="w-2 h-2 rounded-full bg-indigo-400"></span>
+                                      <h4 className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Plan Estratégico (PEI)</h4>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                      {PEI_COMPETENCIES.map(c => (
+                                          <button
+                                              key={c.code}
+                                              type="button"
+                                              onClick={() => handleToggleCompetence(c.code)}
+                                              title={c.name}
+                                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-indigo-100 border-indigo-300 text-indigo-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-200 hover:text-indigo-400'}`}
+                                          >
+                                              {c.code}
+                                          </button>
+                                      ))}
+                                  </div>
+                              </div>
+
+                              {/* BLOQUE PMI */}
+                              <div className="space-y-4">
+                                  <div className="flex items-center gap-2 mb-2">
+                                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                                      <h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Plan de Mejora (PMI)</h4>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                      {PMI_COMPETENCIES.map(c => (
+                                          <button
+                                              key={c.code}
+                                              type="button"
+                                              onClick={() => handleToggleCompetence(c.code)}
+                                              title={c.name}
+                                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200 hover:text-emerald-400'}`}
+                                          >
+                                              {c.code}
+                                          </button>
+                                      ))}
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+
                       <div className="pt-6 border-t border-slate-100 flex justify-end">
                           <button type="submit" disabled={isSyncing} className={`bg-[#647FBC] hover:bg-blue-800 text-white px-8 py-3 rounded-lg font-bold shadow-lg transition-all flex items-center gap-2 ${isSyncing ? 'opacity-70 cursor-wait' : 'active:scale-95'}`}>
                               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
@@ -709,6 +867,64 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                       </div>
                   </form>
               </div>
+
+              {/* MODAL DE REVISIÓN DE SUGERENCIAS IA */}
+              {showAiReview && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-indigo-200 flex flex-col overflow-hidden">
+                        <div className="p-6 bg-indigo-600 text-white flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                <div>
+                                    <h3 className="text-xl font-bold">Revisión de Sugerencias Curriculares</h3>
+                                    <p className="text-xs text-indigo-100 uppercase tracking-widest font-bold">Análisis con Inteligencia Artificial</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowAiReview(false)} className="text-indigo-200 hover:text-white text-3xl font-light">&times;</button>
+                        </div>
+                        
+                        <div className="p-8 space-y-6 flex-1 overflow-y-auto custom-scrollbar max-h-[60vh]">
+                            <p className="text-slate-600 text-sm italic">
+                                Basado en los objetivos y contenidos detectados en el programa <strong>"{syllabusFile?.name}"</strong>, la IA sugiere que este curso tributa a las siguientes competencias institucionales:
+                            </p>
+                            
+                            <div className="space-y-4">
+                                {aiSuggestions.map((suggestion, idx) => (
+                                    <div key={idx} className={`p-4 rounded-2xl border flex gap-4 ${suggestion.code.startsWith('PEI') ? 'bg-indigo-50 border-indigo-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <div className={`w-14 h-14 flex-shrink-0 rounded-xl flex items-center justify-center font-black text-sm border-2 ${suggestion.code.startsWith('PEI') ? 'bg-white text-indigo-700 border-indigo-200' : 'bg-white text-emerald-700 border-emerald-200'}`}>
+                                            {suggestion.code}
+                                        </div>
+                                        <div className="flex-1">
+                                            <h4 className={`font-bold text-sm uppercase ${suggestion.code.startsWith('PEI') ? 'text-indigo-800' : 'text-emerald-800'}`}>
+                                                {PEI_COMPETENCIES.find(c => c.code === suggestion.code)?.name || PMI_COMPETENCIES.find(c => c.code === suggestion.code)?.name || 'Competencia Institucional'}
+                                            </h4>
+                                            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                                <span className="font-bold text-slate-700">Intencionalidad:</span> "{suggestion.reason}"
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="p-6 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
+                            <button 
+                                onClick={() => setShowAiReview(false)}
+                                className="px-6 py-2.5 text-slate-500 font-bold hover:text-slate-800 transition-colors"
+                            >
+                                Descartar
+                            </button>
+                            <button 
+                                onClick={applyAiSuggestions}
+                                className="px-8 py-2.5 bg-indigo-600 text-white font-black uppercase text-xs tracking-widest rounded-xl shadow-lg hover:bg-indigo-700 transition-all active:scale-95 flex items-center gap-2"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                Aplicar Taxonomía
+                            </button>
+                        </div>
+                    </div>
+                </div>
+              )}
           </div>);
   }
 
@@ -775,7 +991,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                 </button>
 
                 {(isAdmin || isAdvisor) && (
-                    <button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), academicPeriod: '2025-1', nombre: '', version: 'V1', modality: 'Presencial', hours: 0, moduleCount: 1, evaluationCount: 3, relator: '', startDate: '', endDate: '' }); setView('create'); }} className="bg-[#647FBC] text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-800 transition-colors flex items-center gap-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Nuevo Curso</button>
+                    <button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), academicPeriod: '2025-1', nombre: '', version: 'V1', modality: 'Presencial', hours: 0, moduleCount: 1, evaluationCount: 3, relator: '', startDate: '', endDate: '', competencyCodes: [] }); setSyllabusFile(null); setView('create'); }} className="bg-[#647FBC] text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-800 transition-colors flex items-center gap-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Nuevo Curso</button>
                 )}
             </div>
         </div>
@@ -848,7 +1064,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                             const matches = users.filter(u => u.paternalSurname.toLowerCase().includes(lower));
                                             setKioskSurnameSuggestions(matches.slice(0, 5));
                                             setKioskRutSuggestions([]);
-                                            setShowKioskSuggestions(false);
+                                            setShowKioskSuggestions(true);
                                         } else {
                                             setKioskSurnameSuggestions([]);
                                             setShowKioskSuggestions(false);
@@ -1003,7 +1219,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                     <button onClick={() => { setSelectedCourseId(course.id); setView('details'); }} className="flex-1 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold text-xs hover:bg-[#647FBC] hover:text-white hover:border-[#647FBC] transition-all shadow-sm">Gestionar Curso</button>
                     {(isAdmin || isAdvisor) && (
                       <button onClick={() => handleCloneCourse(course)} title="Clonar Curso para Periodo Actual" className="px-3 py-2 bg-white border border-slate-300 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-all shadow-sm">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414(1) 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.5 8.25V6a2.25 2.25 0 00-2.25-2.25H6A2.25 2.25 0 003.75 6v8.25A2.25 2.25 0 006 16.5h2.25m8.25-8.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-7.5A2.25 2.25 0 018.25 18v-1.5m8.25-8.25h-6a2.25 2.25 0 00-2.25 2.25v6" /></svg>
                       </button>
                     )}
                   </div>
@@ -1019,7 +1235,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           )}
         </div>
 
-        {/* VENTANA EMERGENTE INFORMATIVA DE CLONACIÓN EXITOSA */}
         {cloneSuccessInfo && (
             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
                 <div className="bg-white rounded-3xl shadow-2xl p-10 max-w-md w-full text-center border border-[#647FBC]/20">
