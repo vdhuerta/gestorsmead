@@ -316,6 +316,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                   <span className="block text-3xl font-black text-white tracking-tighter">{totalConsolidated}</span>
                   <span className="text-[10px] font-black text-blue-100 uppercase tracking-widest mt-1">Consolidado</span>
              </div>
+             {/* KPI: INSCRITOS */}
+             <div className="text-center px-6 py-4 bg-indigo-50 rounded-2xl border border-indigo-200 shadow-sm min-w-[140px] flex flex-col justify-center transform hover:scale-105 transition-transform">
+                  <span className="block text-3xl font-black text-indigo-700 tracking-tighter">{yearEnrollments.length}</span>
+                  <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mt-1">Inscritos</span>
+             </div>
           </div>
       </div>
 
@@ -660,7 +665,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                               Ayuda
                           </button>
-                          <button onClick={() => { setShowRetentionModal(false); setShowRetentionHelp(false); }} className="text-white/60 hover:text-white text-4xl font-light transition-all active:scale-90">&times;</button>
+                          <button onClick={() => { setShowRetentionModal(false); setShowRetentionHelp(false); }} className="text-white/60 hover:text-white text-4xl font-light transition-all active:scale-95">&times;</button>
                       </div>
                   </div>
 
