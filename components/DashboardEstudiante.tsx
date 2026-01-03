@@ -101,22 +101,45 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                     <span key={i} className="text-[10px] font-bold text-slate-400 uppercase">{d}</span>
                 ))}
             </div>
-            <div className="grid grid-cols-7 gap-1 text-center">
+            <div className="grid grid-cols-7 gap-1 text-center relative">
                 {days.map((day, idx) => {
                     if (day === null) return <div key={idx} className="h-9"></div>;
                     const dayActs = activitiesByDay[day] || [];
                     const isToday = day === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
+                    
                     return (
                         <div key={idx} className={`h-9 flex flex-col items-center justify-center rounded-lg border transition-all relative group
                             ${isToday ? 'bg-[#647FBC] text-white border-[#647FBC] shadow-md scale-105 z-10' : 'bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100'}
-                            ${dayActs.length > 0 ? 'font-bold cursor-help' : ''}
+                            ${dayActs.length > 0 ? 'font-bold cursor-pointer' : ''}
                         `}>
                             <span className="text-xs">{day}</span>
                             <div className="flex gap-0.5 mt-0.5">
-                                {dayActs.some(a => a.category === 'ACADEMIC') && <div className={`w-1 h-1 rounded-full ${isToday ? 'bg-white' : 'bg-indigo-500'}`}></div>}
-                                {dayActs.some(a => a.category === 'POSTGRADUATE') && <div className={`w-1 h-1 rounded-full ${isToday ? 'bg-purple-200' : 'bg-purple-500'}`}></div>}
-                                {dayActs.some(a => a.category === 'GENERAL') && <div className={`w-1 h-1 rounded-full ${isToday ? 'bg-teal-200' : 'bg-teal-500'}`}></div>}
+                                {dayActs.some(a => a.category === 'ACADEMIC') && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-white' : 'bg-indigo-500'}`}></div>}
+                                {dayActs.some(a => a.category === 'POSTGRADUATE') && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-purple-200' : 'bg-purple-500'}`}></div>}
+                                {dayActs.some(a => a.category === 'GENERAL') && <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-teal-200' : 'bg-teal-500'}`}></div>}
                             </div>
+
+                            {/* TOOLTIP DE ACTIVIDADES */}
+                            {dayActs.length > 0 && (
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-slate-800 text-white text-[10px] rounded-xl p-3 shadow-2xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-[60] border border-slate-700">
+                                    <div className="font-black border-b border-slate-700 pb-1.5 mb-1.5 uppercase tracking-widest text-blue-300">
+                                        Actividades {day}/{viewMonth + 1}
+                                    </div>
+                                    <div className="space-y-2">
+                                        {dayActs.map((act, i) => (
+                                            <div key={i} className="flex flex-col gap-0.5 border-l-2 border-indigo-400 pl-2">
+                                                <p className="font-bold leading-tight line-clamp-2">{act.name}</p>
+                                                <p className="opacity-70 flex justify-between">
+                                                    <span>{act.modality}</span>
+                                                    <span className="font-black">{act.hours}h</span>
+                                                </p>
+                                                <p className="text-[9px] opacity-60 italic truncate">Docente: {act.relator || 'S/D'}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-800"></div>
+                                </div>
+                            )}
                         </div>
                     );
                 })}
