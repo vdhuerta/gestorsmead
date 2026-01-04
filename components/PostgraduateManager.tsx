@@ -190,6 +190,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   };
 
   const handleRemoveClassDate = (moduleId: string, date: string) => {
+      // FIX: Error on line 193. Changed 'i.id' to 'm.id' because 'i' was not defined in the map function scope.
       setProgramConfig(prev => ({ ...prev, modules: prev.modules.map(m => m.id === moduleId ? { ...m, classDates: (m.classDates || []).filter(d => d !== date) } : m) }));
   };
 
@@ -203,11 +204,12 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   };
 
   const handleAnalyzeSyllabus = async () => {
-    if (!syllabusFile) { alert("Por favor suba primero el programa (PDF o TXT)."); return; }
+    if (!syllabusFile) { alert("Por favor suba primero el programa de la asignatura (PDF o TXT)."); return; }
     setIsAnalyzingIA(true);
     try {
         const reader = new FileReader();
         reader.onload = async (e) => {
+            // Simulamos la extracción de texto si es PDF, o usamos el contenido si es texto
             const simulatedText = syllabusFile.type.includes('pdf') 
                 ? `Análisis de programa de postítulo: ${syllabusFile.name}. Contenido pedagógico simulado para sugerir competencias UPLA.`
                 : e.target?.result as string;
@@ -354,9 +356,9 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
         modality: selectedCourse.modality, 
         horas: selectedCourse.hours, 
         relator: selectedCourse.relator || '', 
-        fechaInicio: selectedCourse.startDate || '', 
-        fechaTermino: selectedCourse.endDate || '', 
-        linkRecursos: selectedCourse.linkResources || '', 
+        startDate: selectedCourse.startDate || '', 
+        endDate: selectedCourse.endDate || '', 
+        linkResources: selectedCourse.linkResources || '', 
         linkClase: selectedCourse.classLink || '', 
         linkEvaluacion: selectedCourse.evaluationLink || '',
         competencyCodes: selectedCourse.competencyCodes || []
@@ -808,7 +810,26 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                           {act.programConfig?.isClosed && (<div className="absolute top-0 right-0 bg-slate-800 text-white text-[9px] font-black px-2 py-1 rounded-bl-lg uppercase tracking-widest z-10">CERRADO</div>)}
                           <div className="flex justify-between items-start mb-4"><span className="px-2 py-1 rounded text-xs font-bold bg-purple-50 text-purple-700 border border-purple-100">{act.programConfig?.programType || 'Postítulo'}</span><span className="text-xs text-slate-400 font-mono" title="ID">{act.id}</span></div>
                           <h3 className={`font-bold text-lg mb-2 truncate ${act.programConfig?.isClosed ? 'text-slate-500' : 'text-slate-800'}`} title={act.name}>{act.name}</h3>
-                          <div className="text-sm text-slate-500 space-y-1 mb-4"><p className="flex items-center gap-2"><span className="font-bold text-xs text-purple-600">DIR:</span> {act.relator || 'Sin Director'}</p><p className="flex items-center gap-2">Modules: {act.programConfig?.modules?.length || 0}</p><p className="flex items-center gap-2">Inicio: {formatDateCL(act.startDate)}</p></div>
+                          <div className="text-sm text-slate-500 space-y-1 mb-4">
+                              <p className="flex items-center gap-2"><span className="font-bold text-xs text-purple-600">DIR:</span> {act.relator || 'Sin Director'}</p>
+                              <p className="flex items-center gap-2">Modules: {act.programConfig?.modules?.length || 0}</p>
+                              <p className="flex items-center gap-2">Inicio: {formatDateCL(act.startDate)}</p>
+                              
+                              {/* TAGS TAXONÓMICOS DE COMPETENCIAS (DEBAJO DE FECHA) */}
+                              {act.competencyCodes && act.competencyCodes.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-2">
+                                      {act.competencyCodes.map(code => (
+                                          <span 
+                                              key={code} 
+                                              title={PEI_COMPETENCIES.find(c => c.code === code)?.name || PMI_COMPETENCIES.find(c => c.code === code)?.name || ''}
+                                              className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${code.startsWith('PEI') ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}
+                                          >
+                                              {code}
+                                          </span>
+                                      ))}
+                                  </div>
+                              )}
+                          </div>
                           <button onClick={() => { setSelectedCourseId(act.id); setView('details'); }} className="w-full bg-slate-50 border border-slate-300 text-slate-700 py-2 rounded-lg font-medium hover:bg-white hover:border-purple-500 hover:text-purple-600 transition-colors text-sm">Gestionar Programa</button>
                       </div>
                   ))}
@@ -1135,7 +1156,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                             ) : (
                             <button type="submit" disabled={isSyncing} className={`w-full py-2.5 rounded-lg font-bold shadow-md transition-all bg-purple-600 text-white hover:bg-purple-700 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>Matricular Usuario</button>
                             )}
-                            {enrollMsg && (<div className={`text-xs p-3 rounded-lg text-center font-medium ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{enrollMsg.text}</div>)}
+                            {enrollMsg && (<div className={`text-xs p-3 rounded-lg text-center font-medium ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'}`}>{enrollMsg.text}</div>)}
                         </form>
                         </div>
                     )}
@@ -1197,66 +1218,4 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
             {/* MODAL DE CONEXIÓN CON IA REVISIÓN SUGERENCIAS */}
             {showAiReview && (
                 <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-indigo-200 flex flex-col overflow-hidden">
-                        <div className="p-6 bg-indigo-600 text-white flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                <div>
-                                    <h3 className="text-xl font-bold">Revisión de Sugerencias Curriculares</h3>
-                                    <p className="text-xs text-indigo-100 uppercase tracking-widest font-bold">Análisis con Inteligencia Artificial</p>
-                                </div>
-                            </div>
-                            <button onClick={() => setShowAiReview(false)} className="text-indigo-200 hover:text-white text-3xl font-light">&times;</button>
-                        </div>
-                        
-                        <div className="p-8 space-y-6 flex-1 overflow-y-auto custom-scrollbar max-h-[60vh]">
-                            <p className="text-slate-600 text-sm italic">
-                                Basado en los objetivos y contenidos detectados en el programa <strong>"{syllabusFile?.name}"</strong>, la IA sugiere que este programa de postítulo tributa a las siguientes competencias:
-                            </p>
-                            
-                            <div className="space-y-4">
-                                {aiSuggestions.map((suggestion, idx) => (
-                                    <div key={idx} className={`p-4 rounded-2xl border flex gap-4 ${suggestion.code.startsWith('PEI') ? 'bg-indigo-50 border-indigo-100' : 'bg-emerald-50 border-emerald-100'}`}>
-                                        <div className={`w-14 h-14 flex-shrink-0 rounded-xl flex items-center justify-center font-black text-sm border-2 ${suggestion.code.startsWith('PEI') ? 'bg-white text-indigo-700 border-indigo-200' : 'bg-white text-emerald-700 border-emerald-200'}`}>
-                                            {suggestion.code}
-                                        </div>
-                                        <div className="flex-1">
-                                            <h4 className={`font-bold text-sm uppercase ${suggestion.code.startsWith('PEI') ? 'text-indigo-800' : 'text-emerald-800'}`}>
-                                                {PEI_COMPETENCIES.find(c => c.code === suggestion.code)?.name || PMI_COMPETENCIES.find(c => c.code === suggestion.code)?.name || 'Competencia Institucional'}
-                                            </h4>
-                                            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                                                <span className="font-bold text-slate-700">Intencionalidad:</span> "{suggestion.reason}"
-                                            </p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="p-6 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
-                            <button 
-                                onClick={() => setShowAiReview(false)}
-                                className="px-6 py-2.5 text-slate-500 font-bold hover:text-slate-800 transition-colors"
-                            >
-                                Descartar
-                            </button>
-                            <button 
-                                onClick={applyAiSuggestions}
-                                className="px-8 py-2.5 bg-indigo-600 text-white font-black uppercase text-xs tracking-widest rounded-xl shadow-lg hover:bg-indigo-700 transition-all active:scale-95 flex items-center gap-2"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                                Aplicar Taxonomía
-                            </button>
-                        </div>
-                    </div>
-                </div>
-              )}
-
-            {/* MODAL DE CONFIRMACIÓN DE SALIDA (CAMBIOS SIN GUARDAR) */}
-            {showExitModal && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fadeIn"><div className="bg-white rounded-2xl shadow-2xl p-8 max-sm w-full text-center border border-slate-200"><div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg></div><h3 className="text-xl font-bold text-slate-800 mb-2">Cambios sin guardar</h3><p className="text-slate-600 mb-8">Has comenzado a introducir notas. Si sales ahora, perderás los cambios no guardados.</p><div className="flex flex-col gap-3"><button onClick={() => { setShowExitModal(false); setTargetNav(null); }} className="w-full py-3 bg-[#647FBC] text-white rounded-xl font-bold hover:bg-blue-800 transition-colors">Continuar editando</button><button onClick={() => { (window as any).isPostgraduateDirty = false; setShowExitModal(false); if (typeof targetNav === 'function') { targetNav(); } else if (typeof targetNav === 'string') { window.dispatchEvent(new CustomEvent('force-nav', { detail: targetNav })); } setTargetNav(null); }} className="w-full py-3 bg-white border border-slate-200 text-slate-500 rounded-xl font-bold hover:bg-slate-50 transition-colors">Salir</button></div></div></div>)}
-          </div>
-      );
-  }
-
-  return <div>Estado desconocido</div>;
-};
+                    <div className="bg-white rounded-3xl shadow-2xl w

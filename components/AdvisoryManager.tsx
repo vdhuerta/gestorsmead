@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Enrollment, User, UserRole, Activity, SessionLog, ActivityState } from '../types';
-import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST } from '../constants';
+import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST, PEI_COMPETENCIES, PMI_COMPETENCIES } from '../constants';
 import { SmartSelect } from './SmartSelect';
 import { supabase } from '../services/supabaseClient';
 import { useReloadDirective } from '../hooks/useReloadDirective';
@@ -171,8 +171,14 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const [surnameSuggestions, setSurnameSuggestions] = useState<{enrollmentId: string, user: User}[]>([]);
 
     // Enrollment Form
-    const [enrollForm, setEnrollForm] = useState({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE, responsible: '' });
+    const [enrollForm, setEnrollForm] = useState({ 
+        rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', 
+        academicRole: '', faculty: '', department: '', career: '', contractType: '', 
+        teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE, responsible: '',
+        competencyCodes: [] as string[] // NUEVO
+    });
     const [showEnrollModal, setShowEnrollModal] = useState(false);
+    const [isEditingExpediente, setIsEditingExpediente] = useState(false); // Flag para modo edición
     const [enrollMsg, setEnrollMsg] = useState<{ type: 'success'|'error'|'duplicate', text: string, existingId?: string } | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [suggestions, setSuggestions] = useState<User[]>([]);
@@ -293,13 +299,79 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     };
 
     const handleSelectSuggestion = (user: User) => {
-        setEnrollForm(prev => ({ ...prev, rut: user.rut, names: user.names, paternalSurname: user.paternalSurname, maternalSurname: user.maternalSurname || '', email: user.email || '', phone: user.phone || '', academicRole: user.academicRole || '', faculty: user.faculty || '', department: user.department || '', career: user.career || '', contractType: user.contractType || '', teachingSemester: user.teachingSemester || '', campus: user.campus || '', systemRole: user.systemRole }));
+        setEnrollForm(prev => ({ ...prev, rut: user.rut, names: user.names, paternalSurname: user.paternalSurname, maternalSurname: user.maternalSurname || '', email: user.email || '', phone: user.phone || '', academicRole: user.academicRole || '', faculty: user.faculty || '', department: user.department || '', career: user.career || '', contractType: user.contractType || '', teachingSemester: user.teachingSemester || '', campus: user.campus || '', systemRole: user.systemRole, responsible: '' }));
         setEnrollMsg({ type: 'success', text: 'Datos cargados desde Base Maestra.' }); setShowSuggestions(false);
     };
 
-    const handleOpenEnrollModal = () => { setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE, responsible: '' }); setEnrollMsg(null); setIsProcessing(false); setShowEnrollModal(true); setSuggestions([]); setShowSuggestions(false); };
+    const handleRutBlur = () => {
+        setTimeout(() => {
+            if (showSuggestions) setShowSuggestions(false);
+            if (!enrollForm.rut) return;
+            
+            const formatted = cleanRutFormat(enrollForm.rut);
+            const rawSearch = normalizeRut(formatted);
+            setEnrollForm(prev => ({ ...prev, rut: formatted }));
+            
+            const masterUser = users.find(u => normalizeRut(u.rut) === rawSearch);
+            if (masterUser) {
+                handleSelectSuggestion(masterUser);
+            }
+        }, 200);
+    };
 
-    const handleRutBlur = () => { setTimeout(() => { if (!enrollForm.rut) return; const formatted = cleanRutFormat(enrollForm.rut); setEnrollForm(prev => ({...prev, rut: formatted})); const existing = getUser(formatted); if (existing) setEnrollMsg({ type: 'success', text: 'Datos cargados desde Base Maestra.' }); }, 200); };
+    // --- Definición de handleOpenEnrollModal y handleEditExpediente ---
+    const handleOpenEnrollModal = () => {
+        setIsEditingExpediente(false);
+        setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE, responsible: '', competencyCodes: [] });
+        setEnrollMsg(null);
+        setShowEnrollModal(true);
+    };
+
+    const handleEditExpediente = (enrollmentId?: string) => {
+        const idToUse = enrollmentId || selectedEnrollmentId;
+        if (!idToUse) return;
+        const enrollment = enrollments.find(e => e.id === idToUse);
+        if (!enrollment) {
+            alert("No se encontró la matrícula.");
+            return;
+        }
+
+        // Buscar el usuario en la lista global de usuarios
+        const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enrollment.rut));
+        
+        // Cargamos los datos en el formulario de inscripción (el modal que se abrirá)
+        setEnrollForm({
+            rut: enrollment.rut,
+            names: student?.names || '',
+            paternalSurname: student?.paternalSurname || '',
+            maternalSurname: student?.maternalSurname || '',
+            email: student?.email || '',
+            phone: student?.phone || '',
+            academicRole: student?.academicRole || '',
+            faculty: student?.faculty || '',
+            department: student?.department || '',
+            career: student?.career || '',
+            contractType: student?.contractType || '',
+            teachingSemester: student?.teachingSemester || '',
+            campus: student?.campus || '',
+            systemRole: student?.systemRole || UserRole.ESTUDIANTE,
+            responsible: enrollment.responsible || '',
+            competencyCodes: enrollment.competencyCodes || [] // NUEVO
+        });
+        
+        setIsEditingExpediente(true);
+        setEnrollMsg(null);
+        setShowEnrollModal(true);
+    };
+
+    const handleToggleEnrollCompetence = (code: string) => {
+        setEnrollForm(prev => ({
+            ...prev,
+            competencyCodes: prev.competencyCodes.includes(code)
+                ? prev.competencyCodes.filter(c => c !== code)
+                : [...prev.competencyCodes, code]
+        }));
+    };
 
     const handleEnrollSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -310,22 +382,22 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         const cleanRut = cleanRutFormat(enrollForm.rut);
         const normRut = normalizeRut(cleanRut);
 
-        const existingEnrollment = advisoryEnrollments.find(e => normalizeRut(e.rut) === normRut);
-        if (existingEnrollment) {
-            setEnrollMsg({ 
-                type: 'duplicate', 
-                text: 'Este docente ya cuenta con un expediente de asesoría activo.',
-                existingId: existingEnrollment.id 
-            });
-            setIsProcessing(false);
-            return;
-        }
+        if (!isEditingExpediente) {
+            const existingEnrollment = advisoryEnrollments.find(e => normalizeRut(e.rut) === normRut);
+            if (existingEnrollment) {
+                setEnrollMsg({ 
+                    type: 'duplicate', 
+                    text: 'Este docente ya cuenta con un expediente de asesoría activo.',
+                    existingId: existingEnrollment.id 
+                });
+                setIsProcessing(false);
+                return;
+            }
 
-        try {
-            await upsertUsers([{ ...enrollForm, rut: cleanRut, systemRole: enrollForm.systemRole as UserRole }]);
-            await enrollUser(cleanRut, ADVISORY_ACTIVITY_ID);
-            
-            if (currentUser) {
+            try {
+                await upsertUsers([{ ...enrollForm, rut: cleanRut, systemRole: enrollForm.systemRole as UserRole }]);
+                await enrollUser(cleanRut, ADVISORY_ACTIVITY_ID);
+                
                 const { data: enrData } = await supabase
                     .from('enrollments')
                     .select('id')
@@ -335,16 +407,45 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                 
                 if (enrData) {
                     await updateEnrollment(enrData.id, { 
-                        responsible: enrollForm.responsible || `${currentUser.names} ${currentUser.paternalSurname}` 
+                        responsible: enrollForm.responsible || (currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : ''),
+                        competencyCodes: enrollForm.competencyCodes // NUEVO
                     });
                 }
+
+                await executeReload(); 
+                setEnrollMsg({ type: 'success', text: 'Expediente creado correctamente.' });
+                setTimeout(() => { setShowEnrollModal(false); setIsProcessing(false); }, 1500);
+            } catch (err: any) { setEnrollMsg({ type: 'error', text: `Error: ${err.message || 'No se pudo guardar'}` }); setIsProcessing(false); }
+        } else {
+            try {
+                // 1. Actualizar Datos del Usuario en Base Maestra
+                await upsertUsers([{ 
+                    ...enrollForm, 
+                    rut: cleanRut, 
+                    systemRole: enrollForm.systemRole as UserRole 
+                }]);
+                
+                // 2. Actualizar Metadatos de la Matrícula (Responsable y Competencias)
+                const idToUpdate = selectedEnrollmentId || advisoryEnrollments.find(e => normalizeRut(e.rut) === normRut)?.id;
+                if (idToUpdate) {
+                    await updateEnrollment(idToUpdate, { 
+                        responsible: enrollForm.responsible,
+                        competencyCodes: enrollForm.competencyCodes // NUEVO
+                    });
+                }
+                
+                await executeReload();
+                setEnrollMsg({ type: 'success', text: 'Expediente actualizado correctamente.' });
+                setTimeout(() => { 
+                    setShowEnrollModal(false); 
+                    setIsProcessing(false); 
+                    setIsEditingExpediente(false); 
+                }, 1500);
+            } catch (err: any) { 
+                setEnrollMsg({ type: 'error', text: `Error al actualizar: ${err.message}` }); 
+                setIsProcessing(false); 
             }
-
-            await executeReload(); 
-
-            setEnrollMsg({ type: 'success', text: 'Expediente creado correctamente.' });
-            setTimeout(() => { setShowEnrollModal(false); setIsProcessing(false); }, 1500);
-        } catch (err: any) { setEnrollMsg({ type: 'error', text: `Error: ${err.message || 'No se pudo guardar'}` }); setIsProcessing(false); }
+        }
     };
 
     const handleManageStudent = (enrollmentId: string) => { 
@@ -470,7 +571,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         if (!enrollment) return;
         const updatedLogs = (enrollment.sessionLogs || []).map((log, i) => {
             const isTarget = (editingLogId && log.id === editingLogId) || (editingLogIndex !== null && i === editingLogIndex);
-            if (isTarget) return { ...log, id: log.id || `SES-LEGACY-${Date.now()}`, date: sessionForm.date, duration: sessionForm.duration, observation: sessionForm.observation, location: log.location, modality: log.modality, tags: sessionForm.tags, advisorName: sessionForm.advisorName };
+            if (isTarget) return { ...log, id: log.id || `SES-LEGACY-${Date.now()}`, date: sessionForm.date, duration: sessionForm.duration, observation: sessionForm.observation, location: sessionForm.location, modality: sessionForm.modality, tags: sessionForm.tags, advisorName: sessionForm.advisorName };
             return log;
         });
         await updateEnrollment(selectedEnrollmentId, { sessionLogs: updatedLogs });
@@ -540,7 +641,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     // --- RENDER ---
     if (view === 'manage' && selectedEnrollmentId) {
         const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
-        const student = users.find(u => u.rut === enrollment?.rut);
+        const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enrollment?.rut || ''));
         const logs = realtimeLogs || enrollment?.sessionLogs || [];
         const studentTotalHours = (logs.reduce((acc, log) => acc + (log.duration || 0), 0) / 60).toFixed(1);
 
@@ -554,6 +655,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                             <span className="text-[10px] font-bold uppercase text-slate-500">{isSyncing ? 'Sincronizando...' : 'En Línea'}</span>
                         </div>
                         <button onClick={handleManualRefresh} className="flex items-center gap-2 bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-100 border border-indigo-200">Actualizar</button>
+                        {/* BOTÓN REMOVIDO DE AQUÍ Y MOVIDO A LA TABLA PRINCIPAL */}
                     </div>
                 </div>
 
@@ -569,12 +671,12 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                 <div className="space-y-6">
                                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                         <div className="flex items-center gap-4 mb-4">
-                                            <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-bold text-xl">{student?.names.charAt(0)}</div>
-                                            <div><h2 className="text-lg font-bold text-slate-800 leading-tight">{student?.names} {student?.paternalSurname}</h2><p className="text-xs text-slate-500 font-mono">{student?.rut}</p></div>
+                                            <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-bold text-xl">{student?.names.charAt(0) || '?'}</div>
+                                            <div><h2 className="text-lg font-bold text-slate-800 leading-tight">{student?.names || 'Docente'} {student?.paternalSurname || ''}</h2><p className="text-xs text-slate-500 font-mono">{student?.rut || enrollment?.rut}</p></div>
                                         </div>
                                         <div className="space-y-3 text-sm border-t border-slate-100 pt-4">
-                                            <div><span className="block text-xs font-bold text-slate-400 uppercase">Correo</span><span className="text-slate-700">{student?.email}</span></div>
-                                            <div><span className="block text-xs font-bold text-slate-400 uppercase">Unidad Académica</span><span className="text-slate-700">{student?.faculty}</span><span className="block text-xs text-slate-500">{student?.department}</span></div>
+                                            <div><span className="block text-xs font-bold text-slate-400 uppercase">Correo</span><span className="text-slate-700">{student?.email || '-'}</span></div>
+                                            <div><span className="block text-xs font-bold text-slate-400 uppercase">Unidad Académica</span><span className="text-slate-700">{student?.faculty || 'Sin Facultad'}</span><span className="block text-xs text-slate-500">{student?.department}</span></div>
                                         </div>
                                     </div>
                                     <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-6 text-center">
@@ -731,7 +833,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                 </div>
                 {showVerificationModal && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
-                        <div className="bg-white rounded-xl shadow-2xl p-6 relative w-full max-w-md text-center">
+                        <div className="bg-white rounded-xl shadow-2xl p-6 relative w-full max-md text-center">
                             <button onClick={() => setShowVerificationModal(null)} className="absolute top-4 right-4 text-slate-400 font-bold">✕</button>
                             <h2 className="text-xl font-bold text-slate-800 mb-4">Código de Verificación</h2>
                             <div className="bg-slate-100 p-4 rounded-lg font-mono text-lg font-bold text-slate-700 tracking-wider mb-4">{showVerificationModal.verificationCode}</div>
@@ -785,29 +887,29 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                 <table className="w-full text-sm text-left">
                     <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                         <tr>
-                            <th className="px-6 py-4">Docente Asesorado</th>
-                            <th className="px-6 py-4">Unidad Académica</th>
-                            <th className="px-6 py-4">Asesor Responsable</th>
-                            <th className="px-6 py-4 text-center">Sesiones</th>
-                            <th className="px-6 py-4 text-center">Última Atención</th>
-                            <th className="px-6 py-4 text-center">Acción</th>
+                            <th className="px-4 py-4 w-1/4">Docente Asesorado</th>
+                            <th className="px-4 py-4 w-1/4">Unidad Académica</th>
+                            <th className="px-4 py-4 w-1/6">Asesor</th>
+                            <th className="px-4 py-4 text-center w-12">Ses.</th>
+                            <th className="px-4 py-4 text-center w-28">Últ. At.</th>
+                            <th className="px-4 py-4 text-center w-36">Acciones</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {advisoryEnrollments.map(enr => {
-                            const user = users.find(u => u.rut === enr.rut);
+                            const user = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut));
                             const lastSession = enr.sessionLogs && enr.sessionLogs.length > 0 ? formatDateCL(enr.sessionLogs[enr.sessionLogs.length - 1].date) : '-';
                             const sessionCount = enr.sessionLogs?.length || 0;
                             const advisorDisplay = enr.responsible || (enr.sessionLogs && enr.sessionLogs.length > 0 ? enr.sessionLogs[0].advisorName : 'Sin Asignar');
 
                             return (
                                 <tr key={enr.id} className="hover:bg-indigo-50/20 transition-colors">
-                                    <td className="px-6 py-4"><div className="font-bold text-slate-800">{user?.names} {user?.paternalSurname}</div><div className="text-xs text-slate-500 font-mono">{enr.rut}</div></td>
-                                    <td className="px-6 py-4 text-xs text-slate-600"><div className="font-bold">{user?.faculty || 'Sin Facultad'}</div><div>{user?.department}</div></td>
-                                    <td className="px-6 py-4 text-xs font-bold text-indigo-700">{advisorDisplay}</td>
-                                    <td className="px-6 py-4 text-center"><span className={`px-3 py-1 rounded-full text-xs font-bold ${sessionCount > 0 ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>{sessionCount}</span></td>
-                                    <td className="px-6 py-4 text-center text-slate-600 font-mono text-xs">{lastSession}</td>
-                                    <td className="px-6 py-4 text-center"><div className="flex items-center justify-center gap-2"><button onClick={() => handleManageStudent(enr.id)} className="text-indigo-600 hover:text-white hover:bg-indigo-600 border border-indigo-200 bg-indigo-50 font-bold px-3 py-1.5 rounded-lg text-xs transition-colors">Gestionar Bitácora</button><button onClick={() => handleDeleteBitacora(enr.id, `${user?.names} ${user?.paternalSurname}`)} className="text-red-500 hover:text-white hover:bg-red-500 border border-red-200 bg-red-50 font-bold px-3 py-1.5 rounded-lg text-xs transition-colors" title="Eliminar Expediente Completo"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button></div></td>
+                                    <td className="px-4 py-4"><div className="font-bold text-slate-800 truncate max-w-[200px]">{user?.names} {user?.paternalSurname}</div><div className="text-xs text-slate-500 font-mono">{enr.rut}</div></td>
+                                    <td className="px-4 py-4 text-xs text-slate-600"><div className="font-bold truncate max-w-[180px]">{user?.faculty || 'Sin Facultad'}</div><div className="truncate max-w-[180px]">{user?.department}</div></td>
+                                    <td className="px-4 py-4 text-xs font-bold text-indigo-700 truncate max-w-[120px]">{advisorDisplay}</td>
+                                    <td className="px-4 py-4 text-center"><span className={`px-2 py-0.5 rounded-full text-xs font-bold ${sessionCount > 0 ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>{sessionCount}</span></td>
+                                    <td className="px-4 py-4 text-center text-slate-600 font-mono text-xs">{lastSession}</td>
+                                    <td className="px-4 py-4 text-center"><div className="flex items-center justify-center gap-1.5"><button onClick={() => handleManageStudent(enr.id)} className="text-indigo-600 hover:text-white hover:bg-indigo-600 border border-indigo-200 bg-indigo-50 font-bold px-2.5 py-1.5 rounded-lg text-xs transition-colors">Gestionar</button><button onClick={() => handleEditExpediente(enr.id)} className="text-amber-500 hover:text-white hover:bg-amber-500 border border-amber-200 bg-amber-50 p-1.5 rounded-lg transition-colors" title="Modificar Expediente"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button><button onClick={() => handleDeleteBitacora(enr.id, `${user?.names || enr.rut} ${user?.paternalSurname || ''}`)} className="text-red-500 hover:text-white hover:bg-red-500 border border-red-200 bg-red-50 p-1.5 rounded-lg transition-colors" title="Eliminar Expediente Completo"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button></div></td>
                                 </tr>
                             );
                         })}
@@ -816,7 +918,61 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                 </table>
             </div>
             
-            {showEnrollModal && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn"><div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-slate-200"><div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 sticky top-0 z-10"><h3 className="text-lg font-bold text-slate-800">Apertura de Expediente (Ficha Base) - {selectedYear}</h3><button onClick={() => setShowEnrollModal(false)} className="text-slate-400 hover:text-slate-600 text-2xl font-bold">×</button></div><form onSubmit={handleEnrollSubmit} className="p-8 space-y-6"> <div className="space-y-4"><h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wide border-b border-indigo-100 pb-1">1. Identificación del Docente</h4><div className="grid grid-cols-1 md:grid-cols-4 gap-4"><div className="md:col-span-1 relative"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" value={enrollForm.rut} onChange={handleEnrollChange} onBlur={handleRutBlur} placeholder="12345678-9" autoComplete="off" className="w-full px-3 py-2 border border-slate-300 rounded font-bold text-sm focus:ring-2 focus:ring-indigo-500"/>{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div><div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" required value={enrollForm.names} onChange={e => setEnrollForm({...enrollForm, names: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div><div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label><input type="text" required value={enrollForm.paternalSurname} onChange={e => setEnrollForm({...enrollForm, paternalSurname: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div><div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" value={enrollForm.maternalSurname} onChange={e => setEnrollForm({...enrollForm, maternalSurname: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-medium text-slate-700 mb-1">Email</label><input type="email" value={enrollForm.email} onChange={e => setEnrollForm({...enrollForm, email: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div><div><label className="block text-xs font-medium text-slate-700 mb-1">Teléfono</label><input type="tel" value={enrollForm.phone} onChange={e => setEnrollForm({...enrollForm, phone: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div></div></div> <div className="space-y-4"><h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wide border-b border-indigo-100 pb-1">2. Antecedentes Institucionales</h4><div className="grid grid-cols-1 md:grid-cols-4 gap-4"><SmartSelect label="Sede / Campus" name="campus" value={enrollForm.campus} options={config.campuses || ["Valparaíso"]} onChange={(e) => setEnrollForm({...enrollForm, campus: e.target.value})} /><SmartSelect label="Facultad" name="faculty" value={enrollForm.faculty} options={listFaculties} onChange={(e) => setEnrollForm({...enrollForm, faculty: e.target.value})} /><SmartSelect label="Departamento" name="department" value={enrollForm.department} options={listDepts} onChange={(e) => setEnrollForm({...enrollForm, department: e.target.value})} /><SmartSelect label="Carrera" name="career" value={enrollForm.career} options={listCareers} onChange={(e) => setEnrollForm({...enrollForm, career: e.target.value})} /><SmartSelect label="Tipo Contrato" name="contractType" value={enrollForm.contractType} options={listContracts} onChange={(e) => setEnrollForm({...enrollForm, contractType: e.target.value})} /><SmartSelect label="Rol Académico" name="academicRole" value={enrollForm.academicRole} options={listRoles} onChange={(e) => setEnrollForm({...enrollForm, academicRole: e.target.value})} /><div className="md:col-span-2"><label className="block text-xs font-medium text-slate-700 mb-1">Asesor Responsable</label><select name="responsible" value={enrollForm.responsible} onChange={handleEnrollChange} className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-indigo-500"><option value="">Seleccione Asesor...</option>{advisorsList.map(adv => (<option key={adv.rut} value={`${adv.names} ${adv.paternalSurname}`}>{adv.names} {adv.paternalSurname}</option>))}</select></div></div></div> <div className="flex justify-end gap-3 pt-6 border-t border-slate-100 items-center"><button type="button" onClick={() => setShowEnrollModal(false)} className="px-4 py-2 text-slate-500 hover:text-slate-700 font-bold">Cancelar</button><button type="submit" disabled={isProcessing} className={`bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-md flex items-center gap-2 ${isProcessing ? 'opacity-70 cursor-wait' : ''}`}>{isProcessing && (<svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>)} Crear Expediente</button></div> {enrollMsg && (<div className={`mt-4 p-4 rounded-xl text-sm font-bold animate-fadeIn flex flex-col items-center gap-3 ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}><p className="text-center">{enrollMsg.text}</p>{enrollMsg.type === 'duplicate' && enrollMsg.existingId && (<button type="button" onClick={() => handleManageStudent(enrollMsg.existingId!)} className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-black uppercase text-xs shadow-lg transition-all transform active:scale-95 flex items-center gap-2 animate-bounce"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>Ir al Expediente Existente</button>)}</div>)} </form></div></div>)}
+            {showEnrollModal && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn"><div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-slate-200"><div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 sticky top-0 z-10"><h3 className="text-lg font-bold text-slate-800">{isEditingExpediente ? 'Modificar Expediente' : `Apertura de Expediente (Ficha Base) - ${selectedYear}`}</h3><button onClick={() => setShowEnrollModal(false)} className="text-slate-400 hover:text-slate-600 text-2xl font-bold">×</button></div><form onSubmit={handleEnrollSubmit} className="p-8 space-y-6"> <div className="space-y-4"><h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wide border-b border-indigo-100 pb-1">1. Identificación del Docente</h4><div className="grid grid-cols-1 md:grid-cols-4 gap-4"><div className="md:col-span-1 relative"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" value={enrollForm.rut} onChange={handleEnrollChange} onBlur={handleRutBlur} placeholder="12345678-9" autoComplete="off" disabled={isEditingExpediente} className="w-full px-3 py-2 border border-slate-300 rounded font-bold text-sm focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-500"/>{showSuggestions && !isEditingExpediente && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div><div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" required value={enrollForm.names} onChange={e => setEnrollForm({...enrollForm, names: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div><div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label><input type="text" required value={enrollForm.paternalSurname} onChange={e => setEnrollForm({...enrollForm, paternalSurname: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div><div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" value={enrollForm.maternalSurname} onChange={e => setEnrollForm({...enrollForm, maternalSurname: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-medium text-slate-700 mb-1">Email</label><input type="email" value={enrollForm.email} onChange={e => setEnrollForm({...enrollForm, email: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div><div><label className="block text-xs font-medium text-slate-700 mb-1">Teléfono</label><input type="tel" value={enrollForm.phone} onChange={e => setEnrollForm({...enrollForm, phone: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div></div></div> <div className="space-y-4"><h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wide border-b border-indigo-100 pb-1">2. Antecedentes Institucionales</h4><div className="grid grid-cols-1 md:grid-cols-4 gap-4"><SmartSelect label="Sede / Campus" name="campus" value={enrollForm.campus} options={config.campuses || ["Valparaíso"]} onChange={(e) => setEnrollForm({...enrollForm, campus: e.target.value})} /><SmartSelect label="Facultad" name="faculty" value={enrollForm.faculty} options={listFaculties} onChange={(e) => setEnrollForm({...enrollForm, faculty: e.target.value})} /><SmartSelect label="Departamento" name="department" value={enrollForm.department} options={listDepts} onChange={(e) => setEnrollForm({...enrollForm, department: e.target.value})} /><SmartSelect label="Carrera" name="career" value={enrollForm.career} options={listCareers} onChange={(e) => setEnrollForm({...enrollForm, career: e.target.value})} /><SmartSelect label="Tipo Contrato" name="contractType" value={enrollForm.contractType} options={listContracts} onChange={(e) => setEnrollForm({...enrollForm, contractType: e.target.value})} /><SmartSelect label="Rol Académico" name="academicRole" value={enrollForm.academicRole} options={listRoles} onChange={(e) => setEnrollForm({...enrollForm, academicRole: e.target.value})} /><div className="md:col-span-2"><label className="block text-xs font-medium text-slate-700 mb-1">Asesor Responsable</label><select name="responsible" value={enrollForm.responsible} onChange={handleEnrollChange} className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-indigo-500"><option value="">Seleccione Asesor...</option>{advisorsList.map(adv => (<option key={adv.rut} value={`${adv.names} ${adv.paternalSurname}`}>{adv.names} {adv.paternalSurname}</option>))}</select></div></div></div> 
+
+{/* SECCIÓN 3: TAXONOMÍA DE COMPETENCIAS UPLA (REPLICADO DE CURSOS) */}
+<div className="space-y-6 pt-6 border-t-2 border-slate-50">
+    <div>
+        <h3 className="text-lg font-black text-[#647FBC] uppercase tracking-tight">3. TAXONOMÍA DE COMPETENCIAS UPLA</h3>
+        <p className="text-xs text-slate-400">Vincule el acompañamiento con el Plan Estratégico y de Mejora Institucional.</p>
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+        {/* BLOQUE PEI */}
+        <div className="space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+                <span className="w-2 h-2 rounded-full bg-indigo-400"></span>
+                <h4 className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Plan Estratégico (PEI)</h4>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {PEI_COMPETENCIES.map(c => (
+                    <button
+                        key={c.code}
+                        type="button"
+                        onClick={() => handleToggleEnrollCompetence(c.code)}
+                        title={c.name}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${enrollForm.competencyCodes.includes(c.code) ? 'bg-indigo-100 border-indigo-300 text-indigo-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-200 hover:text-indigo-400'}`}
+                    >
+                        {c.code}
+                    </button>
+                ))}
+            </div>
+        </div>
+
+        {/* BLOQUE PMI */}
+        <div className="space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Plan de Mejora (PMI)</h4>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {PMI_COMPETENCIES.map(c => (
+                    <button
+                        key={c.code}
+                        type="button"
+                        onClick={() => handleToggleEnrollCompetence(c.code)}
+                        title={c.name}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${enrollForm.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200 hover:text-emerald-400'}`}
+                    >
+                        {c.code}
+                    </button>
+                ))}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div className="flex justify-end gap-3 pt-6 border-t border-slate-100 items-center"><button type="button" onClick={() => setShowEnrollModal(false)} className="px-4 py-2 text-slate-500 hover:text-slate-700 font-bold">Cancelar</button><button type="submit" disabled={isProcessing} className={`bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-md flex items-center gap-2 ${isProcessing ? 'opacity-70 cursor-wait' : ''}`}>{isProcessing && (<svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>)} {isEditingExpediente ? 'Actualizar Expediente' : 'Crear Expediente'}</button></div> {enrollMsg && (<div className={`mt-4 p-4 rounded-xl text-sm font-bold animate-fadeIn flex flex-col items-center gap-3 ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}><p className="text-center">{enrollMsg.text}</p>{enrollMsg.type === 'duplicate' && enrollMsg.existingId && (<button type="button" onClick={() => handleManageStudent(enrollMsg.existingId!)} className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-black uppercase text-xs shadow-lg transition-all transform active:scale-95 flex items-center gap-2 animate-bounce"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>Ir al Expediente Existente</button>)}</div>)} </form></div></div>)}
         </div>
     );
 };

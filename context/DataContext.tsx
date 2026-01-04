@@ -85,7 +85,7 @@ const mapActivityFromDB = (a: any): Activity => ({
     evaluationLink: a.evaluation_link, 
     isPublic: a.is_public,
     programConfig: a.program_config,
-    competencyCodes: a.competency_codes || [] // Se agrega mapeo del campo de base de datos
+    competencyCodes: a.competency_codes || []
 });
 
 const mapEnrollmentFromDB = (e: any): Enrollment => ({
@@ -105,7 +105,9 @@ const mapEnrollmentFromDB = (e: any): Enrollment => ({
     observation: e.observation,
     situation: e.situation,
     sessionLogs: e.session_logs,
-    certificateCode: e.certificate_code 
+    certificateCode: e.certificate_code,
+    responsible: e.responsible,
+    competencyCodes: e.competency_codes || [] // MAPEADO PARA ASESORIAS
 });
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -183,7 +185,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         evaluation_link: activity.evaluationLink, 
         is_public: activity.isPublic,
         program_config: activity.programConfig || null,
-        competency_codes: activity.competencyCodes || [] // Se agrega persistencia del campo
+        competency_codes: activity.competencyCodes || []
     });
     if (error) throw error;
   };
@@ -269,6 +271,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (updates.situation) dbUpdates.situation = updates.situation;
       if (updates.sessionLogs) dbUpdates.session_logs = updates.sessionLogs;
       if (updates.certificateCode) dbUpdates.certificate_code = updates.certificateCode;
+      if (updates.responsible !== undefined) dbUpdates.responsible = updates.responsible;
+      if (updates.competencyCodes) dbUpdates.competency_codes = updates.competencyCodes; // ACTUALIZACIÓN COMPETENCIAS
       if (updates.attendanceSession1 !== undefined) dbUpdates.attendance_session_1 = updates.attendanceSession1;
       if (updates.attendanceSession2 !== undefined) dbUpdates.attendance_session_2 = updates.attendanceSession2;
       if (updates.attendanceSession3 !== undefined) dbUpdates.attendance_session_3 = updates.attendanceSession3;

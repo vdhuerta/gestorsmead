@@ -148,6 +148,7 @@ export interface Enrollment {
   diagnosticResult?: string;
   sessionLogs?: SessionLog[]; // Nuevo: Historial de Asesorías (JSONB)
   certificateCode?: string; // Nuevo: Código único de certificado
+  competencyCodes?: string[]; // NUEVO: Competencias asociadas al expediente
 }
 
 // For Visualization
