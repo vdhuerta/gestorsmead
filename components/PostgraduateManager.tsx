@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole, ProgramModule, ProgramConfig } from '../types';
@@ -190,7 +189,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   };
 
   const handleRemoveClassDate = (moduleId: string, date: string) => {
-      // FIX: Error on line 193. Changed 'i.id' to 'm.id' because 'i' was not defined in the map function scope.
       setProgramConfig(prev => ({ ...prev, modules: prev.modules.map(m => m.id === moduleId ? { ...m, classDates: (m.classDates || []).filter(d => d !== date) } : m) }));
   };
 
@@ -209,7 +207,6 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
     try {
         const reader = new FileReader();
         reader.onload = async (e) => {
-            // Simulamos la extracción de texto si es PDF, o usamos el contenido si es texto
             const simulatedText = syllabusFile.type.includes('pdf') 
                 ? `Análisis de programa de postítulo: ${syllabusFile.name}. Contenido pedagógico simulado para sugerir competencias UPLA.`
                 : e.target?.result as string;
@@ -1215,7 +1212,122 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
               </div>
             </div>
 
-            {/* MODAL DE CONEXIÓN CON IA REVISIÓN SUGERENCIAS */}
+            {/* MODAL DE REVISIÓN DE SUGERENCIAS IA */}
             {showAiReview && (
                 <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-                    <div className="bg-white rounded-3xl shadow-2xl w
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-indigo-200 flex flex-col overflow-hidden">
+                        <div className="p-6 bg-indigo-600 text-white flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                <div>
+                                    <h3 className="text-xl font-bold">Revisión de Sugerencias Curriculares</h3>
+                                    <p className="text-xs text-indigo-100 uppercase tracking-widest font-bold">Análisis con Inteligencia Artificial</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowAiReview(false)} className="text-indigo-200 hover:text-white text-3xl font-light">&times;</button>
+                        </div>
+                        
+                        <div className="p-8 space-y-6 flex-1 overflow-y-auto custom-scrollbar max-h-[60vh]">
+                            <p className="text-slate-600 text-sm italic">
+                                Basado en los objetivos y contenidos detectados en el programa <strong>"{syllabusFile?.name}"</strong>, la IA sugiere que este programa de postítulo tributa a las siguientes competencias:
+                            </p>
+                            
+                            <div className="space-y-4">
+                                {aiSuggestions.map((suggestion, idx) => (
+                                    <div key={idx} className={`p-4 rounded-2xl border flex gap-4 ${suggestion.code.startsWith('PEI') ? 'bg-indigo-50 border-indigo-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <div className={`w-14 h-14 flex-shrink-0 rounded-xl flex items-center justify-center font-black text-sm border-2 ${suggestion.code.startsWith('PEI') ? 'bg-white text-indigo-700 border-indigo-200' : 'bg-white text-emerald-700 border-emerald-200'}`}>
+                                            {suggestion.code}
+                                        </div>
+                                        <div className="flex-1">
+                                            <h4 className={`font-bold text-sm uppercase ${suggestion.code.startsWith('PEI') ? 'text-indigo-800' : 'text-emerald-800'}`}>
+                                                {PEI_COMPETENCIES.find(c => c.code === suggestion.code)?.name || PMI_COMPETENCIES.find(c => c.code === suggestion.code)?.name || 'Competencia Institucional'}
+                                            </h4>
+                                            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                                <span className="font-bold text-slate-700">Intencionalidad:</span> "{suggestion.reason}"
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="p-6 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
+                            <button 
+                                onClick={() => setShowAiReview(false)}
+                                className="px-6 py-2.5 text-slate-500 font-bold hover:text-slate-800 transition-colors"
+                            >
+                                Descartar
+                            </button>
+                            <button 
+                                onClick={applyAiSuggestions}
+                                className="px-8 py-2.5 bg-indigo-600 text-white font-black uppercase text-xs tracking-widest rounded-xl shadow-lg hover:bg-indigo-700 transition-all active:scale-95 flex items-center gap-2"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                Aplicar Taxonomía
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL CONFIRMACION SALIDA */}
+            {showExitModal && (
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
+                    <div className="bg-white rounded-[2rem] shadow-2xl max-w-md w-full p-10 text-center border border-rose-100">
+                        <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner">
+                            <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                        </div>
+                        <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-2">Cambios sin Guardar</h3>
+                        <p className="text-slate-500 text-sm leading-relaxed mb-8">
+                            Tienes calificaciones pendientes de sincronizar en el módulo actual. Si sales ahora, perderás estos cambios.
+                        </p>
+                        <div className="flex flex-col gap-3">
+                            <button 
+                                onClick={() => setShowExitModal(false)}
+                                className="w-full py-4 bg-slate-800 hover:bg-black text-white rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-lg transition-all transform active:scale-95"
+                            >
+                                Seguir Editando
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    setPendingGrades({});
+                                    setShowExitModal(false);
+                                    if (typeof targetNav === 'string') {
+                                        window.dispatchEvent(new CustomEvent('force-nav', { detail: targetNav }));
+                                    } else if (typeof targetNav === 'function') {
+                                        targetNav();
+                                    }
+                                }}
+                                className="w-full py-3 text-rose-500 font-bold uppercase tracking-widest text-[10px] hover:underline"
+                            >
+                                Salir de todos modos
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+          </div>
+      );
+  }
+
+  return (
+    <div className="animate-fadeIn p-6">
+        <h2 className="text-2xl font-bold mb-4 text-slate-800">Listado de Programas</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {postgraduateActivities.map(act => (
+                <div key={act.id} className="bg-white p-6 rounded-xl shadow border border-slate-200 hover:border-purple-500 transition-all cursor-pointer group" onClick={() => { setSelectedCourseId(act.id); setView('details'); }}>
+                    <div className="flex justify-between items-start mb-4">
+                        <span className="px-2 py-1 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-100 uppercase">{act.programConfig?.programType || 'Postítulo'}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">{act.internalCode}</span>
+                    </div>
+                    <h3 className="font-bold text-lg text-slate-800 group-hover:text-purple-700 transition-colors leading-tight mb-2">{act.name}</h3>
+                    <p className="text-xs text-slate-500 flex items-center gap-2">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                        {act.relator || 'Sin Director'}
+                    </p>
+                </div>
+            ))}
+        </div>
+    </div>
+  );
+};
