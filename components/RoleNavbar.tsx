@@ -1,10 +1,10 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { UserRole, User, ActivityState } from '../types';
 import { useData } from '../context/DataContext';
 // @ts-ignore
 import { utils, writeFile } from 'xlsx';
 
-export type TabType = 'dashboard' | 'erd' | 'json' | 'arch' | 'config' | 'courses' | 'generalActivities' | 'postgraduate' | 'advisory' | 'participants' | 'advisors' | 'reports' | 'dbCleaner';
+export type TabType = 'dashboard' | 'erd' | 'json' | 'arch' | 'config' | 'courses' | 'generalActivities' | 'postgraduate' | 'advisory' | 'participants' | 'advisors' | 'reports' | 'dbCleaner' | 'tms';
 
 interface NavItem {
   id: TabType;
@@ -21,6 +21,17 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'generalActivities', label: 'Gestión Actividades', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] }, 
   { id: 'postgraduate', label: 'Postítulos', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] }, 
   { id: 'advisory', label: 'Asesorías', allowedRoles: [UserRole.ADMIN, UserRole.ASESOR] }, 
+  { 
+    id: 'tms', 
+    label: 'TMS', 
+    allowedRoles: [UserRole.ADMIN, UserRole.ASESOR],
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <title>Sistema de Gestión del Talento (TMS)</title>
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+      </svg>
+    )
+  },
   { 
     id: 'dbCleaner', 
     label: 'Base de Datos', 
@@ -55,31 +66,8 @@ const NAV_ITEMS: NavItem[] = [
       </svg>
     )
   },
-  { 
-    id: 'erd', 
-    label: 'Modelo ER', 
-    allowedRoles: [], 
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <title>Modelo Entidad-Relación</title>
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-      </svg>
-    )
-  }, 
-  { 
-    id: 'arch', 
-    label: 'Arquitectura', 
-    allowedRoles: [], 
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <title>Arquitectura Técnica</title>
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-      </svg>
-    )
-  }, 
 ];
 
-// --- COMPONENTE DE DESCARGA DE PLANTILLAS (ASESOR) ---
 const TemplateDownloadDropdown: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -291,6 +279,7 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
                 <div className="absolute top-12 right-0 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden animate-fadeInUp">
                     <div className="bg-[#647FBC] px-4 py-4 flex justify-between items-center text-white">
                         <div>
+                            {/* Fixed syntax error in h3 tag by properly closing className and added title text */}
                             <h3 className="font-bold text-sm">Centro de Notificaciones</h3>
                             <p className="text-[10px] opacity-80 uppercase font-bold tracking-widest">Resumen de Gestión Hoy</p>
                         </div>
@@ -348,7 +337,6 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
 export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabChange, onLogout, unreadMessagesRuts = [] }) => {
   const availableTabs = useMemo(() => {
     return NAV_ITEMS.filter(item => item.allowedRoles.includes(user.systemRole)).map(item => {
-      // REQUERIMIENTO: Nombre Dashboard en lugar de Inicio para Estudiante
       if (item.id === 'dashboard' && user.systemRole === UserRole.ESTUDIANTE) {
         return { ...item, label: 'Dashboard' };
       }
@@ -399,12 +387,10 @@ export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabCh
 
           <div className="flex items-center gap-4">
             
-            {/* HERRAMIENTA DE PLANTILLAS (SOLO ASESORES) */}
             {user.systemRole === UserRole.ASESOR && (
                 <TemplateDownloadDropdown />
             )}
 
-            {/* NOTIFICACIONES (SOLO ASESORES) */}
             {user.systemRole === UserRole.ASESOR && (
                 <NotificationDropdown unreadMessagesRuts={unreadMessagesRuts} />
             )}

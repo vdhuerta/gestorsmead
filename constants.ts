@@ -227,6 +227,7 @@ export const SCHEMA_TABLES: SchemaTable[] = [
       { name: 'session_logs', type: 'JSONB', description: 'Historial de Sesiones de Asesoría' },
       { name: 'certificate_code', type: 'VARCHAR(50)', description: 'Código único para validación de certificados' },
       { name: 'situation', type: 'TEXT', description: 'Estado actual del alumno (ACTIVO/INACTIVO)' },
+      { name: 'responsible', type: 'TEXT', description: 'Asesor responsable de la bitácora/expediente' },
     ]
   }
 ];
@@ -409,6 +410,10 @@ ADD COLUMN IF NOT EXISTS certificate_code text;
 -- NUEVO: Columna Situación para Postítulos
 ALTER TABLE public.enrollments 
 ADD COLUMN IF NOT EXISTS situation text DEFAULT 'ACTIVO';
+
+-- NUEVO: Columna Responsable para Asesorías
+ALTER TABLE public.enrollments 
+ADD COLUMN IF NOT EXISTS responsible text;
 
 -- 2. CORREGIR PERMISOS (RLS - Row Level Security)
 -- Esto es lo que causa que los datos no se guarden.

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { User, UserRole } from './types';
 import { LoginSimulator } from './components/LoginSimulator';
@@ -20,23 +19,22 @@ import { AdvisoryManager, PublicVerification } from './components/AdvisoryManage
 import { StudentSignature } from './components/StudentSignature'; 
 import { CertificateVerification } from './components/CertificateVerification'; 
 import { ReportManager } from './components/ReportManager'; 
-import { DatabaseCleaner } from './components/DatabaseCleaner'; // New Import
+import { DatabaseCleaner } from './components/DatabaseCleaner'; 
+import { TMSManager } from './components/TMSManager'; // Nuevo Import
 import { DataProvider, useData } from './context/DataContext';
 import { checkConnection, supabase } from './services/supabaseClient'; 
 
-// Color Mapping for Visuals - Updated to New Institutional Palette
 const TABLE_COLORS = [
-  'bg-[#647FBC]', // Azul Acero
-  'bg-[#91ADC8]', // Azul Grisáceo
-  'bg-[#AED6CF]', // Verde Agua Suave
-  'bg-slate-600'  // Neutro
+  'bg-[#647FBC]', 
+  'bg-[#91ADC8]', 
+  'bg-[#AED6CF]', 
+  'bg-slate-600'  
 ];
 
-// Interface para mensajes de chat
 interface ChatMessage {
-    from: string; // RUT
+    from: string; 
     fromName: string;
-    to: string; // RUT
+    to: string; 
     text: string;
     timestamp: number;
 }
@@ -46,31 +44,25 @@ const MainContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const { resetData, error } = useData();
   
-  // Estado de conexión
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'error'>('checking');
   const [connectionMsg, setConnectionMsg] = useState('');
 
-  // --- ROUTING LOGIC FOR SIGNATURE & VERIFICATION ---
   const [signatureParams, setSignatureParams] = useState<{eid: string, sid: string} | null>(null);
   const [verificationCode, setVerificationCode] = useState<string | null>(null);
   const [certVerificationCode, setCertVerificationCode] = useState<string | null>(null); 
 
-  // --- REALTIME PRESENCE & CHAT STATE ---
   const [onlinePeers, setOnlinePeers] = useState<{rut: string, names: string, photoUrl: string}[]>([]);
   const channelRef = useRef<any>(null);
   
-  // Estados de Chat
   const [activeChatPeer, setActiveChatPeer] = useState<{rut: string, names: string, photoUrl?: string} | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [unreadFrom, setUnreadFrom] = useState<string[]>([]); // RUTs con mensajes nuevos
+  const [unreadFrom, setUnreadFrom] = useState<string[]>([]); 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll al final del chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, activeChatPeer]);
 
-  // Verificar conexión y Rutas al montar
   useEffect(() => {
       const verify = async () => {
           const result = await checkConnection();
@@ -83,13 +75,12 @@ const MainContent: React.FC = () => {
       };
       verify();
 
-      // Check URL for Signature Mode or Verification Mode
       const params = new URLSearchParams(window.location.search);
       const mode = params.get('mode');
       
       if (mode === 'sign') {
-          const eid = params.get('eid'); // Enrollment ID
-          const sid = params.get('sid'); // Session ID
+          const eid = params.get('eid'); 
+          const sid = params.get('sid'); 
           if (eid && sid) setSignatureParams({ eid, sid });
       } else if (mode === 'verify') {
           const code = params.get('code');
@@ -101,7 +92,6 @@ const MainContent: React.FC = () => {
 
   }, []);
 
-  // --- REALTIME PRESENCE & MESSAGING EFFECT ---
   useEffect(() => {
       if (!user || user.systemRole !== UserRole.ASESOR) {
           setOnlinePeers([]);
@@ -133,15 +123,10 @@ const MainContent: React.FC = () => {
               }
               setOnlinePeers(peers);
           })
-          // --- RECIBIR MENSAJES DE CHAT ---
           .on('broadcast', { event: 'private_msg' }, (payload: any) => {
               const msg: ChatMessage = payload.payload;
-              
-              // Solo procesar si el mensaje es para mí
               if (msg.to === user.rut) {
                   setChatMessages(prev => [...prev, msg]);
-                  
-                  // Si no tengo el chat abierto con esa persona, marcar como no leído
                   if (!activeChatPeer || activeChatPeer.rut !== msg.from) {
                       setUnreadFrom(prev => [...new Set([...prev, msg.from])]);
                   }
@@ -164,7 +149,6 @@ const MainContent: React.FC = () => {
       };
   }, [user, activeChatPeer]);
 
-  // Handler para enviar mensaje
   const sendMessage = (text: string) => {
       if (!user || !activeChatPeer || !channelRef.current || !text.trim()) return;
 
@@ -176,24 +160,20 @@ const MainContent: React.FC = () => {
           timestamp: Date.now()
       };
 
-      // Enviar por broadcast
       channelRef.current.send({
           type: 'broadcast',
           event: 'private_msg',
           payload: newMsg
       });
 
-      // Agregar a mi propio historial
       setChatMessages(prev => [...prev, newMsg]);
   };
 
   const handleOpenChat = (peer: {rut: string, names: string, photoUrl?: string}) => {
       setActiveChatPeer(peer);
-      // Limpiar indicador de no leído
       setUnreadFrom(prev => prev.filter(r => r !== peer.rut));
   };
 
-  // --- LÓGICA DE NAVEGACIÓN SEGURA ---
   const handleTabChange = (newTab: TabType) => {
       if (activeTab === 'postgraduate' && (window as any).isPostgraduateDirty) {
           window.dispatchEvent(new CustomEvent('app-nav-attempt', { detail: newTab }));
@@ -209,7 +189,6 @@ const MainContent: React.FC = () => {
     window.addEventListener('force-nav', handleForceNav);
     return () => window.removeEventListener('force-nav', handleForceNav);
   }, []);
-  // ------------------------------------
 
   if (signatureParams) {
       return <StudentSignature enrollmentId={signatureParams.eid} sessionId={signatureParams.sid} />;
@@ -276,12 +255,7 @@ const MainContent: React.FC = () => {
         <>
             {connectionStatus === 'error' && (
                 <div className="bg-red-600 text-white text-xs py-2 px-4 text-center font-bold relative z-50">
-                    ⚠️ Error de Conexión a Supabase: {connectionMsg}. Revisa services/supabaseClient.ts
-                </div>
-            )}
-            {connectionStatus === 'connected' && (
-                <div className="bg-emerald-600 text-white text-[10px] py-1 px-4 text-center font-bold relative z-50">
-                    ✓ Conectado a Supabase
+                    ⚠️ Error de Conexión a Supabase: {connectionMsg}
                 </div>
             )}
             <LoginSimulator onLogin={setUser} />
@@ -317,6 +291,9 @@ const MainContent: React.FC = () => {
       
       case 'reports':
         return <ReportManager />;
+      
+      case 'tms':
+        return <TMSManager />;
 
       case 'config':
         return <ConfigEditor />;
@@ -335,7 +312,6 @@ const MainContent: React.FC = () => {
                             <h2 className="text-2xl font-bold text-slate-800">Diagrama Entidad-Relación</h2>
                             <span className="bg-[#91ADC8] text-white text-xs px-2 py-1 rounded font-mono font-bold">Vista Conceptual</span>
                         </div>
-                        
                         <div className="relative p-8 bg-white/50 rounded-2xl border border-slate-200 overflow-hidden">
                             <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12">
                             {SCHEMA_TABLES.map((table, idx) => (
@@ -347,7 +323,6 @@ const MainContent: React.FC = () => {
                         </div>
                     </div>
                     )}
-
                     {activeTab === 'json' && (
                     <div className="h-[600px]">
                         <h2 className="text-2xl font-bold text-slate-800 mb-6">Modelo de Datos Generado</h2>
@@ -355,7 +330,6 @@ const MainContent: React.FC = () => {
                     </div>
                     )}
                 </div>
-
                 <div className="xl:col-span-1 space-y-6">
                     <AiAssistant />
                 </div>
@@ -369,14 +343,6 @@ const MainContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#F9F8F6] text-slate-900 font-sans pb-10">
-      
-      {connectionStatus === 'error' && (
-          <div className="bg-red-600 text-white px-4 py-2 text-center text-sm font-bold shadow-md relative z-50">
-              ⚠️ Alerta: No se pudo conectar a la Base de Datos. Los cambios NO se guardarán. 
-              <br/><span className="font-normal opacity-90 text-xs">Error: {connectionMsg}</span>
-          </div>
-      )}
-
       <RoleNavbar 
         user={user} 
         activeTab={activeTab} 
@@ -384,11 +350,8 @@ const MainContent: React.FC = () => {
         onLogout={handleLogout} 
         unreadMessagesRuts={unreadFrom}
       />
-
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
         {renderContent()}
-
-        {/* CONTENEDOR DE PRESENCIA (INFERIOR IZQUIERDA) */}
         <div className="fixed bottom-6 left-6 z-50 flex items-end gap-3 animate-fadeIn">
             <div className="relative group">
                 <div className={`absolute -inset-1 rounded-full border-4 ${connectionStatus === 'error' ? 'border-red-500/60' : 'border-green-500/60'} animate-pulse`}></div>
@@ -402,11 +365,7 @@ const MainContent: React.FC = () => {
                         </div>
                     )}
                 </div>
-                <div className="absolute left-full ml-2 bottom-2 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                    Tú ({user.names})
-                </div>
             </div>
-
             {user.systemRole === UserRole.ASESOR && onlinePeers.length > 0 && (
                 <div className="flex -space-x-3 items-center pb-1">
                     {onlinePeers.map((peer) => (
@@ -421,21 +380,14 @@ const MainContent: React.FC = () => {
                                 )}
                             </div>
                             <div className="absolute w-3 h-3 bg-green-500 border-2 border-white rounded-full bottom-0 right-0 z-20"></div>
-                            
-                            <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover/peer:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-30">
-                                <span className="block font-bold">{peer.names}</span>
-                                <span className="block opacity-75">Click para chatear</span>
-                            </div>
                         </div>
                     ))}
                 </div>
             )}
         </div>
 
-        {/* VENTANA DE CHAT FLOTANTE (INFERIOR DERECHA, SOBRE EL BOTÓN DE DEBUG) */}
         {activeChatPeer && (
             <div className="fixed bottom-16 right-6 w-80 h-96 bg-white rounded-t-2xl shadow-2xl border border-slate-200 flex flex-col z-[100] animate-fadeInUp">
-                {/* Header del Chat */}
                 <div className="bg-[#647FBC] p-3 text-white flex justify-between items-center rounded-t-2xl">
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-full bg-white/20 overflow-hidden border border-white/30">
@@ -456,8 +408,6 @@ const MainContent: React.FC = () => {
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>
-
-                {/* Cuerpo del Chat */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#F9F8F6] custom-scrollbar">
                     {chatMessages
                         .filter(m => (m.from === user.rut && m.to === activeChatPeer.rut) || (m.from === activeChatPeer.rut && m.to === user.rut))
@@ -477,8 +427,6 @@ const MainContent: React.FC = () => {
                         ))}
                     <div ref={chatEndRef} />
                 </div>
-
-                {/* Input del Chat */}
                 <form 
                     onSubmit={(e) => {
                         e.preventDefault();

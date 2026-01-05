@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Enrollment, User, UserRole, Activity, SessionLog, ActivityState } from '../types';
@@ -117,7 +118,7 @@ export const PublicVerification: React.FC<{ code: string }> = ({ code }) => {
     const { log, student } = verifiedData;
     return (
         <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 animate-fadeIn">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-md overflow-hidden border border-slate-200">
                 <div className="bg-slate-800 p-4 text-white flex justify-between items-center"><h3 className="font-bold flex items-center gap-2 text-sm uppercase tracking-wide">Certificado de Autenticidad</h3></div>
                 <div className="p-6 flex flex-col items-center text-center">
                     <div className="mb-6 bg-green-50 border-2 border-green-200 rounded-xl p-6 w-full"><h2 className="text-lg font-black text-green-800 uppercase">DOCUMENTO AUTÉNTICO</h2><p className="text-sm text-green-700 font-bold mt-1">Unidad de Acompañamiento Docente</p></div>
@@ -305,7 +306,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
 
     const handleRutBlur = () => {
         setTimeout(() => {
-            if (showSuggestions) setShowSuggestions(false);
             if (!enrollForm.rut) return;
             
             const formatted = cleanRutFormat(enrollForm.rut);
@@ -319,7 +319,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         }, 200);
     };
 
-    // --- Definición de handleOpenEnrollModal y handleEditExpediente ---
     const handleOpenEnrollModal = () => {
         setIsEditingExpediente(false);
         setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE, responsible: '', competencyCodes: [] });
@@ -336,10 +335,8 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             return;
         }
 
-        // Buscar el usuario en la lista global de usuarios
         const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enrollment.rut));
         
-        // Cargamos los datos en el formulario de inscripción (el modal que se abrirá)
         setEnrollForm({
             rut: enrollment.rut,
             names: student?.names || '',
@@ -356,7 +353,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             campus: student?.campus || '',
             systemRole: student?.systemRole || UserRole.ESTUDIANTE,
             responsible: enrollment.responsible || '',
-            competencyCodes: enrollment.competencyCodes || [] // NUEVO
+            competencyCodes: enrollment.competencyCodes || [] 
         });
         
         setIsEditingExpediente(true);
@@ -408,7 +405,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                 if (enrData) {
                     await updateEnrollment(enrData.id, { 
                         responsible: enrollForm.responsible || (currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : ''),
-                        competencyCodes: enrollForm.competencyCodes // NUEVO
+                        competencyCodes: enrollForm.competencyCodes 
                     });
                 }
 
@@ -418,19 +415,17 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             } catch (err: any) { setEnrollMsg({ type: 'error', text: `Error: ${err.message || 'No se pudo guardar'}` }); setIsProcessing(false); }
         } else {
             try {
-                // 1. Actualizar Datos del Usuario en Base Maestra
                 await upsertUsers([{ 
                     ...enrollForm, 
                     rut: cleanRut, 
                     systemRole: enrollForm.systemRole as UserRole 
                 }]);
                 
-                // 2. Actualizar Metadatos de la Matrícula (Responsable y Competencias)
                 const idToUpdate = selectedEnrollmentId || advisoryEnrollments.find(e => normalizeRut(e.rut) === normRut)?.id;
                 if (idToUpdate) {
                     await updateEnrollment(idToUpdate, { 
                         responsible: enrollForm.responsible,
-                        competencyCodes: enrollForm.competencyCodes // NUEVO
+                        competencyCodes: enrollForm.competencyCodes 
                     });
                 }
                 
@@ -655,7 +650,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                             <span className="text-[10px] font-bold uppercase text-slate-500">{isSyncing ? 'Sincronizando...' : 'En Línea'}</span>
                         </div>
                         <button onClick={handleManualRefresh} className="flex items-center gap-2 bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-100 border border-indigo-200">Actualizar</button>
-                        {/* BOTÓN REMOVIDO DE AQUÍ Y MOVIDO A LA TABLA PRINCIPAL */}
                     </div>
                 </div>
 
@@ -706,7 +700,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                                     <div><label className="block text-xs font-bold text-slate-600 mb-1">Lugar / Plataforma</label><input type="text" placeholder="Ej. Oficina 304, Zoom, Email..." value={sessionForm.location} onChange={e => setSessionForm({...sessionForm, location: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"/></div>
                                                 </div>
 
-                                                {/* CAMPO DESPLEGABLE DE ASESOR (Alimentado por nómina de GESTION ASESORES) */}
                                                 <div className="mb-4">
                                                     <label className="block text-xs font-black text-indigo-700 uppercase tracking-widest mb-1">Asesor Responsable de la Sesión</label>
                                                     <select 
@@ -852,7 +845,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                 <div><h2 className="text-2xl font-bold">Bitácora de Asesorías</h2><p className="text-slate-300 text-sm mt-1">Gestión de acompañamiento individual docente.</p></div>
                 
                 <div className="flex gap-4 items-center">
-                    {/* SELECTOR DE PERIODO (NUEVO) */}
                     <div className="flex items-center bg-white/10 rounded-2xl px-4 py-2 border border-white/20 shadow-inner group">
                         <label className="text-[10px] font-black text-slate-300 uppercase mr-3">Periodo:</label>
                         <select 
@@ -920,7 +912,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             
             {showEnrollModal && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn"><div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-slate-200"><div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 sticky top-0 z-10"><h3 className="text-lg font-bold text-slate-800">{isEditingExpediente ? 'Modificar Expediente' : `Apertura de Expediente (Ficha Base) - ${selectedYear}`}</h3><button onClick={() => setShowEnrollModal(false)} className="text-slate-400 hover:text-slate-600 text-2xl font-bold">×</button></div><form onSubmit={handleEnrollSubmit} className="p-8 space-y-6"> <div className="space-y-4"><h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wide border-b border-indigo-100 pb-1">1. Identificación del Docente</h4><div className="grid grid-cols-1 md:grid-cols-4 gap-4"><div className="md:col-span-1 relative"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" value={enrollForm.rut} onChange={handleEnrollChange} onBlur={handleRutBlur} placeholder="12345678-9" autoComplete="off" disabled={isEditingExpediente} className="w-full px-3 py-2 border border-slate-300 rounded font-bold text-sm focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-500"/>{showSuggestions && !isEditingExpediente && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-10 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div><div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" required value={enrollForm.names} onChange={e => setEnrollForm({...enrollForm, names: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div><div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label><input type="text" required value={enrollForm.paternalSurname} onChange={e => setEnrollForm({...enrollForm, paternalSurname: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div><div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Materno</label><input type="text" value={enrollForm.maternalSurname} onChange={e => setEnrollForm({...enrollForm, maternalSurname: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-medium text-slate-700 mb-1">Email</label><input type="email" value={enrollForm.email} onChange={e => setEnrollForm({...enrollForm, email: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div><div><label className="block text-xs font-medium text-slate-700 mb-1">Teléfono</label><input type="tel" value={enrollForm.phone} onChange={e => setEnrollForm({...enrollForm, phone: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"/></div></div></div> <div className="space-y-4"><h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wide border-b border-indigo-100 pb-1">2. Antecedentes Institucionales</h4><div className="grid grid-cols-1 md:grid-cols-4 gap-4"><SmartSelect label="Sede / Campus" name="campus" value={enrollForm.campus} options={config.campuses || ["Valparaíso"]} onChange={(e) => setEnrollForm({...enrollForm, campus: e.target.value})} /><SmartSelect label="Facultad" name="faculty" value={enrollForm.faculty} options={listFaculties} onChange={(e) => setEnrollForm({...enrollForm, faculty: e.target.value})} /><SmartSelect label="Departamento" name="department" value={enrollForm.department} options={listDepts} onChange={(e) => setEnrollForm({...enrollForm, department: e.target.value})} /><SmartSelect label="Carrera" name="career" value={enrollForm.career} options={listCareers} onChange={(e) => setEnrollForm({...enrollForm, career: e.target.value})} /><SmartSelect label="Tipo Contrato" name="contractType" value={enrollForm.contractType} options={listContracts} onChange={(e) => setEnrollForm({...enrollForm, contractType: e.target.value})} /><SmartSelect label="Rol Académico" name="academicRole" value={enrollForm.academicRole} options={listRoles} onChange={(e) => setEnrollForm({...enrollForm, academicRole: e.target.value})} /><div className="md:col-span-2"><label className="block text-xs font-medium text-slate-700 mb-1">Asesor Responsable</label><select name="responsible" value={enrollForm.responsible} onChange={handleEnrollChange} className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-indigo-500"><option value="">Seleccione Asesor...</option>{advisorsList.map(adv => (<option key={adv.rut} value={`${adv.names} ${adv.paternalSurname}`}>{adv.names} {adv.paternalSurname}</option>))}</select></div></div></div> 
 
-{/* SECCIÓN 3: TAXONOMÍA DE COMPETENCIAS UPLA (REPLICADO DE CURSOS) */}
 <div className="space-y-6 pt-6 border-t-2 border-slate-50">
     <div>
         <h3 className="text-lg font-black text-[#647FBC] uppercase tracking-tight">3. TAXONOMÍA DE COMPETENCIAS UPLA</h3>
@@ -928,7 +919,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     </div>
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-        {/* BLOQUE PEI */}
         <div className="space-y-4">
             <div className="flex items-center gap-2 mb-2">
                 <span className="w-2 h-2 rounded-full bg-indigo-400"></span>
@@ -949,7 +939,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
             </div>
         </div>
 
-        {/* BLOQUE PMI */}
         <div className="space-y-4">
             <div className="flex items-center gap-2 mb-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
