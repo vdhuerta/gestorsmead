@@ -194,18 +194,27 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       });
   }, [courseEnrollments, users]);
 
-  // --- Auto-Code Generator Logic ---
+  // --- Auto-Code Generator Logic (CORREGIDA) ---
   useEffect(() => {
     if (view === 'create') {
         const words = formData.nombre.trim().split(/\s+/);
-        let acronym = words.length === 1 && words[0].length > 0 ? words[0].substring(0, 4).toUpperCase() : words.map(w => w[0]).join('').substring(0, 4).toUpperCase();
+        let acronym = words.length === 1 && words[0].length > 0 
+            ? words[0].substring(0, 4).toUpperCase() 
+            : words.map(w => w[0]).join('').substring(0, 4).toUpperCase();
+        
         if (acronym.length === 0) acronym = 'CURS';
         
-        let datePart = '010125';
+        // Lógica de fecha: Si hay fecha de inicio, usarla. Si no, usar hoy.
+        let d = new Date();
         if (formData.startDate) {
-            const parts = formData.startDate.split('-');
-            if (parts.length === 3) datePart = `${parts[2]}${parts[1]}${parts[0].slice(2)}`;
+            const [y, m, day] = formData.startDate.split('-').map(Number);
+            if (!isNaN(day)) d = new Date(y, m - 1, day);
         }
+        
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yy = String(d.getFullYear()).slice(-2);
+        const datePart = `${dd}${mm}${yy}`;
         
         const ver = formData.version.trim().toUpperCase() || 'V1';
         const semSuffix = formData.academicPeriod.includes('1') ? '-S1' : formData.academicPeriod.includes('2') ? '-S2' : '';
@@ -502,7 +511,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                             <div className="md:col-span-8">
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Nombre de la Asignatura / Curso *</label>
-                                <input required type="text" value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#647FBC] text-sm font-bold shadow-sm"/>
+                                <input required type="text" value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#647FBC] text-sm font-normal shadow-sm"/>
                             </div>
                             <div className="md:col-span-4">
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Código Interno</label>
@@ -513,19 +522,19 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                             <div>
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Año Académico</label>
-                                <input type="number" value={formData.year} onChange={e => setFormData({...formData, year: Number(e.target.value)})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-bold"/>
+                                <input type="number" value={formData.year} onChange={e => setFormData({...formData, year: Number(e.target.value)})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-normal"/>
                             </div>
                             <div>
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Semestre</label>
-                                <input type="text" value={formData.academicPeriod} onChange={e => setFormData({...formData, academicPeriod: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-bold" placeholder="Ej: 1er Semestre"/>
+                                <input type="text" value={formData.academicPeriod} onChange={e => setFormData({...formData, academicPeriod: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-normal" placeholder="Ej: 1er Semestre"/>
                             </div>
                             <div>
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Versión</label>
-                                <input type="text" value={formData.version} onChange={e => setFormData({...formData, version: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-bold"/>
+                                <input type="text" value={formData.version} onChange={e => setFormData({...formData, version: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-normal"/>
                             </div>
                             <div>
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Modalidad</label>
-                                <select value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-bold">
+                                <select value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-normal">
                                     {listModalities.map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
                             </div>
@@ -537,19 +546,19 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                             <div>
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Horas Cronológicas</label>
-                                <input type="number" value={formData.hours} onChange={e => setFormData({...formData, hours: Number(e.target.value)})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-bold"/>
+                                <input type="number" value={formData.hours} onChange={e => setFormData({...formData, hours: Number(e.target.value)})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-normal"/>
                             </div>
                             <div>
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Cant. Módulos</label>
-                                <input type="number" value={formData.moduleCount} onChange={e => setFormData({...formData, moduleCount: Number(e.target.value)})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-bold"/>
+                                <input type="number" value={formData.moduleCount} onChange={e => setFormData({...formData, moduleCount: Number(e.target.value)})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-normal"/>
                             </div>
                             <div>
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Evaluaciones Pactadas</label>
-                                <input type="number" value={formData.evaluationCount} onChange={e => setFormData({...formData, evaluationCount: Number(e.target.value)})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-bold"/>
+                                <input type="number" value={formData.evaluationCount} onChange={e => setFormData({...formData, evaluationCount: Number(e.target.value)})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-normal"/>
                             </div>
                             <div>
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Relator Principal</label>
-                                <select value={formData.relator} onChange={e => setFormData({...formData, relator: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-bold">
+                                <select value={formData.relator} onChange={e => setFormData({...formData, relator: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-normal">
                                     <option value="">Seleccione Asesor...</option>
                                     {advisors.map(adv => (
                                         <option key={adv.rut} value={`${adv.names} ${adv.paternalSurname}`}>
@@ -562,11 +571,11 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Fecha de Inicio</label>
-                                <input type="date" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-bold"/>
+                                <input type="date" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-normal"/>
                             </div>
                             <div>
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Fecha de Término</label>
-                                <input type="date" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-bold"/>
+                                <input type="date" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-normal"/>
                             </div>
                         </div>
                     </div>
@@ -836,7 +845,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                             disabled={isInactive}
                                                             value={gradeVal || ''} 
                                                             onChange={(e) => handleUpdateGradeLocal(enr.id, i, e.target.value)} 
-                                                            className={`w-12 text-center border rounded py-1 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:bg-slate-100 disabled:text-slate-400 ${isFailing ? 'text-red-600 border-red-200 bg-red-50' : 'text-slate-700'}`}
+                                                            className={`w-12 text-center border rounded py-1 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:bg-slate-100 disabled:text-slate-400 ${isFailing ? 'text-red-600 border-red-200 bg-red-50' : 'text-slate-700'}`}
                                                           />
                                                         </td>
                                                       );
@@ -1016,7 +1025,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                 placeholder="Ingrese RUT (ej: 12.345.678-9)" 
                                 value={kioskSearchRut} 
                                 onChange={(e) => setKioskSearchRut(e.target.value)}
-                                className="flex-1 px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 font-bold shadow-inner"
+                                className="flex-1 px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 font-normal shadow-inner"
                             />
                             <button type="submit" className="bg-[#647FBC] text-white px-8 py-3 rounded-xl font-black uppercase text-xs tracking-widest shadow-lg hover:bg-blue-800 transition-all transform active:scale-95">Consultar</button>
                         </form>

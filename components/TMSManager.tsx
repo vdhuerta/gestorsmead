@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { PEI_COMPETENCIES, PMI_COMPETENCIES } from '../constants';
@@ -165,13 +164,6 @@ export const TMSManager: React.FC = () => {
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-4 items-center">
-          <button 
-            onClick={() => setShowHelpModal(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-[#647FBC] hover:text-white transition-all font-black uppercase text-[10px] tracking-widest border border-slate-200"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            Ayuda
-          </button>
           <div className="flex items-center bg-slate-50 rounded-xl px-3 py-1.5 border border-slate-200 shadow-inner group">
             <label className="text-[9px] font-black text-slate-400 uppercase mr-2">Periodo:</label>
             <select 
@@ -188,6 +180,13 @@ export const TMSManager: React.FC = () => {
             <button onClick={() => setActiveTab('institutional')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'institutional' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Cobertura</button>
             <button onClick={() => setActiveTab('search')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'search' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Buscador</button>
           </div>
+          <button 
+            onClick={() => setShowHelpModal(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-[#647FBC] hover:text-white transition-all font-black uppercase text-[10px] tracking-widest border border-slate-200"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            Ayuda
+          </button>
         </div>
       </div>
 
@@ -484,7 +483,7 @@ export const TMSManager: React.FC = () => {
                     {user.faculty}
                   </p>
                   <p className="text-xs text-slate-500 flex items-center gap-2">
-                    <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                    <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                     {user.academicRole}
                   </p>
                 </div>
@@ -521,7 +520,7 @@ export const TMSManager: React.FC = () => {
       {/* MODAL DE AYUDA TMS */}
       {showHelpModal && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
-          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden border border-indigo-100">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-4xl max-h-[95vh] flex flex-col overflow-hidden border border-indigo-100">
             <div className="p-8 bg-indigo-600 text-white flex justify-between items-center shadow-lg relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
                 <div className="relative z-10 flex items-center gap-4">
@@ -533,7 +532,7 @@ export const TMSManager: React.FC = () => {
                         <h3 className="text-3xl font-black tracking-tighter uppercase leading-none">Manual del Sistema TMS</h3>
                     </div>
                 </div>
-                <button onClick={() => setShowHelpModal(false)} className="text-white/60 hover:text-white text-4xl font-light transition-all active:scale-90 relative z-10">&times;</button>
+                <button onClick={() => setShowHelpModal(false)} className="text-white/60 hover:text-white text-5xl font-light transition-all active:scale-90 relative z-10">&times;</button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-10 bg-[#F9F8F6] custom-scrollbar space-y-12">
@@ -542,29 +541,28 @@ export const TMSManager: React.FC = () => {
                 <section className="space-y-4">
                     <div className="flex items-center gap-3 border-b-2 border-indigo-100 pb-2">
                         <span className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center font-bold text-sm">01</span>
-                        <h4 className="text-xl font-black text-slate-800 uppercase tracking-tight">Módulo "Mi Perfil" (Rutas Formativas)</h4>
+                        <h4 className="text-xl font-black text-slate-800 uppercase tracking-tight">Módulo "Mi Perfil" (Índice de Madurez)</h4>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                            <h5 className="font-bold text-indigo-700 text-sm mb-2 uppercase">Lógica de Logro</h5>
+                            <h5 className="font-bold text-indigo-700 text-sm mb-2 uppercase">Mecánica de Progresión</h5>
                             <p className="text-xs text-slate-600 leading-relaxed">
-                                El sistema analiza el historial completo de inscripciones del docente que tengan estado <strong>APROBADO</strong>. 
-                                Cada curso está vinculado a una o más competencias PEI/PMI. El nivel se determina por la repetición:
+                                El sistema mide la <strong>densidad curricular</strong> analizando inscripciones con estado <strong>APROBADO</strong>. El nivel de cada competencia se determina por profundidad:
                             </p>
                             <ul className="mt-4 space-y-2 text-[11px] text-slate-500">
-                                <li className="flex items-center gap-2"><div className="w-2 h-2 rounded bg-blue-400"></div> <strong>Iniciación:</strong> 1 curso aprobado en el área.</li>
-                                <li className="flex items-center gap-2"><div className="w-2 h-2 rounded bg-indigo-500"></div> <strong>Desarrollo:</strong> 2 cursos aprobados.</li>
-                                <li className="flex items-center gap-2"><div className="w-2 h-2 rounded bg-emerald-500"></div> <strong>Consolidación:</strong> 3 o más cursos.</li>
+                                <li className="flex items-center gap-2"><div className="w-2 h-2 rounded bg-blue-400"></div> <strong>Iniciación (33%):</strong> 1 curso aprobado. Exposición inicial.</li>
+                                <li className="flex items-center gap-2"><div className="w-2 h-2 rounded bg-indigo-500"></div> <strong>Desarrollo (66%):</strong> 2 cursos. Aplicación intermedia.</li>
+                                <li className="flex items-center gap-2"><div className="w-2 h-2 rounded bg-emerald-500"></div> <strong>Consolidación (100%):</strong> 3+ cursos. Maestría en el área.</li>
                             </ul>
                         </div>
                         <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 shadow-sm">
-                            <h5 className="font-bold text-indigo-800 text-sm mb-2 uppercase">¿Qué es el Índice de Madurez?</h5>
-                            <p className="text-xs text-slate-700 leading-relaxed">
-                                Es un <strong>indicador ponderado de completitud curricular</strong>. Representa qué tan cerca está el docente de cubrir la totalidad de la taxonomía institucional.
+                            <h5 className="font-bold text-indigo-800 text-sm mb-2 uppercase">Metodología del Índice Global</h5>
+                            <p className="text-xs text-slate-700 leading-relaxed mb-3">
+                                Es una <strong>media aritmética ponderada</strong> del logro en las 15 competencias institucionales (10 PEI + 5 PMI).
                             </p>
-                            <p className="text-[11px] text-indigo-900/60 mt-3 italic">
-                                Se calcula promediando el progreso de todas las competencias PEI/PMI. Un valor del 100% significaría que el docente ha alcanzado el nivel de Consolidación en todas las áreas de la Universidad.
-                            </p>
+                            <div className="p-3 bg-white/50 rounded-lg border border-indigo-100 text-[10px] text-indigo-900 leading-snug">
+                                <strong>Utilidad Estratégica:</strong> Permite la gamificación profesional del docente, identifica expertos (candidatos a relatores) y detecta Gaps formativos individuales para planes de mejora.
+                            </div>
                         </div>
                     </div>
                 </section>

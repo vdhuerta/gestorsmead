@@ -344,6 +344,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const handleEditCourse = () => {
     if (!selectedCourse) return;
     const sem = selectedCourse.academicPeriod ? selectedCourse.academicPeriod.split('-')[1] || 'ANUAL' : 'ANUAL';
+    // FIX: Sincronizar fechaInicio y fechaTermino con el modelo de datos Activity (startDate/endDate)
     setFormData({ 
         internalCode: selectedCourse.internalCode || '', 
         year: selectedCourse.year || new Date().getFullYear(), 
@@ -351,10 +352,10 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
         nombre: selectedCourse.name, 
         version: selectedCourse.version || 'V1', 
         modality: selectedCourse.modality, 
-        horas: selectedCourse.hours, 
+        hours: selectedCourse.hours, 
         relator: selectedCourse.relator || '', 
-        startDate: selectedCourse.startDate || '', 
-        endDate: selectedCourse.endDate || '', 
+        fechaInicio: selectedCourse.startDate || '', 
+        fechaTermino: selectedCourse.endDate || '', 
         linkResources: selectedCourse.linkResources || '', 
         linkClase: selectedCourse.classLink || '', 
         linkEvaluacion: selectedCourse.evaluationLink || '',
@@ -946,7 +947,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                               type="button"
                                               onClick={() => handleToggleCompetence(c.code)}
                                               title={c.name}
-                                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200 hover:text-indigo-400'}`}
+                                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-200 hover:text-indigo-400'}`}
                                           >
                                               {c.code}
                                           </button>
@@ -1021,7 +1022,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                             </button>
                             <button 
                                 onClick={applyAiSuggestions}
-                                className="px-8 py-2.5 bg-indigo-600 text-white font-black uppercase text-xs tracking-widest rounded-xl shadow-lg hover:bg-indigo-700 transition-all active:scale-95 flex items-center gap-2"
+                                className="px-8 py-2.5 bg-indigo-600 text-white font-black uppercase text-xs tracking-widest rounded-xl shadow-lg hover:bg-indigo-700 transition-all active:scale-95 flex items-center gap-3"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                                 Aplicar Taxonomía
@@ -1070,10 +1071,10 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
             
             <div className="mt-8">
               <div className="flex items-end gap-2 border-b border-purple-200 pl-4 mb-0">
-                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('enrollment'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'enrollment' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Matrícula</button>
-                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('config'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'config' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Configuración Académica</button>
-                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('tracking'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'tracking' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Seguimiento</button>
-                {isCourseClosed && <button onClick={() => handleAttemptExit(() => setActiveDetailTab('acta'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'acta' ? 'bg-white text-indigo-700 border-t-indigo-600 border-x border-indigo-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-slate-300 hover:bg-slate-100'}`}>Acta Final</button>}
+                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('enrollment'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'enrollment' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-transparent hover:bg-slate-100'}`}>Matrícula</button>
+                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('config'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'config' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-transparent hover:bg-slate-100'}`}>Configuración Académica</button>
+                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('tracking'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'tracking' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-transparent hover:bg-slate-100'}`}>Seguimiento</button>
+                {isCourseClosed && <button onClick={() => handleAttemptExit(() => setActiveDetailTab('acta'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'acta' ? 'bg-white text-indigo-700 border-t-indigo-600 border-x border-indigo-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-transparent hover:bg-slate-100'}`}>Acta Final</button>}
               </div>
               <div className="bg-white rounded-b-xl rounded-tr-xl shadow-sm border border-purple-200 border-t-0 p-8">
                 {activeDetailTab === 'enrollment' && (
@@ -1198,7 +1199,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                 {activeDetailTab === 'tracking' && (
                   <div className="animate-fadeIn space-y-4">
                     <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-center gap-4">
-                      <div><h3 className="font-bold text-purple-800 text-lg">Seguimiento Académico Modular</h3><p className="text-xs text-purple-600">Gestión de calificaciones por módulo y cálculo de promedio final.</p></div>
+                      <div><h3 className="font-bold text-purple-800 text-lg">Seguimiento Académico Modular</h3><p className="text-xs text-purple-600">Gestione los participantes de esta actividad formativa.</p></div>
                       <button onClick={handleToggleCloseCourse} className={`px-4 py-2 rounded-lg font-black uppercase text-xs shadow-md transition-all active:scale-95 flex items-center gap-2 ${isCourseClosed ? 'bg-rose-600 text-white hover:bg-rose-700 animate-pulse' : 'bg-slate-800 text-white hover:bg-black'}`}><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>{isCourseClosed ? 'REABRIR CURSO' : 'CERRAR POSTÍTULO'}</button>
                       <div className="flex gap-4 text-center">
                         <div className="bg-white px-4 py-2 rounded-lg border border-purple-100 shadow-sm"><span className="block text-xl font-bold text-slate-700">{sortedEnrollments.length}</span><span className="text-[10px] font-bold text-slate-400 uppercase">Matriculados</span></div>
@@ -1279,7 +1280,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                         </div>
                         <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-2">Cambios sin Guardar</h3>
                         <p className="text-slate-500 text-sm leading-relaxed mb-8">
-                            Tienes calificaciones pendientes de sincronizar en el módulo actual. Si sales ahora, perderás estos cambios.
+                            Tienes calificaciones pendientes de sincronizar en el módulo actual. Si sales ahora, perderá estos cambios.
                         </p>
                         <div className="flex flex-col gap-3">
                             <button 
