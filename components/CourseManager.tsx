@@ -251,9 +251,12 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const handleCreateSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       const newId = selectedCourseId || `ACAD-${Date.now()}`;
+      
+      // SOLUCIÓN: Mapear 'nombre' a 'name' explícitamente para cumplir con el modelo de datos Activity
       const activityPayload: Activity = {
           ...formData,
           id: newId, 
+          name: formData.nombre, // <--- Fix: Mapeo correcto de campo
           category: 'ACADEMIC', 
           year: Number(formData.year),
           hours: Number(formData.hours),
@@ -261,12 +264,18 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           evaluationCount: Number(formData.evaluationCount),
           isPublic: true
       };
+      
       try { 
           await addActivity(activityPayload); 
           await executeReload(); 
           setView('list'); 
           setSelectedCourseId(null); 
-      } catch (err) { alert(`Error al guardar: ${err}`); }
+      } catch (err: any) { 
+          console.error("Course Save Error:", err);
+          // Solución: Extraer el mensaje de error si es un objeto para evitar [object Object]
+          const errorMsg = err.message || JSON.stringify(err);
+          alert(`Error al guardar: ${errorMsg}`); 
+      }
   };
 
   const handleEditCourse = (course: Activity) => {
@@ -288,6 +297,29 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       });
       setSyllabusFile(null);
       setView('edit');
+  };
+
+  // --- NUEVA LÓGICA DE CLONACIÓN ---
+  const handleCloneCourse = (course: Activity) => {
+    setFormData({
+        internalCode: '', // Se autogenerará
+        year: course.year || new Date().getFullYear(),
+        academicPeriod: course.academicPeriod || '1er Semestre',
+        nombre: `${course.name} (Copia)`,
+        version: 'V1',
+        modality: course.modality,
+        hours: course.hours,
+        moduleCount: course.moduleCount || 1,
+        evaluationCount: course.evaluationCount || 3,
+        relator: course.relator || '',
+        startDate: '', // Se deja vacío para que el usuario elija
+        endDate: '',
+        competencyCodes: course.competencyCodes || []
+    });
+    setSelectedCourseId(null); // Aseguramos que sea un registro nuevo
+    setSyllabusFile(null);
+    setView('create');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleUpdateGradeLocal = (enrollmentId: string, idx: number, value: string) => {
@@ -576,6 +608,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                 <h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-400"></span> Ejes PMI</h4>
                                 <div className="flex flex-wrap gap-2">
                                     {PMI_COMPETENCIES.map(c => (
+                                        /* Fix: Use c.code instead of code and update colors to emerald for PMI section */
                                         <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-600 border-emerald-700 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200'}`}>{c.code}</button>
                                     ))}
                                 </div>
@@ -615,7 +648,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                         </div>
                         <div className="p-6 bg-slate-50 border-t flex justify-end gap-3">
                             <button onClick={() => setShowAiReview(false)} className="px-6 py-2 text-slate-500 font-bold">Cerrar</button>
-                            <button onClick={applyAiSuggestions} className="px-8 py-2 bg-indigo-600 text-white font-black uppercase text-[10px] tracking-widest rounded-xl shadow-lg hover:bg-indigo-700">Aplicar Selección</button>
+                            <button onClick={applyAiSuggestions} className="px-8 py-2 bg-indigo-600 text-white font-black uppercase text-xs tracking-widest rounded-xl shadow-lg hover:bg-indigo-700">Aplicar Selección</button>
                         </div>
                     </div>
                 </div>
@@ -668,7 +701,9 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                       await executeReload();
                                       setEnrollMsg({ type: 'success', text: 'Estudiante matriculado.' });
                                       setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
-                                  } catch (err) { setEnrollMsg({ type: 'error', text: 'Error al matricular.' }); } finally { setIsProcessingBatch(false); }
+                                  } catch (err: any) { 
+                                      setEnrollMsg({ type: 'error', text: `Error al matricular: ${err.message || JSON.stringify(err)}` }); 
+                                  } finally { setIsProcessingBatch(false); }
                               }} className="space-y-8">
                                   <div className="space-y-4">
                                       <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest border-b pb-1">Identidad y Contacto</h4>
@@ -678,15 +713,15 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                               <input required type="text" name="rut" value={enrollForm.rut} placeholder="12345678-9" onChange={e => { setEnrollForm({...enrollForm, rut: e.target.value}); if(e.target.value.length >= 2) { const clean = normalizeRut(e.target.value); setSuggestions(users.filter(u => normalizeRut(u.rut).includes(clean)).slice(0, 5)); setShowSuggestions(true); } else { setShowSuggestions(false); } }} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} className="w-full px-3 py-2 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500"/>
                                               {showSuggestions && suggestions.length > 0 && (
                                                   <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                                                      {suggestions.map(s => (<div key={s.rut} onMouseDown={() => { setEnrollForm({...s, maternalSurname: s.maternalSurname || '', phone: s.phone || '', academicRole: s.academicRole || '', faculty: s.faculty || '', department: s.department || '', career: s.career || '', contractType: s.contractType || '', teachingSemester: s.teachingSemester || '', campus: s.campus || '', systemRole: UserRole.ESTUDIANTE }); setShowSuggestions(false); }} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-sm border-b last:border-0"><span className="font-bold block">{s.rut}</span><span>{s.names} {s.paternalSurname}</span></div>))}
+                                                      {suggestions.map(s => (<div key={s.rut} onMouseDown={() => { setEnrollForm({...s, maternalSurname: s.maternalSurname || '', phone: s.phone || '', academicRole: s.academicRole || '', faculty: s.faculty || '', department: s.department || '', career: s.career || '', contractType: s.contractType || '', teachingSemester: s.teachingSemester || '', campus: s.campus || '', systemRole: UserRole.ESTUDIANTE }); setShowSuggestions(false); }} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-xs border-b last:border-0"><span className="font-bold block">{s.rut}</span><span>{s.names} {s.paternalSurname}</span></div>))}
                                                   </div>
                                               )}
                                           </div>
                                           <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Nombres *</label><input required type="text" name="names" value={enrollForm.names} onChange={e => setEnrollForm({...enrollForm, names: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm"/></div>
-                                          <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Ap. Paterno *</label><input required type="text" name="paternalSurname" value={enrollForm.paternalSurname} onChange={e => setEnrollForm({...enrollForm, paternalSurname: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm"/></div>
-                                          <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={enrollForm.maternalSurname} onChange={e => setEnrollForm({...enrollForm, maternalSurname: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm"/></div>
-                                          <div className="md:col-span-2"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Email Institucional</label><input type="email" name="email" value={enrollForm.email} onChange={e => setEnrollForm({...enrollForm, email: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm"/></div>
-                                          <div className="md:col-span-2"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Teléfono</label><input type="text" name="phone" value={enrollForm.phone} onChange={e => setEnrollForm({...enrollForm, phone: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm"/></div>
+                                          <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Ap. Paterno *</label><input required type="text" name="paternalSurname" value={enrollForm.paternalSurname} onChange={e => setEnrollForm({...enrollForm, paternalSurname: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div>
+                                          <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={enrollForm.maternalSurname} onChange={e => setEnrollForm({...enrollForm, maternalSurname: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div>
+                                          <div className="md:col-span-2"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Email Institucional</label><input type="email" name="email" value={enrollForm.email} onChange={e => setEnrollForm({...enrollForm, email: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div>
+                                          <div className="md:col-span-2"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Teléfono</label><input type="text" name="phone" value={enrollForm.phone} onChange={e => setEnrollForm({...enrollForm, phone: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div>
                                       </div>
                                   </div>
 
@@ -831,7 +866,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                                 onChange={() => handleToggleAttendanceLocal(enr.id, i)} 
                                                                 className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-30"
                                                               />
-                                                          </td>
+                          </td>
                                                       );
                                                   })}
                                                   <td className={`px-4 py-3 text-center font-bold border-r ${liveAttendancePercentage < (config.minAttendancePercentage || 75) ? 'text-red-500' : 'text-green-600'}`}>{liveAttendancePercentage}%</td>
@@ -886,7 +921,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
               {/* MODAL DE ADVERTENCIA DE SALIDA */}
               {showExitWarning && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
                     <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 text-center border border-red-100">
                         <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
                             <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
@@ -950,7 +985,11 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
                   <div className="flex gap-2">
                     <button onClick={() => { setSelectedCourseId(course.id); setView('details'); setActiveDetailTab('enrollment'); }} className="flex-1 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold text-xs hover:bg-[#647FBC] hover:text-white transition-all shadow-sm">Gestionar Curso</button>
-                    {(isAdmin || isAdvisor) && (<button onClick={() => handleEditCourse(course)} className="px-3 py-2 bg-white border border-slate-300 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-all shadow-sm"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>)}
+                    {(isAdmin || isAdvisor) && (
+                        <button onClick={() => handleCloneCourse(course)} className="px-3 py-2 bg-white border border-slate-300 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-all shadow-sm" title="Clonar Curso">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 012 2h8a2 2 0 012-2v-2" /></svg>
+                        </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -960,7 +999,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
         {/* MODAL CONSULTA ACADÉMICA (KIOSKO) */}
         {showKioskModal && (
-            <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
                 <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col border border-slate-200">
                     <div className="p-6 bg-[#647FBC] text-white flex justify-between items-center">
                         <div>

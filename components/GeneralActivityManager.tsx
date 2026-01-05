@@ -572,7 +572,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                     <label className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-xl cursor-pointer transition-all ${syllabusFile ? 'border-indigo-400 bg-indigo-50' : 'border-slate-300 bg-white hover:bg-slate-50'}`}>
                                         <div className="flex flex-col items-center justify-center pt-2">
                                             {syllabusFile ? (
-                                                <div className="flex items-center gap-2"><svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0116 0z" /></svg><p className="text-xs font-bold text-indigo-700 truncate max-w-[200px]">{syllabusFile.name}</p></div>
+                                                <div className="flex items-center gap-2"><svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0116 0z" /></svg><p className="text-xs font-bold text-indigo-700 truncate max-w-[200px]">{syllabusFile.name}</p></div>
                                             ) : (
                                                 <><svg className="w-6 h-6 text-slate-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg><p className="text-[10px] text-slate-500 font-bold uppercase">Subir Documento (PDF/TXT)</p></>
                                             )}
@@ -606,7 +606,8 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                     <div className="flex items-center gap-2 mb-2"><span className="w-2 h-2 rounded-full bg-emerald-400"></span><h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Plan de Mejora (PMI)</h4></div>
                                     <div className="flex flex-wrap gap-2">
                                         {PMI_COMPETENCIES.map(c => (
-                                            <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-200 hover:text-indigo-400'}`}>{c.code}</button>
+                                            /* Fix: Use c.code instead of code and update hover colors to emerald for PMI section */
+                                            <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200 hover:text-emerald-400'}`}>{c.code}</button>
                                         ))}
                                     </div>
                                 </div>
