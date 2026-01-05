@@ -35,7 +35,7 @@ const formatDateCL = (dateStr: string | undefined): string => {
 };
 
 const cleanRutFormat = (rut: string): string => {
-    let clean = rut.replace(/[^0-9kK]/g, '');
+    let clean = rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '');
     if (clean.length < 2) return rut;
     const body = clean.slice(0, -1);
     const dv = clean.slice(-1).toUpperCase();
@@ -239,7 +239,6 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         setTimeout(() => { suggestionClickedRef.current = false; }, 300);
     };
 
-    // FIX: Added missing handleRutBlur function used in the enrollment form to normalize RUT and fetch master data if available.
     const handleRutBlur = () => {
         setTimeout(() => {
             if (suggestionClickedRef.current) return;
@@ -607,7 +606,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                     <div className="flex items-center gap-2 mb-2"><span className="w-2 h-2 rounded-full bg-emerald-400"></span><h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Plan de Mejora (PMI)</h4></div>
                                     <div className="flex flex-wrap gap-2">
                                         {PMI_COMPETENCIES.map(c => (
-                                            <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200 hover:text-emerald-400'}`}>{c.code}</button>
+                                            <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-200 hover:text-indigo-400'}`}>{c.code}</button>
                                         ))}
                                     </div>
                                 </div>
@@ -631,27 +630,66 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                         </div>
                         
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-                                <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-slate-700 flex items-center gap-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>Inscripción Manual (Base Maestra)</h4></div>
-                                <form onSubmit={handleEnrollSubmit} className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="relative col-span-2"><label className="block text-xs font-bold text-slate-700 mb-1">RUT (Buscar) *</label><input type="text" name="rut" placeholder="12345678-9" value={enrollForm.rut} onChange={handleEnrollChange} onBlur={handleRutBlur} className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-teal-500 font-bold ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : 'bg-white border-slate-300'}`}/>{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">{suggestions.map((s) => (<div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-teal-50 cursor-pointer text-xs border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-slate-500">{s.names} {s.paternalSurname}</span></div>))}</div>)}</div>
-                                        <div><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" name="names" required value={enrollForm.names} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-xs"/></div>
-                                        <div><label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label><input type="text" name="paternalSurname" required value={enrollForm.paternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border rounded text-xs"/></div>
+                            <div className="bg-white rounded-xl border border-slate-200 p-8 shadow-sm">
+                                <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-2">
+                                    <h4 className="font-bold text-slate-700 flex items-center gap-2">
+                                        <svg className="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+                                        Inscripción Manual (13 Campos Base Maestra)
+                                    </h4>
+                                </div>
+                                <form onSubmit={handleEnrollSubmit} className="space-y-8">
+                                    <div className="space-y-4">
+                                        <h5 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest border-b pb-1">Identidad y Contacto</h5>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="relative">
+                                                <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">RUT *</label>
+                                                <input required type="text" name="rut" placeholder="12345678-9" value={enrollForm.rut} onChange={handleEnrollChange} onBlur={handleRutBlur} autoComplete="off" className={`w-full px-3 py-2 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-teal-500 ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : 'bg-white border-slate-300'}`}/>
+                                                {showSuggestions && suggestions.length > 0 && (
+                                                    <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">
+                                                        {suggestions.map((s) => (
+                                                            <div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-teal-50 cursor-pointer text-xs border-b border-slate-50 last:border-0">
+                                                                <span className="font-bold block text-slate-800">{s.rut}</span>
+                                                                <span className="text-slate-500">{s.names} {s.paternalSurname}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Email Institucional</label><input type="email" name="email" value={enrollForm.email} onChange={handleEnrollChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"/></div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Nombres *</label><input required type="text" name="names" value={enrollForm.names} onChange={handleEnrollChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"/></div>
+                                            <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Ap. Paterno *</label><input required type="text" name="paternalSurname" value={enrollForm.paternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"/></div>
+                                            <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={enrollForm.maternalSurname} onChange={handleEnrollChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"/></div>
+                                        </div>
+                                        <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Teléfono</label><input type="text" name="phone" value={enrollForm.phone} onChange={handleEnrollChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"/></div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-3 mb-4">
-                                        <SmartSelect className="text-xs" label="Sede / Campus" name="campus" value={enrollForm.campus} options={config.campuses || ["Valparaíso"]} onChange={handleEnrollChange} />
-                                        <SmartSelect className="text-xs" label="Facultad" name="faculty" value={enrollForm.faculty} options={listFaculties} onChange={handleEnrollChange} />
+
+                                    <div className="space-y-4">
+                                        <h5 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest border-b pb-1">Datos Institucionales</h5>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <SmartSelect label="Sede / Campus" name="campus" value={enrollForm.campus} options={config.campuses || ["Valparaíso"]} onChange={handleEnrollChange} />
+                                            <SmartSelect label="Facultad" name="faculty" value={enrollForm.faculty} options={listFaculties} onChange={handleEnrollChange} />
+                                            <SmartSelect label="Departamento" name="department" value={enrollForm.department} options={listDepts} onChange={handleEnrollChange} />
+                                            <SmartSelect label="Carrera Profesional" name="career" value={enrollForm.career} options={listCareers} onChange={handleEnrollChange} />
+                                            <SmartSelect label="Rol Académico" name="academicRole" value={enrollForm.academicRole} options={listRoles} onChange={handleEnrollChange} />
+                                            <SmartSelect label="Tipo Contrato" name="contractType" value={enrollForm.contractType} options={listContracts} onChange={handleEnrollChange} />
+                                            <SmartSelect label="Semestre Docencia" name="teachingSemester" value={enrollForm.teachingSemester} options={listSemesters} onChange={handleEnrollChange} />
+                                            <div className="flex items-end">
+                                                <button type="submit" disabled={isSyncing || isProcessing} className={`w-full bg-teal-600 hover:bg-teal-700 text-white py-2 rounded-lg font-bold shadow-lg transition-all text-sm transform active:scale-95 ${(isSyncing || isProcessing) ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                    {isProcessing ? 'Procesando...' : 'Registrar Participante'}
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <button type="submit" disabled={isSyncing || isProcessing} className={`w-full bg-teal-600 hover:bg-teal-700 text-white py-2 rounded-lg font-bold shadow-sm transition-colors text-sm mt-4 ${(isSyncing || isProcessing) ? 'opacity-50 cursor-not-allowed' : ''}`}>{isProcessing ? 'Procesando...' : 'Registrar Participante'}</button>
-                                    {enrollMsg && (<div className={`text-xs p-2 rounded text-center ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{enrollMsg.text}</div>)}
+                                    {enrollMsg && (<div className={`text-xs p-3 rounded-xl text-center font-bold animate-fadeIn ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-red-100 text-red-800 border border-red-200'}`}>{enrollMsg.text}</div>)}
                                 </form>
                             </div>
                             <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col">
                                 <h4 className="font-bold text-slate-700 flex items-center gap-2 mb-4"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>Carga Masiva de Asistencia</h4>
                                 <div className="flex-1 flex flex-col justify-center space-y-4">
                                     <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}><div className="flex flex-col items-center justify-center pt-5 pb-6">{uploadFile ? (<><svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg><p className="mb-1 text-xs font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-xs text-slate-500">Click para subir CSV/Excel</p></>)}</div><input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} /></label>
-                                    <button type="button" onClick={handleBulkUpload} disabled={!uploadFile || isProcessing || isSyncing} className={`w-full bg-slate-800 text-white py-2 rounded-lg font-bold text-sm hover:bg-slate-900 transition-colors`}>Procesar Archivo</button>
+                                    <button type="button" onClick={handleBulkUpload} disabled={!uploadFile || isProcessing || isSyncing} className={`w-full bg-slate-800 text-white py-2 rounded-lg font-bold text-sm hover:bg-black transition-all shadow-md`}>Procesar Archivo</button>
                                 </div>
                             </div>
                         </div>
