@@ -106,11 +106,41 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [kioskSearchRut, setKioskSearchRut] = useState('');
   const [kioskFoundUser, setKioskFoundUser] = useState<User | null>(null);
 
-  const kioskEnrollments = useMemo(() => {
+  // --- LÓGICA: AGRUPAMIENTO POR SEMESTRE PARA CONSULTA ACADÉMICA ---
+  const groupedKioskEnrollments = useMemo(() => {
     if (!kioskFoundUser) return [];
     const normRut = normalizeRut(kioskFoundUser.rut);
-    return enrollments.filter(e => normalizeRut(e.rut) === normRut);
-  }, [kioskFoundUser, enrollments]);
+    const userEnrollments = enrollments.filter(e => normalizeRut(e.rut) === normRut);
+
+    const groups: Record<string, Enrollment[]> = {};
+    userEnrollments.forEach(enr => {
+        const act = activities.find(a => a.id === enr.activityId);
+        const sem = act?.academicPeriod || 'Periodo no definido';
+        if (!groups[sem]) groups[sem] = [];
+        groups[sem].push(enr);
+    });
+
+    // Ordenar los periodos: 2do Semestre primero, luego 1er Semestre, por año descendente
+    const sortedPeriodKeys = Object.keys(groups).sort((a, b) => {
+        const getPriority = (p: string) => {
+            if (p.endsWith('-2') || p.toLowerCase().includes('2do') || p.toLowerCase().includes('segundo')) return 0;
+            if (p.endsWith('-1') || p.toLowerCase().includes('1er') || p.toLowerCase().includes('primero')) return 1;
+            return 2;
+        };
+
+        const yearA = parseInt(a.split('-')[0]) || 0;
+        const yearB = parseInt(b.split('-')[0]) || 0;
+
+        if (yearA !== yearB) return yearB - yearA; // Más reciente primero
+
+        return getPriority(a) - getPriority(b); // 2do Sem antes que 1er Sem
+    });
+
+    return sortedPeriodKeys.map(key => ({
+        semester: key,
+        enrollments: groups[key]
+    }));
+  }, [kioskFoundUser, enrollments, activities]);
 
   // --- DIRECTIVA_ESTADO: Lógica avanzada de cálculo de estado académico ---
   const calculateState = (grades: number[], attendance: number, expectedCount: number): ActivityState => {
@@ -617,7 +647,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                 <h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-400"></span> Ejes PMI</h4>
                                 <div className="flex flex-wrap gap-2">
                                     {PMI_COMPETENCIES.map(c => (
-                                        /* Fix: Use c.code instead of code and update colors to emerald for PMI section */
                                         <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-600 border-emerald-700 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200'}`}>{c.code}</button>
                                     ))}
                                 </div>
@@ -1033,7 +1062,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
                     <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
                         {kioskFoundUser ? (
-                            <div className="space-y-8 animate-fadeIn">
+                            <div className="space-y-12 animate-fadeIn">
                                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-6">
                                     <div className="w-16 h-16 bg-blue-50 text-[#647FBC] rounded-full flex items-center justify-center font-black text-2xl border-2 border-blue-100 shadow-inner">{kioskFoundUser.names.charAt(0)}</div>
                                     <div>
@@ -1042,43 +1071,50 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                     </div>
                                 </div>
 
-                                <div className="space-y-4">
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b pb-2">Historial de Calificaciones y Asistencia</h4>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {kioskEnrollments.map(enr => {
-                                            const act = activities.find(a => a.id === enr.activityId);
-                                            if (!act) return null;
-                                            return (
-                                                <div key={enr.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:border-blue-300 transition-all flex flex-col justify-between group">
-                                                    <div className="flex justify-between items-start mb-3">
-                                                        <span className={`text-[9px] font-black px-2 py-1 rounded uppercase tracking-tighter ${enr.state === ActivityState.APROBADO ? 'bg-green-50 text-green-700' : 'bg-slate-50 text-slate-400'}`}>
-                                                            {enr.state}
-                                                        </span>
-                                                        <span className="text-[9px] text-slate-300 font-mono font-bold">{act.internalCode}</span>
-                                                    </div>
-                                                    <h5 className="font-bold text-slate-700 text-sm mb-4 leading-tight min-h-[40px] line-clamp-2">{act.name}</h5>
-                                                    <div className="flex items-center justify-between border-t border-slate-50 pt-3">
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="text-center">
-                                                                <span className="block text-xs font-black text-slate-700 leading-none">{enr.finalGrade || '-'}</span>
-                                                                <span className="text-[8px] font-black text-slate-400 uppercase">Nota Final</span>
+                                <div className="space-y-10">
+                                    {groupedKioskEnrollments.map(group => (
+                                        <div key={group.semester} className="space-y-4">
+                                            <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] border-b pb-2 flex justify-between items-center">
+                                                <span>Periodo Académico: {group.semester}</span>
+                                                <span className="bg-indigo-50 px-2 py-0.5 rounded text-indigo-600 font-black">{group.enrollments.length} Registros</span>
+                                            </h4>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {group.enrollments.map(enr => {
+                                                    const act = activities.find(a => a.id === enr.activityId);
+                                                    if (!act) return null;
+                                                    return (
+                                                        <div key={enr.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:border-blue-300 transition-all flex flex-col justify-between group">
+                                                            <div className="flex justify-between items-start mb-3">
+                                                                <span className={`text-[9px] font-black px-2 py-1 rounded uppercase tracking-tighter ${enr.state === ActivityState.APROBADO ? 'bg-green-50 text-green-700' : 'bg-slate-50 text-slate-400'}`}>
+                                                                    {enr.state}
+                                                                </span>
+                                                                <span className="text-[9px] text-slate-300 font-mono font-bold">{act.internalCode}</span>
                                                             </div>
-                                                            <div className="text-center">
-                                                                <span className="block text-xs font-black text-slate-700 leading-none">{enr.attendancePercentage || 0}%</span>
-                                                                <span className="text-[8px] font-black text-slate-400 uppercase">Asistencia</span>
+                                                            <h5 className="font-bold text-slate-700 text-sm mb-4 leading-tight min-h-[40px] line-clamp-2">{act.name}</h5>
+                                                            <div className="flex items-center justify-between border-t border-slate-50 pt-3">
+                                                                <div className="flex items-center gap-4">
+                                                                    <div className="text-center">
+                                                                        <span className="block text-xs font-black text-slate-700 leading-none">{enr.finalGrade || '-'}</span>
+                                                                        <span className="text-[8px] font-black text-slate-400 uppercase">Nota Final</span>
+                                                                    </div>
+                                                                    <div className="text-center">
+                                                                        <span className="block text-xs font-black text-slate-700 leading-none">{enr.attendancePercentage || 0}%</span>
+                                                                        <span className="text-[8px] font-black text-slate-400 uppercase">Asistencia</span>
+                                                                    </div>
+                                                                </div>
+                                                                <span className="text-[10px] font-black text-slate-400 uppercase">{act.year}-{act.academicPeriod}</span>
                                                             </div>
                                                         </div>
-                                                        <span className="text-[10px] font-black text-slate-400 uppercase">{act.year}-{act.academicPeriod}</span>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                        {kioskEnrollments.length === 0 && (
-                                            <div className="col-span-full py-12 text-center text-slate-400 italic bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
-                                                No se registran actividades para este docente.
+                                                    );
+                                                })}
                                             </div>
-                                        )}
-                                    </div>
+                                        </div>
+                                    ))}
+                                    {groupedKioskEnrollments.length === 0 && (
+                                        <div className="py-12 text-center text-slate-400 italic bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                                            No se registran actividades para este docente.
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ) : (
