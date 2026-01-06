@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole } from '../types';
-import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST, PEI_COMPETENCIES, PMI_COMPETENCIES } from '../constants';
+import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST, PEI_COMPETENCIES, PMI_COMPETENCIES, ACADEMIC_PROFILE_COMPETENCIES } from '../constants';
 import { SmartSelect } from './SmartSelect'; 
 import { suggestCompetencies, CompetencySuggestion } from '../services/geminiService';
 // @ts-ignore
@@ -235,7 +235,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       });
   }, [courseEnrollments, users]);
 
-  // --- Auto-Code Generator Logic (CORREGIDA) ---
+  // --- Auto-Code Generator Logic ---
   useEffect(() => {
     if (view === 'create') {
         const words = formData.nombre.trim().split(/\s+/);
@@ -262,6 +262,41 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
         setFormData(prev => ({ ...prev, internalCode: `${acronym}${datePart}-${ver}${semSuffix}` }));
     }
   }, [formData.nombre, formData.startDate, formData.version, formData.academicPeriod, view]);
+
+  // --- DIRECTIVA: SUGERENCIA AUTOMÁTICA DE FECHA DE TÉRMINO ---
+  useEffect(() => {
+    if ((view === 'create' || view === 'edit') && formData.startDate && formData.moduleCount > 0) {
+        // Parsear fecha de inicio considerando el huso horario local (noon para evitar saltos de día)
+        const start = new Date(formData.startDate + 'T12:00:00');
+        if (isNaN(start.getTime())) return;
+
+        // Regla: Duración = Cantidad de Módulos + 2 semanas extras
+        const totalWeeks = formData.moduleCount + 2;
+        
+        // 1. Encontrar el Domingo de la semana actual (final de la primera semana de referencia)
+        const daysToSunday = (7 - start.getDay()) % 7;
+        const endOfWeek1 = new Date(start);
+        endOfWeek1.setDate(start.getDate() + daysToSunday);
+        
+        // 2. Sumar las semanas restantes para llegar al Domingo de la semana final del curso
+        const finalSunday = new Date(endOfWeek1);
+        finalSunday.setDate(endOfWeek1.getDate() + (totalWeeks - 1) * 7);
+        
+        // 3. Sugerir el siguiente Lunes (Día Hábil) como fecha oficial de término
+        const suggestedEnd = new Date(finalSunday);
+        suggestedEnd.setDate(finalSunday.getDate() + 1);
+        
+        const yyyy = suggestedEnd.getFullYear();
+        const mm = String(suggestedEnd.getMonth() + 1).padStart(2, '0');
+        const dd = String(suggestedEnd.getDate()).padStart(2, '0');
+        const suggestedStr = `${yyyy}-${mm}-${dd}`;
+        
+        // Solo actualizamos si es diferente para permitir que el usuario sobrescriba si lo desea
+        if (formData.endDate !== suggestedStr) {
+            setFormData(prev => ({ ...prev, endDate: suggestedStr }));
+        }
+    }
+  }, [formData.startDate, formData.moduleCount, view]);
 
   // --- Handlers ---
   const handleToggleCompetence = (code: string) => {
@@ -302,11 +337,10 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       e.preventDefault();
       const newId = selectedCourseId || `ACAD-${Date.now()}`;
       
-      // SOLUCIÓN: Mapear 'nombre' a 'name' explícitamente para cumplir con el modelo de datos Activity
       const activityPayload: Activity = {
           ...formData,
           id: newId, 
-          name: formData.nombre, // <--- Fix: Mapeo correcto de campo
+          name: formData.nombre,
           category: 'ACADEMIC', 
           year: Number(formData.year),
           hours: Number(formData.hours),
@@ -348,10 +382,9 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       setView('edit');
   };
 
-  // --- NUEVA LÓGICA DE CLONACIÓN ---
   const handleCloneCourse = (course: Activity) => {
     setFormData({
-        internalCode: '', // Se autogenerará
+        internalCode: '', 
         year: course.year || new Date().getFullYear(),
         academicPeriod: course.academicPeriod || '1er Semestre',
         nombre: `${course.name} (Copia)`,
@@ -361,11 +394,11 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
         moduleCount: course.moduleCount || 1,
         evaluationCount: course.evaluationCount || 3,
         relator: course.relator || '',
-        startDate: '', // Se deja vacío para que el usuario elija
+        startDate: '', 
         endDate: '',
         competencyCodes: course.competencyCodes || []
     });
-    setSelectedCourseId(null); // Aseguramos que sea un registro nuevo
+    setSelectedCourseId(null); 
     setSyllabusFile(null);
     setView('create');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -385,7 +418,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     setPendingGrades(prev => ({ ...prev, [enrollmentId]: currentGrades }));
   };
 
-  // NUEVA LÓGICA: Sincronización combinada por lote (Notas + Asistencia)
   const handleBatchCommit = async () => {
     const affectedIds = Array.from(new Set([
         ...Object.keys(pendingGrades), 
@@ -402,14 +434,12 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
             const enrollment = courseEnrollments.find(e => e.id === id);
             if (!enrollment) continue;
 
-            // 1. Resolver Notas Finales
             const finalGrades = pendingGrades[id] || enrollment.grades || [];
             const validGrades = finalGrades.filter(g => g > 0);
             const avg = validGrades.length > 0 
                 ? parseFloat((validGrades.reduce((a,b)=>a+b,0)/validGrades.length).toFixed(1)) 
                 : 0;
             
-            // 2. Resolver Asistencia y Porcentaje
             const attMap = pendingAttendance[id] || {};
             const finalAttUpdates: any = {};
             let presentCount = 0;
@@ -423,14 +453,12 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
             
             const attendancePercentage = totalSessions > 0 ? Math.round((presentCount / totalSessions) * 100) : 0;
 
-            // 3. Aplicar DIRECTIVA_ESTADO
             const finalState = calculateState(
                 finalGrades, 
                 attendancePercentage, 
                 totalSessions
             );
 
-            // 4. Actualizar en DB
             await updateEnrollment(id, { 
                 grades: finalGrades, 
                 finalGrade: avg, 
@@ -452,7 +480,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     }
   };
 
-  // NUEVA LÓGICA: Toggle de asistencia es local ahora
   const handleToggleAttendanceLocal = (enrollmentId: string, sessionIdx: number) => {
     const enrollment = courseEnrollments.find(e => e.id === enrollmentId);
     if (!enrollment || enrollment.situation === 'INACTIVO') return;
@@ -460,8 +487,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     const sessionKey = `attendanceSession${sessionIdx + 1}`;
     const currentPending = pendingAttendance[enrollmentId] || {};
     
-    // Si ya hay un cambio pendiente para este campo, lo invertimos.
-    // Si no, invertimos el valor original de la base de datos.
     const currentVal = currentPending[sessionKey] !== undefined 
         ? currentPending[sessionKey] 
         : (enrollment as any)[sessionKey];
@@ -624,43 +649,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     }
   };
 
-  // --- Handlers for Enrollment ---
-  // Fix for Error 3: Added missing handleRutBlur and helper to select user and populate enrollment form
-  const handleSelectUserForEnroll = (u: User) => {
-    setEnrollForm({
-        rut: cleanRutFormat(u.rut),
-        names: u.names,
-        paternalSurname: u.paternalSurname,
-        maternalSurname: u.maternalSurname || '',
-        email: u.email || '',
-        phone: u.phone || '',
-        academicRole: u.academicRole || '',
-        faculty: u.faculty || '',
-        department: u.department || '',
-        career: u.career || '',
-        contractType: u.contractType || '',
-        teachingSemester: u.teachingSemester || '',
-        campus: u.campus || '',
-        systemRole: u.systemRole || UserRole.ESTUDIANTE
-    });
-    setShowSuggestions(false);
-  };
-
-  const handleRutBlur = () => {
-    setTimeout(() => {
-        if (suggestionClickedRef.current) return;
-        if (showSuggestions) setShowSuggestions(false);
-        if (!enrollForm.rut) return;
-        const formatted = cleanRutFormat(enrollForm.rut);
-        const rawSearch = normalizeRut(formatted);
-        setEnrollForm(prev => ({ ...prev, rut: formatted }));
-        const existingUser = users.find(u => normalizeRut(u.rut) === rawSearch);
-        if (existingUser) { 
-            handleSelectUserForEnroll(existingUser);
-        } 
-    }, 200);
-  };
-
   // --- Views ---
   if (view === 'create' || view === 'edit') {
     return (
@@ -741,13 +729,13 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                 <input type="date" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-normal"/>
                             </div>
                             <div>
-                                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Fecha de Término</label>
-                                <input type="date" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-normal"/>
+                                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Fecha de Término (Sugerida)</label>
+                                <input type="date" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-bold bg-indigo-50 border-indigo-200 focus:ring-indigo-500"/>
+                                <p className="text-[9px] text-indigo-400 font-bold uppercase mt-1 italic">* Basada en Módulos + 2 semanas</p>
                             </div>
                         </div>
                     </div>
 
-                    {/* SECCIÓN IA Y TAXONOMÍA */}
                     <div className="space-y-6">
                         <h3 className="text-sm font-black text-slate-400 uppercase tracking-[0.2em] border-b pb-2 flex items-center gap-2">
                             <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
@@ -789,6 +777,62 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                 </div>
                             </div>
                         </div>
+
+                        {/* SECCIÓN PERFIL DEL ACADÉMICO UPLA - NUEVO */}
+                        <div className="space-y-6 pt-6 border-t border-slate-100">
+                             <h4 className="text-sm font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                <svg className="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                Perfil del Académico UPLA
+                             </h4>
+                             
+                             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                                 {/* PEDAGÓGICA */}
+                                 <div className="space-y-3">
+                                     <h5 className="text-[9px] font-black text-rose-600 uppercase tracking-widest border-b border-rose-100 pb-1">Pedagógica</h5>
+                                     <div className="flex flex-wrap gap-1.5">
+                                         {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Pedagógica').map(c => (
+                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-rose-600 border-rose-700 text-white shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-400 hover:border-rose-200'}`}>{c.code}</button>
+                                         ))}
+                                     </div>
+                                 </div>
+                                 {/* INVESTIGACIÓN */}
+                                 <div className="space-y-3">
+                                     <h5 className="text-[9px] font-black text-emerald-600 uppercase tracking-widest border-b border-emerald-100 pb-1">Investigación</h5>
+                                     <div className="flex flex-wrap gap-1.5">
+                                         {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Investigación y/o Creación').map(c => (
+                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-600 border-emerald-700 text-white shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-400 hover:border-emerald-200'}`}>{c.code}</button>
+                                         ))}
+                                     </div>
+                                 </div>
+                                 {/* VINCULACIÓN */}
+                                 <div className="space-y-3">
+                                     <h5 className="text-[9px] font-black text-purple-600 uppercase tracking-widest border-b border-purple-100 pb-1">Vinculación</h5>
+                                     <div className="flex flex-wrap gap-1.5">
+                                         {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Vinculación').map(c => (
+                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-purple-600 border-purple-700 text-white shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-400 hover:border-purple-200'}`}>{c.code}</button>
+                                         ))}
+                                     </div>
+                                 </div>
+                                 {/* INTERPERSONAL */}
+                                 <div className="space-y-3">
+                                     <h5 className="text-[9px] font-black text-blue-600 uppercase tracking-widest border-b border-blue-100 pb-1">Interpersonal / Ética</h5>
+                                     <div className="flex flex-wrap gap-1.5">
+                                         {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Interpersonal y Ética').map(c => (
+                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-blue-600 border-blue-700 text-white shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-400 hover:border-blue-200'}`}>{c.code}</button>
+                                         ))}
+                                     </div>
+                                 </div>
+                                 {/* FORMACIÓN */}
+                                 <div className="space-y-3">
+                                     <h5 className="text-[9px] font-black text-pink-600 uppercase tracking-widest border-b border-pink-100 pb-1">Formación Continua</h5>
+                                     <div className="flex flex-wrap gap-1.5">
+                                         {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Formación Continua').map(c => (
+                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-pink-600 border-pink-700 text-white shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-400 hover:border-pink-200'}`}>{c.code}</button>
+                                         ))}
+                                     </div>
+                                 </div>
+                             </div>
+                        </div>
                     </div>
 
                     <div className="flex justify-between pt-10 border-t border-slate-100">
@@ -817,7 +861,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                             {aiSuggestions.map((s, i) => (
                                 <div key={i} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex gap-4">
                                     <div className="w-12 h-12 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-xs shrink-0 uppercase">{s.code}</div>
-                                    <div className="flex-1"><h4 className="font-bold text-slate-800 text-sm uppercase">{PEI_COMPETENCIES.find(c => c.code === s.code)?.name || PMI_COMPETENCIES.find(c => c.code === s.code)?.name}</h4><p className="text-xs text-slate-500 mt-1">"{s.reason}"</p></div>
+                                    <div className="flex-1"><h4 className="font-bold text-slate-800 text-sm uppercase">{PEI_COMPETENCIES.find(c => c.code === s.code)?.name || PMI_COMPETENCIES.find(c => c.code === s.code)?.name || ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code === s.code)?.name}</h4><p className="text-xs text-slate-500 mt-1">"{s.reason}"</p></div>
                                 </div>
                             ))}
                         </div>
@@ -871,26 +915,15 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                 <form onSubmit={async (e) => {
                                     e.preventDefault();
                                     setIsProcessingBatch(true);
-                                    setEnrollMsg(null);
                                     const formatted = cleanRutFormat(enrollForm.rut);
                                     try {
                                         await upsertUsers([{ ...enrollForm, rut: formatted, systemRole: enrollForm.systemRole as UserRole }]);
                                         await enrollUser(formatted, selectedCourseId!);
                                         await executeReload();
-                                        setEnrollMsg({ type: 'success', text: 'Estudiante matriculado exitosamente.' });
+                                        setEnrollMsg({ type: 'success', text: 'Estudiante matriculado.' });
                                         setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
                                     } catch (err: any) { 
-                                        console.error("Enrollment error:", err);
-                                        const errorDetail = err.message || JSON.stringify(err);
-                                        let userFriendlyMsg = `Error al matricular: ${errorDetail}`;
-                                        
-                                        if (errorDetail.includes("duplicate key")) {
-                                            userFriendlyMsg = "Error: El RUT o Email ya existe en la base de datos con un valor en conflicto.";
-                                        } else if (errorDetail.includes("not-null constraint")) {
-                                            userFriendlyMsg = "Error: Faltan campos obligatorios requeridos por la base maestra.";
-                                        }
-
-                                        setEnrollMsg({ type: 'error', text: userFriendlyMsg }); 
+                                        setEnrollMsg({ type: 'error', text: `Error al matricular: ${err.message || JSON.stringify(err)}` }); 
                                     } finally { setIsProcessingBatch(false); }
                                 }} className="space-y-8">
                                     <div className="space-y-4">
@@ -898,15 +931,10 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div className="relative">
                                                 <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">RUT *</label>
-                                                <input required type="text" name="rut" value={enrollForm.rut} placeholder="12345678-9" onChange={e => { setEnrollForm({...enrollForm, rut: e.target.value}); if(e.target.value.length >= 2) { const clean = normalizeRut(e.target.value); setSuggestions(users.filter(u => normalizeRut(u.rut).includes(clean)).slice(0, 5)); setShowSuggestions(true); } else { setShowSuggestions(false); } }} onBlur={handleRutBlur} className="w-full px-3 py-2 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500"/>
+                                                <input required type="text" name="rut" value={enrollForm.rut} placeholder="12345678-9" onChange={e => { setEnrollForm({...enrollForm, rut: e.target.value}); if(e.target.value.length >= 2) { const clean = normalizeRut(e.target.value); setSuggestions(users.filter(u => normalizeRut(u.rut).includes(clean)).slice(0, 5)); setShowSuggestions(true); } else { setShowSuggestions(false); } }} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} className="w-full px-3 py-2 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500"/>
                                                 {showSuggestions && suggestions.length > 0 && (
                                                     <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                                                        {suggestions.map(s => (<div key={s.rut} onMouseDown={() => { 
-                                                            // Fix for Error 3: Added logic to track suggestion click and populate enrollment form
-                                                            suggestionClickedRef.current = true;
-                                                            handleSelectUserForEnroll(s);
-                                                            setTimeout(() => { suggestionClickedRef.current = false; }, 300);
-                                                         }} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-xs border-b last:border-0"><span className="font-bold block">{cleanRutFormat(s.rut)}</span><span>{s.names} {s.paternalSurname}</span></div>))}
+                                                        {suggestions.map(s => (<div key={s.rut} onMouseDown={() => { setEnrollForm({...s, maternalSurname: s.maternalSurname || '', phone: s.phone || '', academicRole: s.academicRole || '', faculty: s.faculty || '', department: s.department || '', career: s.career || '', contractType: s.contractType || '', teachingSemester: s.teachingSemester || '', campus: s.campus || '', systemRole: UserRole.ESTUDIANTE }); setShowSuggestions(false); }} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-xs border-b last:border-0"><span className="font-bold block">{s.rut}</span><span>{s.names} {s.paternalSurname}</span></div>))}
                                                     </div>
                                                 )}
                                             </div>
@@ -933,7 +961,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                             <div className="flex items-end"><button type="submit" disabled={isProcessingBatch} className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold text-sm shadow hover:bg-indigo-700">{isProcessingBatch ? 'Procesando...' : 'Inscribir Estudiante'}</button></div>
                                         </div>
                                     </div>
-                                    {enrollMsg && <div className={`p-4 rounded-xl text-xs text-center font-bold animate-fadeIn border ${enrollMsg.type === 'success' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{enrollMsg.text}</div>}
+                                    {enrollMsg && <p className={`text-xs text-center font-bold ${enrollMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{enrollMsg.text}</p>}
                                 </form>
                             </div>
 
@@ -1113,7 +1141,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                                 onChange={() => handleToggleAttendanceLocal(enr.id, i)} 
                                                                 className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-30"
                                                               />
-                                                          </td>
+                          </td>
                                                       );
                                                   })}
                                                   <td className={`px-4 py-3 text-center font-bold border-r ${liveAttendancePercentage < (config.minAttendancePercentage || 75) ? 'text-red-500' : 'text-green-600'}`}>{liveAttendancePercentage}%</td>
@@ -1187,7 +1215,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
               {/* MODAL DE CONFIRMACIÓN LIMPIAR LISTA */}
               {showClearConfirm && (
                 <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
-                    <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-10 text-center border border-rose-100">
+                    <div className="bg-white rounded-3xl shadow-2xl max-md w-full p-10 text-center border border-rose-100">
                         <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
                             <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                         </div>
@@ -1253,10 +1281,22 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                   <div className="flex items-center gap-4 text-xs text-slate-500 mb-4"><span>{enrolledCount} Inscritos</span><span>{course.modality}</span><span>{course.hours}h</span></div>
                   
                   {course.competencyCodes && course.competencyCodes.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-4 h-6 overflow-hidden">
-                          {course.competencyCodes.map(code => (
-                              <span key={code} className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${code.startsWith('PEI') ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>{code}</span>
-                          ))}
+                      <div className="flex flex-wrap gap-1 mb-4 h-10 overflow-hidden">
+                          {course.competencyCodes.slice(0, 8).map(code => {
+                              const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code === code);
+                              return (
+                                <span 
+                                    key={code} 
+                                    className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${
+                                        paMeta ? `${paMeta.lightColor} ${paMeta.textColor} ${paMeta.borderColor}` :
+                                        code.startsWith('PEI') ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 
+                                        'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                    }`}
+                                >
+                                    {code}
+                                </span>
+                              );
+                          })}
                       </div>
                   )}
 

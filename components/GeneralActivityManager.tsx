@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Activity, User, UserRole, Enrollment, ActivityState } from '../types';
-import { GENERAL_ACTIVITY_TYPES, ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST, PEI_COMPETENCIES, PMI_COMPETENCIES } from '../constants';
+import { GENERAL_ACTIVITY_TYPES, ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST, PEI_COMPETENCIES, PMI_COMPETENCIES, ACADEMIC_PROFILE_COMPETENCIES } from '../constants';
 import { SmartSelect } from './SmartSelect';
 import { suggestCompetencies, CompetencySuggestion } from '../services/geminiService';
 // @ts-ignore
@@ -431,15 +431,22 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                 {/* TAGS TAXONÓMICOS DE COMPETENCIAS (DEBAJO DE FECHA) */}
                                 {act.competencyCodes && act.competencyCodes.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-2">
-                                        {act.competencyCodes.map(code => (
-                                            <span 
-                                                key={code} 
-                                                title={PEI_COMPETENCIES.find(c => c.code === code)?.name || PMI_COMPETENCIES.find(c => c.code === code)?.name || ''}
-                                                className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${code.startsWith('PEI') ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}
-                                            >
-                                                {code}
-                                            </span>
-                                        ))}
+                                        {act.competencyCodes.map(code => {
+                                            const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code === code);
+                                            return (
+                                                <span 
+                                                    key={code} 
+                                                    title={PEI_COMPETENCIES.find(c => c.code === code)?.name || PMI_COMPETENCIES.find(c => c.code === code)?.name || paMeta?.name || ''}
+                                                    className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${
+                                                        paMeta ? `${paMeta.lightColor} ${paMeta.textColor} ${paMeta.borderColor}` :
+                                                        code.startsWith('PEI') ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 
+                                                        'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                                    }`}
+                                                >
+                                                    {code}
+                                                </span>
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>
@@ -564,7 +571,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                         {/* SUBIDA DE PROGRAMA Y ANÁLISIS IA */}
                         <div className="space-y-4 pt-6 border-t-2 border-slate-50">
                             <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-widest flex items-center gap-2">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                                <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
                                 PROGRAMA O DESCRIPCIÓN (ANÁLISIS IA)
                             </h3>
                             <div className="flex flex-col md:flex-row gap-4 items-center bg-slate-50 p-6 rounded-2xl border border-slate-100 shadow-inner">
@@ -606,10 +613,26 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                     <div className="flex items-center gap-2 mb-2"><span className="w-2 h-2 rounded-full bg-emerald-400"></span><h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Plan de Mejora (PMI)</h4></div>
                                     <div className="flex flex-wrap gap-2">
                                         {PMI_COMPETENCIES.map(c => (
-                                            /* Fix: Use c.code instead of code and update hover colors to emerald for PMI section */
                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200 hover:text-emerald-400'}`}>{c.code}</button>
                                         ))}
                                     </div>
+                                </div>
+                            </div>
+
+                            {/* PERFIL ACADÉMICO (DINÁMICO) - NUEVO */}
+                            <div className="space-y-4 pt-6">
+                                <h4 className="text-sm font-black text-rose-600 uppercase tracking-[0.2em] flex items-center gap-2">Perfil del Académico UPLA</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                                    {['Pedagógica', 'Investigación y/o Creación', 'Vinculación', 'Interpersonal y Ética', 'Formación Continua'].map(dim => (
+                                        <div key={dim} className="space-y-2">
+                                            <h5 className="text-[9px] font-black uppercase text-slate-400 border-b pb-1">{dim}</h5>
+                                            <div className="flex flex-wrap gap-1">
+                                                {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === dim).map(c => (
+                                                    <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-black uppercase border transition-all ${formData.competencyCodes.includes(c.code) ? `${c.color} text-white shadow-sm scale-110` : 'bg-white border-slate-100 text-slate-300 hover:border-slate-300'}`}>{c.code}</button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         </div>
@@ -721,10 +744,10 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                             <p className="text-slate-600 text-sm italic">Basado en el programa <strong>"{syllabusFile?.name}"</strong>, la IA sugiere estas competencias:</p>
                             <div className="space-y-4">
                                 {aiSuggestions.map((suggestion, idx) => (
-                                    <div key={idx} className={`p-4 rounded-2xl border flex gap-4 ${suggestion.code.startsWith('PEI') ? 'bg-indigo-50 border-indigo-100' : 'bg-emerald-50 border-emerald-100'}`}>
-                                        <div className={`w-14 h-14 flex-shrink-0 rounded-xl flex items-center justify-center font-black text-sm border-2 ${suggestion.code.startsWith('PEI') ? 'bg-white text-indigo-700 border-indigo-200' : 'bg-white text-emerald-700 border-emerald-200'}`}>{suggestion.code}</div>
+                                    <div key={idx} className={`p-4 rounded-2xl border flex gap-4 ${suggestion.code.startsWith('PEI') ? 'bg-indigo-50 border-indigo-100' : suggestion.code.startsWith('PA') ? 'bg-rose-50 border-rose-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <div className={`w-14 h-14 flex-shrink-0 rounded-xl flex items-center justify-center font-black text-sm border-2 ${suggestion.code.startsWith('PEI') ? 'bg-white text-indigo-700 border-indigo-200' : suggestion.code.startsWith('PA') ? 'bg-white text-rose-700 border-rose-200' : 'bg-white text-emerald-700 border-emerald-200'}`}>{suggestion.code}</div>
                                         <div className="flex-1">
-                                            <h4 className={`font-bold text-sm uppercase ${suggestion.code.startsWith('PEI') ? 'text-indigo-800' : 'text-emerald-800'}`}>{PEI_COMPETENCIES.find(c => c.code === suggestion.code)?.name || PMI_COMPETENCIES.find(c => c.code === suggestion.code)?.name || 'Competencia Institucional'}</h4>
+                                            <h4 className={`font-bold text-sm uppercase ${suggestion.code.startsWith('PEI') ? 'text-indigo-800' : suggestion.code.startsWith('PA') ? 'text-rose-800' : 'text-emerald-800'}`}>{PEI_COMPETENCIES.find(c => c.code === suggestion.code)?.name || PMI_COMPETENCIES.find(c => c.code === suggestion.code)?.name || ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code === suggestion.code)?.name || 'Competencia Institucional'}</h4>
                                             <p className="text-xs text-slate-500 mt-1 leading-relaxed"><span className="font-bold text-slate-700">Intencionalidad:</span> "{suggestion.reason}"</p>
                                         </div>
                                     </div>

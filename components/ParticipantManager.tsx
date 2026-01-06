@@ -167,16 +167,41 @@ export const ParticipantManager: React.FC = () => {
   };
 
   const handleRutBlur = () => {
+      // Usamos un timeout para asegurar que las selecciones de sugerencias ocurran primero si es necesario
       setTimeout(() => {
           if (showSuggestions && activeSearchField === 'rut') setShowSuggestions(false);
           if (!manualForm.rut) return;
+          
           const formatted = cleanRutFormat(manualForm.rut);
           const rawSearch = normalizeRut(formatted);
-          setManualForm(prev => ({ ...prev, rut: formatted }));
           const existingUser = users.find(u => normalizeRut(u.rut) === rawSearch);
-          if (existingUser) { handleSelectUser(existingUser); } 
-          else { setIsEditing(false); }
-      }, 200);
+          
+          if (existingUser) { 
+              handleSelectUser(existingUser); 
+          } 
+          else { 
+              // SI EL RUT NO EXISTE: Limpieza total de campos para evitar inconsistencia con registros cargados anteriormente
+              setIsEditing(false);
+              setManualForm({
+                rut: formatted,
+                names: '',
+                paternalSurname: '',
+                maternalSurname: '',
+                email: '',
+                phone: '',
+                faculty: '',
+                department: '',
+                career: '',
+                contractType: '',
+                teachingSemester: '',
+                campus: '',
+                academicRole: '',
+                systemRole: UserRole.ESTUDIANTE
+              });
+              setManualStatus('idle');
+              setStatusMsg('');
+          }
+      }, 250);
   };
 
   const handleManualSubmit = async (e: React.FormEvent) => {
@@ -186,16 +211,20 @@ export const ParticipantManager: React.FC = () => {
         setRutError('Complete los campos obligatorios');
         return;
     }
+    
     const existing = getUser(manualForm.rut);
     const roleToSave = existing ? existing.systemRole : (manualForm.systemRole as UserRole);
-
     const newUser: User = { ...manualForm, systemRole: roleToSave, password: existing?.password, photoUrl: existing?.photoUrl };
 
     try {
         await upsertUsers([newUser]);
+        
+        // APLICACIÓN DE DIRECTIVA_RECARGA: Actualiza el contexto global y da feedback visual
         await executeReload();
+        
         setManualStatus('success');
-        setStatusMsg(isEditing ? 'Usuario actualizado.' : 'Usuario creado.');
+        setStatusMsg(isEditing ? 'Registro actualizado correctamente.' : 'Nuevo registro creado exitosamente.');
+        
         if (!isEditing) {
             setTimeout(() => {
                 setManualStatus('idle');
@@ -205,7 +234,7 @@ export const ParticipantManager: React.FC = () => {
         }
     } catch (error) {
         setManualStatus('error');
-        setStatusMsg('Error al guardar.');
+        setStatusMsg('Error al intentar guardar los cambios.');
     }
   };
 
@@ -213,6 +242,7 @@ export const ParticipantManager: React.FC = () => {
       if (confirm(`¿Eliminar al estudiante ${manualForm.rut} de la Base Maestra?`)) {
           try {
               await deleteUser(manualForm.rut);
+              // APLICACIÓN DE DIRECTIVA_RECARGA
               await executeReload();
               setManualStatus('deleted');
               setStatusMsg('Estudiante eliminado.');
@@ -232,14 +262,14 @@ export const ParticipantManager: React.FC = () => {
     const reader = new FileReader();
     const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
 
-    reader.onload = async (e) => {
+    reader.onload = async (evt) => {
       let rows: any[][] = [];
       if (isExcel) {
-          const data = e.target?.result;
-          const workbook = read(data, { type: 'array' });
+          const dataXls = evt.target?.result;
+          const workbook = read(dataXls, { type: 'array' });
           rows = utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
       } else {
-          const text = e.target?.result as string;
+          const text = evt.target?.result as string;
           const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== '');
           if (lines.length > 0) rows = lines.map(line => line.split(lines[0].includes(';') ? ';' : ','));
       }
@@ -402,7 +432,7 @@ export const ParticipantManager: React.FC = () => {
                                     <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
                                         <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por RUT</div>
                                         {suggestions.map((s) => (
-                                            <div key={s.rut} onMouseDown={() => handleSelectUser(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.rut}</span><span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span></div>
+                                            <div key={s.rut} onMouseDown={() => handleSelectUser(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{cleanRutFormat(s.rut)}</span><span className="text-xs text-slate-500">{s.names} {s.paternalSurname}</span></div>
                                         ))}
                                     </div>
                                 )}
@@ -415,7 +445,7 @@ export const ParticipantManager: React.FC = () => {
                                     <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
                                         <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por Apellido</div>
                                         {suggestions.map((s) => (
-                                            <div key={s.rut} onMouseDown={() => handleSelectUser(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.paternalSurname} {s.maternalSurname}</span><span className="text-xs text-slate-500">{s.names} ({s.rut})</span></div>
+                                            <div key={s.rut} onMouseDown={() => handleSelectUser(s)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"><span className="font-bold block text-slate-800">{s.paternalSurname} {s.maternalSurname}</span><span className="text-xs text-slate-500">{s.names} ({cleanRutFormat(s.rut)})</span></div>
                                         ))}
                                     </div>
                                 )}

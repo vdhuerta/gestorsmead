@@ -1,6 +1,5 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
-import { SCHEMA_TABLES, PEI_COMPETENCIES, PMI_COMPETENCIES } from '../constants';
+import { SCHEMA_TABLES, PEI_COMPETENCIES, PMI_COMPETENCIES, ACADEMIC_PROFILE_COMPETENCIES } from '../constants';
 
 // Prepare a system prompt that understands the schema
 const schemaContext = JSON.stringify(SCHEMA_TABLES, null, 2);
@@ -23,7 +22,7 @@ export interface CompetencySuggestion {
 }
 
 /**
- * Analiza el contenido de un programa de asignatura para sugerir competencias PEI y PMI.
+ * Analiza el contenido de un programa de asignatura para sugerir competencias PEI, PMI y PA (Perfil Académico).
  * Ahora incluye razonamiento pedagógico para cada sugerencia.
  */
 export const suggestCompetencies = async (syllabusText: string): Promise<CompetencySuggestion[]> => {
@@ -33,19 +32,21 @@ export const suggestCompetencies = async (syllabusText: string): Promise<Compete
     
     const peiList = PEI_COMPETENCIES.map(c => `${c.code}: ${c.name}`).join(", ");
     const pmiList = PMI_COMPETENCIES.map(c => `${c.code}: ${c.name}`).join(", ");
+    const paList = ACADEMIC_PROFILE_COMPETENCIES.map(c => `${c.code}: ${c.name} (Dimensión: ${c.dimension})`).join(", ");
 
     const analyzerPrompt = `
 Eres un experto curricular de la Universidad de Playa Ancha (UPLA).
-Analiza el siguiente extracto de un programa de asignatura y sugiere a qué competencias del PEI (Plan Estratégico Institucional) y ejes del PMI (Plan de Mejora Institucional) tributa.
+Analiza el siguiente extracto de un programa de asignatura y sugiere a qué competencias tributa.
 
 LISTA DE COMPETENCIAS PEI: [${peiList}]
 LISTA DE EJES PMI: [${pmiList}]
+LISTA DE DIMENSIONES DEL PERFIL ACADÉMICO (PA): [${paList}]
 
 CONTENIDO DEL PROGRAMA:
 "${syllabusText}"
 
 INSTRUCCIONES:
-1. Identifica los códigos que apliquen.
+1. Identifica los códigos que apliquen (PEI, PMI o PA).
 2. Para cada código, explica brevemente (máximo 15 palabras) por qué los objetivos o contenidos del programa se alinean con esa competencia (intencionalidad).
 3. Retorna ÚNICAMENTE un arreglo JSON de objetos con la estructura: {"code": "CODIGO", "reason": "EXPLICACION BREVE"}.
 4. Si no encuentras una relación clara, no incluyas el objeto.

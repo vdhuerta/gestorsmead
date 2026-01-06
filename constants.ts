@@ -1,4 +1,3 @@
-
 import { SchemaTable, SystemConfig, User, Activity, Enrollment, UserRole, ActivityState } from './types';
 
 // --- Lists for Dropdowns ---
@@ -22,6 +21,25 @@ export const PMI_COMPETENCIES = [
   { code: 'PMI-3', name: 'Inclusión' },
   { code: 'PMI-4', name: 'Ley Karin' },
   { code: 'PMI-5', name: 'Probidad y Transparencia' }
+];
+
+export const ACADEMIC_PROFILE_COMPETENCIES = [
+  // Pedagógica (Rose/Red)
+  { code: 'PA-PED1', name: 'Diseño para el aprendizaje', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
+  { code: 'PA-PED2', name: 'Didáctica para el aprendizaje', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
+  { code: 'PA-PED3', name: 'Evaluación para el aprendizaje', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
+  { code: 'PA-PED4', name: 'Tecnologías para el aprendizaje y el conocimiento', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
+  { code: 'PA-PED5', name: 'Reflexión pedagógica', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
+  // Investigación (Green/Emerald)
+  { code: 'PA-INV1', name: 'Desarrollo del conocimiento', dimension: 'Investigación y/o Creación', color: 'bg-emerald-600', textColor: 'text-emerald-700', lightColor: 'bg-emerald-50', borderColor: 'border-emerald-100' },
+  // Vinculación (Purple)
+  { code: 'PA-VIN1', name: 'Vinculación con el medio y el territorio', dimension: 'Vinculación', color: 'bg-purple-600', textColor: 'text-purple-700', lightColor: 'bg-purple-50', borderColor: 'border-purple-100' },
+  { code: 'PA-VIN2', name: 'Vinculación interna', dimension: 'Vinculación', color: 'bg-purple-600', textColor: 'text-purple-700', lightColor: 'bg-purple-50', borderColor: 'border-purple-100' },
+  // Interpersonal y Ética (Blue)
+  { code: 'PA-INT1', name: 'Interpersonal', dimension: 'Interpersonal y Ética', color: 'bg-blue-600', textColor: 'text-blue-700', lightColor: 'bg-blue-50', borderColor: 'border-blue-100' },
+  { code: 'PA-INT2', name: 'Acción ética', dimension: 'Interpersonal y Ética', color: 'bg-blue-600', textColor: 'text-blue-700', lightColor: 'bg-blue-50', borderColor: 'border-blue-100' },
+  // Formación Continua (Pink)
+  { code: 'PA-FOR1', name: 'Fortalecimiento académico', dimension: 'Formación Continua', color: 'bg-pink-600', textColor: 'text-pink-700', lightColor: 'bg-pink-50', borderColor: 'border-pink-100' }
 ];
 
 export const GENERAL_ACTIVITY_TYPES = [
