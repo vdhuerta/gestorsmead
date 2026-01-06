@@ -86,6 +86,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
     const [isAnalyzingIA, setIsAnalyzingIA] = useState(false);
     const [aiSuggestions, setAiSuggestions] = useState<CompetencySuggestion[]>([]);
     const [showAiReview, setShowAiReview] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
     // Enrollment Form States
     const [enrollForm, setEnrollForm] = useState({
@@ -187,7 +188,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         try {
             const reader = new FileReader();
             reader.onload = async (e) => {
-                const simulatedText = `Análisis de programa: ${syllabusFile.name}. Contenido pedagógico simulado para sugerir competencias UPLA.`;
+                const simulatedText = syllabusFile.type.includes('pdf') ? `Análisis de programa: ${syllabusFile.name}. Contenido pedagógico simulado para sugerir competencias UPLA.` : e.target?.result as string;
                 const suggestions = await suggestCompetencies(simulatedText);
                 if (suggestions.length > 0) {
                     setAiSuggestions(suggestions);
@@ -384,6 +385,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setIsSaving(true);
         const finalType = formData.activityType === 'Otro' ? formData.otherType : formData.activityType;
         const finalCode = formData.internalCode.trim().toUpperCase().replace(/\s+/g, '-');
         const generatedId = selectedActivity ? selectedActivity.id : finalCode;
@@ -392,7 +394,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         };
         try {
             await addActivity(activityToSave); await executeReload(); setView('list'); setSelectedActivity(null);
-        } catch (err) { alert("Error al guardar."); }
+        } catch (err) { alert("Error al guardar."); } finally { setIsSaving(false); }
     };
 
     if (view === 'list') {
@@ -431,15 +433,16 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                 {/* TAGS TAXONÓMICOS DE COMPETENCIAS (DEBAJO DE FECHA) */}
                                 {act.competencyCodes && act.competencyCodes.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-2 h-auto min-h-[22px]">
-                                        {act.competencyCodes.map(code => {
-                                            const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code.replace(/-/g, '').toUpperCase() === code.replace(/-/g, '').toUpperCase());
+                                        {/* Fix: Explicitly typing code as any to avoid 'unknown' type errors from Array.from(Set) */}
+                                        {Array.from(new Set(act.competencyCodes)).map((code: any) => {
+                                            const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code.replace(/-/g, '').toUpperCase() === (code as string).replace(/-/g, '').toUpperCase());
                                             return (
                                                 <span 
                                                     key={code} 
-                                                    title={PEI_COMPETENCIES.find(c => c.code === code)?.name || PMI_COMPETENCIES.find(c => c.code === code)?.name || paMeta?.name || ''}
+                                                    title={PEI_COMPETENCIES.find(c => c.code === (code as string))?.name || PMI_COMPETENCIES.find(c => c.code === (code as string))?.name || paMeta?.name || ''}
                                                     className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${
                                                         paMeta ? `${paMeta.lightColor} ${paMeta.textColor} ${paMeta.borderColor}` :
-                                                        code.startsWith('PEI') ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 
+                                                        (code as string).startsWith('PEI') ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 
                                                         'bg-emerald-50 text-emerald-600 border-emerald-100'
                                                     }`}
                                                 >
@@ -613,7 +616,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                     <div className="flex items-center gap-2 mb-2"><span className="w-2 h-2 rounded-full bg-emerald-400"></span><h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Plan de Mejora (PMI)</h4></div>
                                     <div className="flex flex-wrap gap-2">
                                         {PMI_COMPETENCIES.map(c => (
-                                            <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200 hover:text-emerald-400'}`}>{c.code}</button>
+                                            <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-indigo-300 text-indigo-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-200 hover:text-indigo-400'}`}>{c.code}</button>
                                         ))}
                                     </div>
                                 </div>
@@ -638,9 +641,21 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                         </div>
 
                         <div className="flex justify-end pt-8 border-t border-slate-100">
-                            <button type="submit" disabled={isSyncing} className={`bg-teal-600 text-white px-10 py-3.5 rounded-xl font-bold shadow-lg hover:bg-teal-700 transition-all transform active:scale-95 flex items-center gap-2 ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}>
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                                {view === 'create' ? 'Crear Actividad' : 'Guardar Cambios'}
+                            <button type="submit" disabled={isSaving} className={`px-10 py-3.5 rounded-xl font-bold shadow-lg transition-all transform active:scale-95 flex items-center gap-2 ${isSaving ? 'bg-slate-400 text-white cursor-not-allowed shadow-none' : 'bg-teal-600 text-white hover:bg-teal-700'}`}>
+                                {isSaving ? (
+                                    <>
+                                        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Guardando...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                        {view === 'create' ? 'Crear Actividad' : 'Guardar Cambios'}
+                                    </>
+                                )}
                             </button>
                         </div>
                     </form>
@@ -669,7 +684,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                                 <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">RUT *</label>
                                                 <input required type="text" name="rut" placeholder="12345678-9" value={enrollForm.rut} onChange={handleEnrollChange} onBlur={handleRutBlur} autoComplete="off" className={`w-full px-3 py-2 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-teal-500 ${isFoundInMaster ? 'bg-green-50 border-green-300 text-green-800' : 'bg-white border-slate-300'}`}/>
                                                 {showSuggestions && suggestions.length > 0 && (
-                                                    <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">
+                                                    <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto left-0">
                                                         {suggestions.map((s) => (
                                                             <div key={s.rut} onMouseDown={() => handleSelectSuggestion(s)} className="px-4 py-2 hover:bg-teal-50 cursor-pointer text-xs border-b border-slate-50 last:border-0">
                                                                 <span className="font-bold block text-slate-800">{s.rut}</span>

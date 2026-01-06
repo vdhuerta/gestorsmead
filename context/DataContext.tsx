@@ -84,6 +84,7 @@ const mapActivityFromDB = (a: any): Activity => ({
     classLink: a.class_link,
     evaluationLink: a.evaluation_link, 
     isPublic: a.is_public,
+    isUnderConstruction: a.is_under_construction,
     programConfig: a.program_config,
     competencyCodes: a.competency_codes || []
 });
@@ -184,6 +185,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         class_link: activity.classLink,
         evaluation_link: activity.evaluationLink, 
         is_public: activity.isPublic,
+        is_under_construction: activity.isUnderConstruction,
         program_config: activity.programConfig || null,
         competency_codes: activity.competencyCodes || []
     });

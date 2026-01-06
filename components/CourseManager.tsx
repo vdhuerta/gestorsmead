@@ -101,6 +101,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [aiSuggestions, setAiSuggestions] = useState<CompetencySuggestion[]>([]);
   const [showAiReview, setShowAiReview] = useState(false);
   const [syllabusFile, setSyllabusFile] = useState<File | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Estados temporales para edición por lote
   const [pendingGrades, setPendingGrades] = useState<Record<string, number[]>>({});
@@ -193,21 +194,13 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     Object.keys(pendingGrades).length > 0 || Object.keys(pendingAttendance).length > 0
   , [pendingGrades, pendingAttendance]);
 
-  const handleSafeAction = (action: () => void) => {
-    if (hasUnsavedChanges) {
-      setPendingAction(() => action);
-      setShowExitWarning(true);
-    } else {
-      action();
-    }
-  };
-
   const [formData, setFormData] = useState({
     internalCode: '', year: new Date().getFullYear(), academicPeriod: '1er Semestre',
     nombre: '', version: 'V1', modality: 'Presencial', hours: 0,
     moduleCount: 1, evaluationCount: 3, relator: '',
     startDate: '', endDate: '',
-    competencyCodes: [] as string[]
+    competencyCodes: [] as string[],
+    isUnderConstruction: false
   });
 
   const [enrollForm, setEnrollForm] = useState({
@@ -234,6 +227,14 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           return (userA?.paternalSurname || '').localeCompare(userB?.paternalSurname || '');
       });
   }, [courseEnrollments, users]);
+
+  // LÓGICA DE AGRUPACIÓN PARA EL LISTADO
+  const groupedActivities = useMemo(() => {
+    return {
+        active: sortedAcademicActivities.filter(a => !a.isUnderConstruction),
+        underConstruction: sortedAcademicActivities.filter(a => !!a.isUnderConstruction)
+    };
+  }, [sortedAcademicActivities]);
 
   // --- Auto-Code Generator Logic ---
   useEffect(() => {
@@ -335,6 +336,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
+      setIsSaving(true);
       const newId = selectedCourseId || `ACAD-${Date.now()}`;
       
       const activityPayload: Activity = {
@@ -358,6 +360,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           console.error("Course Save Error:", err);
           const errorMsg = err.message || JSON.stringify(err);
           alert(`Error al guardar: ${errorMsg}`); 
+      } finally {
+          setIsSaving(false);
       }
   };
 
@@ -376,7 +380,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           relator: course.relator || '', 
           startDate: course.startDate || '', 
           endDate: course.endDate || '', 
-          competencyCodes: course.competencyCodes || [] 
+          competencyCodes: course.competencyCodes || [],
+          isUnderConstruction: !!course.isUnderConstruction
       });
       setSyllabusFile(null);
       setView('edit');
@@ -396,7 +401,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
         relator: course.relator || '',
         startDate: '', 
         endDate: '',
-        competencyCodes: course.competencyCodes || []
+        competencyCodes: course.competencyCodes || [],
+        isUnderConstruction: !!course.isUnderConstruction
     });
     setSelectedCourseId(null); 
     setSyllabusFile(null);
@@ -649,6 +655,15 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     }
   };
 
+  const handleSafeAction = (action: () => void) => {
+    if (hasUnsavedChanges) {
+      setPendingAction(() => action);
+      setShowExitWarning(true);
+    } else {
+      action();
+    }
+  };
+
   // --- Views ---
   if (view === 'create' || view === 'edit') {
     return (
@@ -664,13 +679,24 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                     <div className="space-y-6">
                         <h3 className="text-sm font-black text-slate-400 uppercase tracking-[0.2em] border-b pb-2">Información de Cabecera</h3>
                         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                            <div className="md:col-span-8">
+                            <div className="md:col-span-6">
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Nombre de la Asignatura / Curso *</label>
                                 <input required type="text" value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#647FBC] text-sm font-normal shadow-sm"/>
                             </div>
-                            <div className="md:col-span-4">
+                            <div className="md:col-span-3">
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Código Interno</label>
                                 <input required type="text" value={formData.internalCode} onChange={e => setFormData({...formData, internalCode: e.target.value.toUpperCase()})} className="w-full px-4 py-3 border border-slate-200 rounded-xl uppercase font-mono text-sm bg-slate-50"/>
+                            </div>
+                            <div className="md:col-span-3 flex items-center mt-6">
+                                <label className="flex items-center gap-2 cursor-pointer bg-amber-50 px-3 py-2 rounded-xl border border-amber-200 shadow-sm hover:bg-amber-100 transition-all">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={formData.isUnderConstruction} 
+                                        onChange={e => setFormData({...formData, isUnderConstruction: e.target.checked})}
+                                        className="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500"
+                                    />
+                                    <span className="text-[10px] font-black text-amber-700 uppercase tracking-tighter">Curso en Construcción</span>
+                                </label>
                             </div>
                         </div>
 
@@ -839,8 +865,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                         {view === 'edit' && <button type="button" onClick={() => { if(confirm("¿Eliminar permanentemente?")) deleteActivity(selectedCourseId!).then(() => setView('list')); }} className="text-rose-600 font-black uppercase text-[10px] tracking-widest hover:underline">Eliminar Curso Académico</button>}
                         <div className="flex gap-3 ml-auto">
                             <button type="button" onClick={() => setView('list')} className="px-8 py-3 text-slate-500 font-bold">Cancelar</button>
-                            <button type="submit" disabled={isSyncing} className="bg-[#647FBC] text-white px-10 py-3 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-blue-800 transition-all transform active:scale-95 disabled:opacity-70">
-                                {isSyncing ? 'Guardando...' : 'Grabar Configuración'}
+                            <button type="submit" disabled={isSaving} className={`px-10 py-3 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all transform active:scale-95 ${isSaving ? 'bg-slate-400 text-white cursor-not-allowed' : 'bg-[#647FBC] text-white hover:bg-blue-800'}`}>
+                                {isSaving ? 'Guardando...' : 'Guardar Cambios'}
                             </button>
                         </div>
                     </div>
@@ -887,6 +913,9 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                         <span className="text-xs font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-700">{selectedCourse.academicPeriod}</span>
                         <span className="text-slate-400 text-xs">|</span>
                         <span className="text-slate-500 text-xs font-bold uppercase">{selectedCourse.internalCode}</span>
+                        {selectedCourse.isUnderConstruction && (
+                            <span className="bg-amber-100 text-amber-700 text-[10px] font-black px-2 py-0.5 rounded border border-amber-200 uppercase tracking-tighter ml-2">En Construcción</span>
+                        )}
                     </div>
                     <h2 className="text-2xl font-bold text-slate-800">{selectedCourse.name}</h2>
                     <p className="text-slate-500 text-sm mt-1">{selectedCourse.relator} • {selectedCourse.hours} Horas • {selectedCourse.modality}</p>
@@ -995,7 +1024,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                         disabled={!uploadFile || isProcessingBatch} 
                                         className="mt-auto w-full bg-slate-800 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-black transition-all transform active:scale-95 disabled:opacity-50"
                                     >
-                                        {isProcessingBatch ? 'Procesando Datos...' : 'Cargar y Matricular'}
+                                        {isProcessingBatch ? 'Procesando...' : 'Cargar y Matricular'}
                                     </button>
                                 </div>
                             </div>
@@ -1259,60 +1288,99 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                     CONSULTA ACADÉMICA
                 </button>
-                {(isAdmin || isAdvisor) && (<button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), academicPeriod: '1er Semestre', nombre: '', version: 'V1', modality: 'Presencial', hours: 0, moduleCount: 1, evaluationCount: 3, relator: '', startDate: '', endDate: '', competencyCodes: [] }); setSyllabusFile(null); setView('create'); }} className="bg-[#647FBC] text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-800 transition-colors flex items-center gap-2 h-[42px]"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Nuevo Curso</button>)}
+                {(isAdmin || isAdvisor) && (<button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), academicPeriod: '1er Semestre', nombre: '', version: 'V1', modality: 'Presencial', hours: 0, moduleCount: 1, evaluationCount: 3, relator: '', startDate: '', endDate: '', competencyCodes: [], isUnderConstruction: false }); setSyllabusFile(null); setView('create'); }} className="bg-[#647FBC] text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-800 transition-colors flex items-center gap-2 h-[42px]"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Nuevo Curso</button>)}
             </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {sortedAcademicActivities.map(course => { 
-            const enrolledCount = enrollments.filter(e => e.activityId === course.id).length;
-            const isSecondSemester = course.academicPeriod?.endsWith('-2') || course.academicPeriod?.toLowerCase().includes('2do') || course.academicPeriod?.toLowerCase().includes('segundo');
+        {/* SECCIÓN: CURSOS VIGENTES */}
+        <section className="space-y-6">
+            <h3 className="text-sm font-black text-slate-400 uppercase tracking-[0.2em] border-b pb-2">Cursos Vigentes</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {groupedActivities.active.map(course => { 
+                const enrolledCount = enrollments.filter(e => e.activityId === course.id).length;
+                const isSecondSemester = course.academicPeriod?.endsWith('-2') || course.academicPeriod?.toLowerCase().includes('2do') || course.academicPeriod?.toLowerCase().includes('segundo');
 
-            return (
-              <div key={course.id} className={`rounded-xl shadow-sm border p-6 hover:shadow-md transition-all group relative overflow-hidden ${isSecondSemester ? 'bg-blue-100/40 border-blue-200' : 'bg-white border-slate-200'}`}>
-                <div className="relative z-10">
-                  <div className="flex justify-between items-start mb-2">
-                    <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded border ${isSecondSemester ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>
-                      {course.academicPeriod}
-                    </span>
-                    <span className="text-xs text-slate-400 font-mono">{course.internalCode}</span>
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-800 mb-1 leading-tight h-14 line-clamp-2" title={course.name}>{course.name}</h3>
-                  <div className="flex items-center gap-4 text-xs text-slate-500 mb-4"><span>{enrolledCount} Inscritos</span><span>{course.modality}</span><span>{course.hours}h</span></div>
-                  
-                  {course.competencyCodes && course.competencyCodes.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-4 h-auto min-h-[22px] overflow-hidden">
-                          {course.competencyCodes.slice(0, 8).map(code => {
-                              const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code.replace(/-/g, '').toUpperCase() === code.replace(/-/g, '').toUpperCase());
-                              return (
-                                <span 
-                                    key={code} 
-                                    className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${
-                                        paMeta ? `${paMeta.lightColor} ${paMeta.textColor} ${paMeta.borderColor}` :
-                                        code.startsWith('PEI') ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 
-                                        'bg-emerald-50 text-emerald-600 border-emerald-100'
-                                    }`}
-                                >
-                                    {code}
-                                </span>
-                              );
-                          })}
-                      </div>
-                  )}
-
-                  <div className="flex gap-2">
-                    <button onClick={() => { setSelectedCourseId(course.id); setView('details'); setActiveDetailTab('enrollment'); }} className="flex-1 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold text-xs hover:bg-[#647FBC] hover:text-white transition-all shadow-sm">Gestionar Curso</button>
-                    {(isAdmin || isAdvisor) && (
-                        <button onClick={() => handleCloneCourse(course)} className="px-3 py-2 bg-white border border-slate-300 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-all shadow-sm" title="Clonar Curso">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 012 2h8a2 2 0 012-2v-2" /></svg>
-                        </button>
+                return (
+                <div key={course.id} className={`rounded-xl shadow-sm border p-6 hover:shadow-md transition-all group relative overflow-hidden ${isSecondSemester ? 'bg-blue-100/40 border-blue-200' : 'bg-white border-slate-200'}`}>
+                    <div className="relative z-10">
+                    <div className="flex justify-between items-start mb-2">
+                        <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded border ${isSecondSemester ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>
+                        {course.academicPeriod}
+                        </span>
+                        <span className="text-xs text-slate-400 font-mono">{course.internalCode}</span>
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800 mb-1 leading-tight h-14 line-clamp-2" title={course.name}>{course.name}</h3>
+                    <div className="flex items-center gap-4 text-xs text-slate-500 mb-4"><span>{enrolledCount} Inscritos</span><span>{course.modality}</span><span>{course.hours}h</span></div>
+                    
+                    {course.competencyCodes && course.competencyCodes.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-4 h-auto min-h-[22px] overflow-hidden">
+                            {Array.from(new Set(course.competencyCodes)).map((code: any) => {
+                                const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code.replace(/-/g, '').toUpperCase() === (code as string).replace(/-/g, '').toUpperCase());
+                                return (
+                                    <span 
+                                        key={code} 
+                                        className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${
+                                            paMeta ? `${paMeta.lightColor} ${paMeta.textColor} ${paMeta.borderColor}` :
+                                            (code as string).startsWith('PEI') ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 
+                                            'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                        }`}
+                                    >
+                                        {code}
+                                    </span>
+                                );
+                            })}
+                        </div>
                     )}
-                  </div>
+
+                    <div className="flex gap-2">
+                        <button onClick={() => { setSelectedCourseId(course.id); setView('details'); setActiveDetailTab('enrollment'); }} className="flex-1 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold text-xs hover:bg-[#647FBC] hover:text-white transition-all shadow-sm">Gestionar Curso</button>
+                        {(isAdmin || isAdvisor) && (
+                            <button onClick={() => handleCloneCourse(course)} className="px-3 py-2 bg-white border border-slate-300 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-all shadow-sm" title="Clonar Curso">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 012 2h8a2 2 0 012-2v-2" /></svg>
+                            </button>
+                        )}
+                    </div>
+                    </div>
                 </div>
-              </div>
-            );
-          })} 
-        </div>
+                );
+            })} 
+            </div>
+        </section>
+
+        {/* SECCIÓN: CURSOS EN CONSTRUCCIÓN */}
+        {groupedActivities.underConstruction.length > 0 && (
+            <section className="space-y-6 pt-10">
+                <h3 className="text-sm font-black text-amber-500 uppercase tracking-[0.2em] border-b border-amber-200 pb-2">Cursos en Construcción</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {groupedActivities.underConstruction.map(course => { 
+                    const enrolledCount = enrollments.filter(e => e.activityId === course.id).length;
+                    return (
+                    <div key={course.id} className="bg-amber-50 rounded-xl shadow-sm border border-amber-200 p-6 hover:shadow-md transition-all group relative overflow-hidden">
+                        <div className="relative z-10">
+                        <div className="flex justify-between items-start mb-2">
+                            <span className="text-[10px] font-bold uppercase px-2 py-1 rounded border bg-amber-100 text-amber-700 border-amber-200">
+                                {course.academicPeriod}
+                            </span>
+                            <span className="text-xs text-amber-400 font-mono">{course.internalCode}</span>
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-800 mb-1 leading-tight h-14 line-clamp-2 italic" title={course.name}>{course.name}</h3>
+                        <div className="flex items-center gap-4 text-xs text-slate-500 mb-4"><span>{enrolledCount} Inscritos</span><span>{course.modality}</span><span>{course.hours}h</span></div>
+                        
+                        <div className="flex gap-2">
+                            <button onClick={() => { setSelectedCourseId(course.id); setView('details'); setActiveDetailTab('enrollment'); }} className="flex-1 py-2 bg-white border border-amber-200 text-amber-700 rounded-lg font-bold text-xs hover:bg-amber-600 hover:text-white transition-all shadow-sm">Configurar</button>
+                            {(isAdmin || isAdvisor) && (
+                                <button onClick={() => handleEditCourse(course)} className="px-3 py-2 bg-white border border-amber-200 text-amber-600 rounded-lg hover:bg-amber-50 transition-all shadow-sm" title="Editar">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                </button>
+                            )}
+                        </div>
+                        </div>
+                    </div>
+                    );
+                })} 
+                </div>
+            </section>
+        )}
 
         {/* MODAL CONSULTA ACADÉMICA (KIOSKO) */}
         {showKioskModal && (
