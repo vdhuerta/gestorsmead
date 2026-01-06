@@ -28,6 +28,14 @@ const formatDateCL = (dateStr: string | undefined): string => {
     return `${d}-${m}-${y}`;
 };
 
+const normalizeValue = (val: string, masterList: string[]): string => {
+    if (!val) return '';
+    const trimmed = val.trim();
+    if (masterList.includes(trimmed)) return trimmed;
+    const match = masterList.find(item => item.toLowerCase() === trimmed.toLowerCase());
+    return match || trimmed;
+};
+
 const loadImageToPdf = (url: string): Promise<HTMLImageElement> => {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -100,6 +108,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
   const [isGeneratingCert, setIsGeneratingCert] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // Estados para Consulta Académica (Kiosko)
   const [showKioskModal, setShowKioskModal] = useState(false);
@@ -209,6 +218,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   
   const [suggestions, setSuggestions] = useState<User[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [hasHeaders, setHasHeaders] = useState(true);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const suggestionClickedRef = useRef(false);
   const [enrollMsg, setEnrollMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
@@ -473,6 +484,96 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     await executeReload();
   };
 
+  const handleBulkUpload = () => {
+    if (!uploadFile || !selectedCourseId) return;
+    setIsProcessingBatch(true);
+    const reader = new FileReader(); 
+    const isExcel = uploadFile.name.endsWith('.xlsx') || uploadFile.name.endsWith('.xls');
+    reader.onload = async (e) => {
+        try {
+            let rows: any[][] = [];
+            if (isExcel) { 
+                const data = e.target?.result; 
+                const workbook = read(data, { type: 'array' }); 
+                rows = utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 }); 
+            } else { 
+                const text = e.target?.result as string; 
+                const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== ''); 
+                if (lines.length > 0) { 
+                    const delimiter = lines[0].includes(';') ? ';' : ','; 
+                    rows = lines.map(line => line.split(delimiter)); 
+                } 
+            }
+            if (rows.length < 1) { setIsProcessingBatch(false); return; }
+            
+            const usersToUpsert: User[] = []; 
+            const rutsToEnroll: string[] = []; 
+            let startRow = hasHeaders ? 1 : 0;
+            
+            for (let i = startRow; i < rows.length; i++) {
+                const row = rows[i]; 
+                if (!row || row.length === 0) continue;
+                const rowStrings = row.map(cell => cell !== undefined && cell !== null ? String(cell).trim() : '');
+                if (!rowStrings[0]) continue;
+                
+                const cleanRut = cleanRutFormat(rowStrings[0]); 
+                const normRut = normalizeRut(cleanRut);
+                rutsToEnroll.push(cleanRut);
+                
+                const masterUser = users.find(u => normalizeRut(u.rut) === normRut);
+                const hasNameInFile = rowStrings[1] && rowStrings[1].length > 1;
+                
+                if (hasNameInFile || !masterUser) {
+                    usersToUpsert.push({ 
+                        rut: cleanRut, 
+                        names: rowStrings[1] || masterUser?.names || 'Pendiente', 
+                        paternalSurname: rowStrings[2] || masterUser?.paternalSurname || 'Pendiente', 
+                        maternalSurname: rowStrings[3] || masterUser?.maternalSurname || '', 
+                        email: rowStrings[4] || masterUser?.email || '', 
+                        phone: rowStrings[5] || masterUser?.phone || '', 
+                        academicRole: normalizeValue(rowStrings[6] || masterUser?.academicRole || '', listRoles), 
+                        faculty: normalizeValue(rowStrings[7] || masterUser?.faculty || '', listFaculties), 
+                        department: normalizeValue(rowStrings[8] || masterUser?.department || '', listDepts), 
+                        career: normalizeValue(rowStrings[9] || masterUser?.career || '', listCareers), 
+                        contractType: normalizeValue(rowStrings[10] || masterUser?.contractType || '', listContracts), 
+                        teachingSemester: normalizeValue(rowStrings[11] || masterUser?.teachingSemester || '', listSemesters), 
+                        campus: rowStrings[12] || masterUser?.campus || '', 
+                        systemRole: masterUser?.systemRole || UserRole.ESTUDIANTE 
+                    });
+                }
+            }
+            
+            if (usersToUpsert.length > 0) { await upsertUsers(usersToUpsert); }
+            const result = await bulkEnroll(rutsToEnroll, selectedCourseId);
+            await executeReload();
+            setEnrollMsg({ type: 'success', text: `Carga Masiva: ${result.success} nuevos inscritos.` }); 
+            setUploadFile(null);
+        } catch (err: any) {
+            setEnrollMsg({ type: 'error', text: `Error en carga masiva: ${err.message}` });
+        } finally {
+            setIsProcessingBatch(false);
+        }
+    };
+    isExcel ? reader.readAsArrayBuffer(uploadFile) : reader.readAsText(uploadFile);
+  };
+
+  const handleClearAllEnrollments = async () => {
+      if (courseEnrollments.length === 0) return;
+      setIsProcessingBatch(true);
+      try {
+          for (const enr of courseEnrollments) {
+              await deleteEnrollment(enr.id);
+          }
+          await executeReload();
+          setShowClearConfirm(false);
+          setEnrollMsg({ type: 'success', text: 'Lista de inscritos limpiada correctamente.' });
+      } catch (err: any) {
+          alert("Error al limpiar la lista.");
+      } finally {
+          setIsProcessingBatch(false);
+      }
+  };
+
   const handleDownloadCertificate = async (enrollment: Enrollment, activity: Activity, student: User) => {
     setIsGeneratingCert(enrollment.id);
     try {
@@ -724,78 +825,134 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
               <div className="bg-white rounded-b-xl shadow-sm border border-slate-200 border-t-0 p-8 min-h-[400px]">
                   {activeDetailTab === 'enrollment' && (
                       <div className="space-y-8 animate-fadeIn">
-                          <div className="bg-slate-50 p-8 rounded-2xl border border-slate-200 shadow-inner">
-                              <h3 className="font-bold text-slate-800 text-lg mb-6 flex items-center gap-2">
-                                <div className="p-2 bg-indigo-600 text-white rounded-lg"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg></div>
-                                Inscripción de Estudiantes (13 Campos Base Maestra)
-                              </h3>
-                              <form onSubmit={async (e) => {
-                                  e.preventDefault();
-                                  setIsProcessingBatch(true);
-                                  const formatted = cleanRutFormat(enrollForm.rut);
-                                  try {
-                                      await upsertUsers([{ ...enrollForm, rut: formatted, systemRole: enrollForm.systemRole as UserRole }]);
-                                      await enrollUser(formatted, selectedCourseId!);
-                                      await executeReload();
-                                      setEnrollMsg({ type: 'success', text: 'Estudiante matriculado.' });
-                                      setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
-                                  } catch (err: any) { 
-                                      setEnrollMsg({ type: 'error', text: `Error al matricular: ${err.message || JSON.stringify(err)}` }); 
-                                  } finally { setIsProcessingBatch(false); }
-                              }} className="space-y-8">
-                                  <div className="space-y-4">
-                                      <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest border-b pb-1">Identidad y Contacto</h4>
-                                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                          <div className="relative">
-                                              <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">RUT *</label>
-                                              <input required type="text" name="rut" value={enrollForm.rut} placeholder="12345678-9" onChange={e => { setEnrollForm({...enrollForm, rut: e.target.value}); if(e.target.value.length >= 2) { const clean = normalizeRut(e.target.value); setSuggestions(users.filter(u => normalizeRut(u.rut).includes(clean)).slice(0, 5)); setShowSuggestions(true); } else { setShowSuggestions(false); } }} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} className="w-full px-3 py-2 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500"/>
-                                              {showSuggestions && suggestions.length > 0 && (
-                                                  <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                                                      {suggestions.map(s => (<div key={s.rut} onMouseDown={() => { setEnrollForm({...s, maternalSurname: s.maternalSurname || '', phone: s.phone || '', academicRole: s.academicRole || '', faculty: s.faculty || '', department: s.department || '', career: s.career || '', contractType: s.contractType || '', teachingSemester: s.teachingSemester || '', campus: s.campus || '', systemRole: UserRole.ESTUDIANTE }); setShowSuggestions(false); }} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-xs border-b last:border-0"><span className="font-bold block">{s.rut}</span><span>{s.names} {s.paternalSurname}</span></div>))}
-                                                  </div>
-                                              )}
-                                          </div>
-                                          <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Nombres *</label><input required type="text" name="names" value={enrollForm.names} onChange={e => setEnrollForm({...enrollForm, names: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm"/></div>
-                                          <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Ap. Paterno *</label><input required type="text" name="paternalSurname" value={enrollForm.paternalSurname} onChange={e => setEnrollForm({...enrollForm, paternalSurname: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div>
-                                          <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={enrollForm.maternalSurname} onChange={e => setEnrollForm({...enrollForm, maternalSurname: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div>
-                                          <div className="md:col-span-2"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Email Institucional</label><input type="email" name="email" value={enrollForm.email} onChange={e => setEnrollForm({...enrollForm, email: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div>
-                                          <div className="md:col-span-2"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Teléfono</label><input type="text" name="phone" value={enrollForm.phone} onChange={e => setEnrollForm({...enrollForm, phone: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div>
-                                      </div>
-                                  </div>
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            {/* INSCRIPCIÓN INDIVIDUAL */}
+                            <div className="bg-slate-50 p-8 rounded-2xl border border-slate-200 shadow-inner">
+                                <h3 className="font-bold text-slate-800 text-lg mb-6 flex items-center gap-2">
+                                  <div className="p-2 bg-indigo-600 text-white rounded-lg"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg></div>
+                                  Inscripción Individual
+                                </h3>
+                                <form onSubmit={async (e) => {
+                                    e.preventDefault();
+                                    setIsProcessingBatch(true);
+                                    const formatted = cleanRutFormat(enrollForm.rut);
+                                    try {
+                                        await upsertUsers([{ ...enrollForm, rut: formatted, systemRole: enrollForm.systemRole as UserRole }]);
+                                        await enrollUser(formatted, selectedCourseId!);
+                                        await executeReload();
+                                        setEnrollMsg({ type: 'success', text: 'Estudiante matriculado.' });
+                                        setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
+                                    } catch (err: any) { 
+                                        setEnrollMsg({ type: 'error', text: `Error al matricular: ${err.message || JSON.stringify(err)}` }); 
+                                    } finally { setIsProcessingBatch(false); }
+                                }} className="space-y-8">
+                                    <div className="space-y-4">
+                                        <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest border-b pb-1">Identidad y Contacto</h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="relative">
+                                                <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">RUT *</label>
+                                                <input required type="text" name="rut" value={enrollForm.rut} placeholder="12345678-9" onChange={e => { setEnrollForm({...enrollForm, rut: e.target.value}); if(e.target.value.length >= 2) { const clean = normalizeRut(e.target.value); setSuggestions(users.filter(u => normalizeRut(u.rut).includes(clean)).slice(0, 5)); setShowSuggestions(true); } else { setShowSuggestions(false); } }} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} className="w-full px-3 py-2 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500"/>
+                                                {showSuggestions && suggestions.length > 0 && (
+                                                    <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                                                        {suggestions.map(s => (<div key={s.rut} onMouseDown={() => { setEnrollForm({...s, maternalSurname: s.maternalSurname || '', phone: s.phone || '', academicRole: s.academicRole || '', faculty: s.faculty || '', department: s.department || '', career: s.career || '', contractType: s.contractType || '', teachingSemester: s.teachingSemester || '', campus: s.campus || '', systemRole: UserRole.ESTUDIANTE }); setShowSuggestions(false); }} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-xs border-b last:border-0"><span className="font-bold block">{s.rut}</span><span>{s.names} {s.paternalSurname}</span></div>))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Email Institucional</label><input type="email" name="email" value={enrollForm.email} onChange={e => setEnrollForm({...enrollForm, email: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"/></div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Nombres *</label><input required type="text" name="names" value={enrollForm.names} onChange={e => setEnrollForm({...enrollForm, names: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"/></div>
+                                            <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Ap. Paterno *</label><input required type="text" name="paternalSurname" value={enrollForm.paternalSurname} onChange={e => setEnrollForm({...enrollForm, paternalSurname: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div>
+                                            <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={enrollForm.maternalSurname} onChange={e => setEnrollForm({...enrollForm, maternalSurname: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div>
+                                        </div>
+                                        <div className="md:col-span-2"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Teléfono</label><input type="text" name="phone" value={enrollForm.phone} onChange={e => setEnrollForm({...enrollForm, phone: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div>
+                                    </div>
 
-                                  <div className="space-y-4">
-                                      <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest border-b pb-1">Datos Institucionales</h4>
-                                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                          <SmartSelect label="Sede" name="campus" value={enrollForm.campus} options={config.campuses || ["Valparaíso"]} onChange={e => setEnrollForm({...enrollForm, campus: e.target.value})} />
-                                          <SmartSelect label="Facultad" name="faculty" value={enrollForm.faculty} options={listFaculties} onChange={e => setEnrollForm({...enrollForm, faculty: e.target.value})} />
-                                          <SmartSelect label="Departamento" name="department" value={enrollForm.department} options={listDepts} onChange={e => setEnrollForm({...enrollForm, department: e.target.value})} />
-                                          <SmartSelect label="Carrera" name="career" value={enrollForm.career} options={listCareers} onChange={e => setEnrollForm({...enrollForm, career: e.target.value})} />
-                                          <SmartSelect label="Rol Académico" name="academicRole" value={enrollForm.academicRole} options={listRoles} onChange={e => setEnrollForm({...enrollForm, academicRole: e.target.value})} />
-                                          <SmartSelect label="Tipo Contrato" name="contractType" value={enrollForm.contractType} options={listContracts} onChange={e => setEnrollForm({...enrollForm, contractType: e.target.value})} />
-                                          <SmartSelect label="Semestre" name="teachingSemester" value={enrollForm.teachingSemester} options={listSemesters} onChange={e => setEnrollForm({...enrollForm, teachingSemester: e.target.value})} />
-                                          <div className="flex items-end"><button type="submit" disabled={isProcessingBatch} className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold text-sm shadow hover:bg-indigo-700">{isProcessingBatch ? 'Procesando...' : 'Inscribir Estudiante'}</button></div>
-                                      </div>
-                                  </div>
-                                  {enrollMsg && <p className={`text-xs text-center font-bold ${enrollMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{enrollMsg.text}</p>}
-                              </form>
+                                    <div className="space-y-4">
+                                        <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest border-b pb-1">Datos Institucionales</h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <SmartSelect label="Sede" name="campus" value={enrollForm.campus} options={config.campuses || ["Valparaíso"]} onChange={e => setEnrollForm({...enrollForm, campus: e.target.value})} />
+                                            <SmartSelect label="Facultad" name="faculty" value={enrollForm.faculty} options={listFaculties} onChange={e => setEnrollForm({...enrollForm, faculty: e.target.value})} />
+                                            <SmartSelect label="Departamento" name="department" value={enrollForm.department} options={listDepts} onChange={e => setEnrollForm({...enrollForm, department: e.target.value})} />
+                                            <SmartSelect label="Carrera" name="career" value={enrollForm.career} options={listCareers} onChange={e => setEnrollForm({...enrollForm, career: e.target.value})} />
+                                            <SmartSelect label="Rol Académico" name="academicRole" value={enrollForm.academicRole} options={listRoles} onChange={e => setEnrollForm({...enrollForm, academicRole: e.target.value})} />
+                                            <SmartSelect label="Tipo Contrato" name="contractType" value={enrollForm.contractType} options={listContracts} onChange={e => setEnrollForm({...enrollForm, contractType: e.target.value})} />
+                                            <SmartSelect label="Semestre" name="teachingSemester" value={enrollForm.teachingSemester} options={listSemesters} onChange={e => setEnrollForm({...enrollForm, teachingSemester: e.target.value})} />
+                                            <div className="flex items-end"><button type="submit" disabled={isProcessingBatch} className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold text-sm shadow hover:bg-indigo-700">{isProcessingBatch ? 'Procesando...' : 'Inscribir Estudiante'}</button></div>
+                                        </div>
+                                    </div>
+                                    {enrollMsg && <p className={`text-xs text-center font-bold ${enrollMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{enrollMsg.text}</p>}
+                                </form>
+                            </div>
+
+                            {/* CARGA MASIVA */}
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 flex flex-col">
+                                <h3 className="font-bold text-slate-800 text-lg mb-6 pb-2 border-b border-slate-100 flex items-center gap-2">
+                                    <div className="p-2 bg-emerald-600 text-white rounded-lg"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg></div>
+                                    Carga Masiva (CSV / Excel)
+                                </h3>
+                                <div className="flex-1 space-y-6 flex flex-col justify-center">
+                                    <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 mb-4">
+                                        <p className="text-sm text-emerald-800 font-medium">Requisito:</p>
+                                        <p className="text-xs text-emerald-600">Suba un archivo con las 13 columnas requeridas para la matrícula institucional (RUT como campo clave).</p>
+                                    </div>
+                                    <label className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-2xl cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-indigo-200 bg-indigo-50 hover:bg-indigo-100'}`}>
+                                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                            {uploadFile ? (
+                                                <><svg className="w-10 h-10 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="mb-1 text-sm font-bold text-emerald-700">{uploadFile.name}</p></>
+                                            ) : (
+                                                <><svg className="w-10 h-10 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-sm text-indigo-600 font-semibold">Haga clic para subir archivo</p><p className="text-xs text-slate-400">xlsx, xls, csv</p></>
+                                            )}
+                                        </div>
+                                        <input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} />
+                                    </label>
+                                    <div className="flex items-center justify-center gap-2 mt-2">
+                                        <input type="checkbox" id="hasHeadersEnrollment" checked={hasHeaders} onChange={e => setHasHeaders(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer" />
+                                        <label htmlFor="hasHeadersEnrollment" className="text-sm text-slate-700 cursor-pointer select-none">Ignorar primera fila (encabezados)</label>
+                                    </div>
+                                    <button 
+                                        onClick={handleBulkUpload} 
+                                        disabled={!uploadFile || isProcessingBatch} 
+                                        className="mt-auto w-full bg-slate-800 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-black transition-all transform active:scale-95 disabled:opacity-50"
+                                    >
+                                        {isProcessingBatch ? 'Procesando Datos...' : 'Cargar y Matricular'}
+                                    </button>
+                                </div>
+                            </div>
                           </div>
-                          <div className="overflow-hidden rounded-xl border border-slate-200">
+
+                          <div className="overflow-hidden rounded-xl border border-slate-200 shadow-sm">
+                              <div className="bg-slate-50 px-6 py-3 border-b border-slate-200 flex justify-between items-center">
+                                  <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest">Nómina de Inscritos Actual</h4>
+                                  {courseEnrollments.length > 0 && !isProcessingBatch && (
+                                      <button 
+                                          onClick={() => setShowClearConfirm(true)}
+                                          className="text-[10px] font-black text-rose-500 hover:text-rose-700 uppercase tracking-widest bg-rose-50 px-3 py-1 rounded-lg border border-rose-100 transition-all flex items-center gap-1"
+                                      >
+                                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                          LIMPIAR LISTA
+                                      </button>
+                                  )}
+                              </div>
                               <table className="w-full text-sm text-left">
-                                  <thead className="bg-slate-50 text-slate-700 font-bold border-b">
+                                  <thead className="bg-white text-slate-400 font-bold border-b text-[10px] uppercase tracking-tighter">
                                       <tr><th className="px-6 py-3">Participante</th><th className="px-6 py-3">Unidad Académica</th><th className="px-6 py-3">Estado</th><th className="px-6 py-3 text-center">Acciones</th></tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-100">
                                       {sortedEnrollments.map(enr => {
                                           const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut));
                                           return (
-                                              <tr key={enr.id} className="hover:bg-slate-50">
+                                              <tr key={enr.id} className="hover:bg-slate-50 transition-colors">
                                                   <td className="px-6 py-3 font-medium"><div>{u?.names} {u?.paternalSurname}</div><div className="text-[10px] text-slate-400 font-mono">{enr.rut}</div></td>
                                                   <td className="px-6 py-3 text-slate-500 text-xs"><div>{u?.faculty}</div><div className="italic">{u?.career}</div></td>
                                                   <td className="px-6 py-3 text-[10px] font-black uppercase"><span className={`px-2 py-1 rounded-full border ${enr.state === ActivityState.APROBADO ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>{enr.state}</span></td>
-                                                  <td className="px-6 py-3 text-center"><button onClick={() => { if(confirm("¿Eliminar matrícula?")) deleteEnrollment(enr.id).then(() => executeReload()); }} className="text-red-500 font-black text-[10px] uppercase">Retirar</button></td>
+                                                  <td className="px-6 py-3 text-center"><button onClick={() => { if(confirm("¿Eliminar matrícula?")) deleteEnrollment(enr.id).then(() => executeReload()); }} className="text-red-500 font-black text-[10px] uppercase hover:underline">Retirar</button></td>
                                               </tr>
                                           );
                                       })}
+                                      {sortedEnrollments.length === 0 && (
+                                          <tr><td colSpan={4} className="py-20 text-center text-slate-400 italic">No hay estudiantes matriculados en este programa curricular.</td></tr>
+                                      )}
                                   </tbody>
                               </table>
                           </div>
@@ -970,6 +1127,36 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                             <button onClick={() => setShowExitWarning(false)} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all">Continuar Editando</button>
                             <button onClick={handleBatchCommit} className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all">Sincronizar y Salir</button>
                             <button onClick={() => { setPendingGrades({}); setPendingAttendance({}); setShowExitWarning(false); if(pendingAction) pendingAction(); }} className="w-full py-3 text-red-500 font-bold hover:underline">Salir de todas formas</button>
+                        </div>
+                    </div>
+                </div>
+              )}
+
+              {/* MODAL DE CONFIRMACIÓN LIMPIAR LISTA */}
+              {showClearConfirm && (
+                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-10 text-center border border-rose-100">
+                        <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+                            <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                        </div>
+                        <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-2">¡ADVERTENCIA CRÍTICA!</h3>
+                        <p className="text-slate-500 text-sm leading-relaxed mb-8">
+                            Estás a punto de <strong>eliminar todas las matrículas</strong> de este curso. Esta acción no se puede deshacer y borrará permanentemente el progreso de todos los estudiantes inscritos.
+                        </p>
+                        <div className="flex flex-col gap-3">
+                            <button 
+                                onClick={handleClearAllEnrollments}
+                                disabled={isProcessingBatch}
+                                className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-lg transition-all transform active:scale-95 disabled:opacity-50"
+                            >
+                                {isProcessingBatch ? 'Procesando...' : 'SEGUIR (Borrar Todo)'}
+                            </button>
+                            <button 
+                                onClick={() => setShowClearConfirm(false)}
+                                className="w-full py-3 text-slate-500 font-bold uppercase tracking-widest text-[10px] hover:underline"
+                            >
+                                CANCELAR
+                            </button>
                         </div>
                     </div>
                 </div>
