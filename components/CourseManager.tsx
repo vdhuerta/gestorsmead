@@ -322,7 +322,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           setSelectedCourseId(null); 
       } catch (err: any) { 
           console.error("Course Save Error:", err);
-          // Solución: Extraer el mensaje de error si es un objeto para evitar [object Object]
           const errorMsg = err.message || JSON.stringify(err);
           alert(`Error al guardar: ${errorMsg}`); 
       }
@@ -625,6 +624,43 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     }
   };
 
+  // --- Handlers for Enrollment ---
+  // Fix for Error 3: Added missing handleRutBlur and helper to select user and populate enrollment form
+  const handleSelectUserForEnroll = (u: User) => {
+    setEnrollForm({
+        rut: cleanRutFormat(u.rut),
+        names: u.names,
+        paternalSurname: u.paternalSurname,
+        maternalSurname: u.maternalSurname || '',
+        email: u.email || '',
+        phone: u.phone || '',
+        academicRole: u.academicRole || '',
+        faculty: u.faculty || '',
+        department: u.department || '',
+        career: u.career || '',
+        contractType: u.contractType || '',
+        teachingSemester: u.teachingSemester || '',
+        campus: u.campus || '',
+        systemRole: u.systemRole || UserRole.ESTUDIANTE
+    });
+    setShowSuggestions(false);
+  };
+
+  const handleRutBlur = () => {
+    setTimeout(() => {
+        if (suggestionClickedRef.current) return;
+        if (showSuggestions) setShowSuggestions(false);
+        if (!enrollForm.rut) return;
+        const formatted = cleanRutFormat(enrollForm.rut);
+        const rawSearch = normalizeRut(formatted);
+        setEnrollForm(prev => ({ ...prev, rut: formatted }));
+        const existingUser = users.find(u => normalizeRut(u.rut) === rawSearch);
+        if (existingUser) { 
+            handleSelectUserForEnroll(existingUser);
+        } 
+    }, 200);
+  };
+
   // --- Views ---
   if (view === 'create' || view === 'edit') {
     return (
@@ -835,15 +871,26 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                 <form onSubmit={async (e) => {
                                     e.preventDefault();
                                     setIsProcessingBatch(true);
+                                    setEnrollMsg(null);
                                     const formatted = cleanRutFormat(enrollForm.rut);
                                     try {
                                         await upsertUsers([{ ...enrollForm, rut: formatted, systemRole: enrollForm.systemRole as UserRole }]);
                                         await enrollUser(formatted, selectedCourseId!);
                                         await executeReload();
-                                        setEnrollMsg({ type: 'success', text: 'Estudiante matriculado.' });
+                                        setEnrollMsg({ type: 'success', text: 'Estudiante matriculado exitosamente.' });
                                         setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
                                     } catch (err: any) { 
-                                        setEnrollMsg({ type: 'error', text: `Error al matricular: ${err.message || JSON.stringify(err)}` }); 
+                                        console.error("Enrollment error:", err);
+                                        const errorDetail = err.message || JSON.stringify(err);
+                                        let userFriendlyMsg = `Error al matricular: ${errorDetail}`;
+                                        
+                                        if (errorDetail.includes("duplicate key")) {
+                                            userFriendlyMsg = "Error: El RUT o Email ya existe en la base de datos con un valor en conflicto.";
+                                        } else if (errorDetail.includes("not-null constraint")) {
+                                            userFriendlyMsg = "Error: Faltan campos obligatorios requeridos por la base maestra.";
+                                        }
+
+                                        setEnrollMsg({ type: 'error', text: userFriendlyMsg }); 
                                     } finally { setIsProcessingBatch(false); }
                                 }} className="space-y-8">
                                     <div className="space-y-4">
@@ -851,10 +898,15 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div className="relative">
                                                 <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">RUT *</label>
-                                                <input required type="text" name="rut" value={enrollForm.rut} placeholder="12345678-9" onChange={e => { setEnrollForm({...enrollForm, rut: e.target.value}); if(e.target.value.length >= 2) { const clean = normalizeRut(e.target.value); setSuggestions(users.filter(u => normalizeRut(u.rut).includes(clean)).slice(0, 5)); setShowSuggestions(true); } else { setShowSuggestions(false); } }} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} className="w-full px-3 py-2 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500"/>
+                                                <input required type="text" name="rut" value={enrollForm.rut} placeholder="12345678-9" onChange={e => { setEnrollForm({...enrollForm, rut: e.target.value}); if(e.target.value.length >= 2) { const clean = normalizeRut(e.target.value); setSuggestions(users.filter(u => normalizeRut(u.rut).includes(clean)).slice(0, 5)); setShowSuggestions(true); } else { setShowSuggestions(false); } }} onBlur={handleRutBlur} className="w-full px-3 py-2 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500"/>
                                                 {showSuggestions && suggestions.length > 0 && (
                                                     <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                                                        {suggestions.map(s => (<div key={s.rut} onMouseDown={() => { setEnrollForm({...s, maternalSurname: s.maternalSurname || '', phone: s.phone || '', academicRole: s.academicRole || '', faculty: s.faculty || '', department: s.department || '', career: s.career || '', contractType: s.contractType || '', teachingSemester: s.teachingSemester || '', campus: s.campus || '', systemRole: UserRole.ESTUDIANTE }); setShowSuggestions(false); }} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-xs border-b last:border-0"><span className="font-bold block">{s.rut}</span><span>{s.names} {s.paternalSurname}</span></div>))}
+                                                        {suggestions.map(s => (<div key={s.rut} onMouseDown={() => { 
+                                                            // Fix for Error 3: Added logic to track suggestion click and populate enrollment form
+                                                            suggestionClickedRef.current = true;
+                                                            handleSelectUserForEnroll(s);
+                                                            setTimeout(() => { suggestionClickedRef.current = false; }, 300);
+                                                         }} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-xs border-b last:border-0"><span className="font-bold block">{cleanRutFormat(s.rut)}</span><span>{s.names} {s.paternalSurname}</span></div>))}
                                                     </div>
                                                 )}
                                             </div>
@@ -881,7 +933,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                             <div className="flex items-end"><button type="submit" disabled={isProcessingBatch} className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold text-sm shadow hover:bg-indigo-700">{isProcessingBatch ? 'Procesando...' : 'Inscribir Estudiante'}</button></div>
                                         </div>
                                     </div>
-                                    {enrollMsg && <p className={`text-xs text-center font-bold ${enrollMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{enrollMsg.text}</p>}
+                                    {enrollMsg && <div className={`p-4 rounded-xl text-xs text-center font-bold animate-fadeIn border ${enrollMsg.type === 'success' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{enrollMsg.text}</div>}
                                 </form>
                             </div>
 
@@ -1061,7 +1113,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                                                 onChange={() => handleToggleAttendanceLocal(enr.id, i)} 
                                                                 className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-30"
                                                               />
-                          </td>
+                                                          </td>
                                                       );
                                                   })}
                                                   <td className={`px-4 py-3 text-center font-bold border-r ${liveAttendancePercentage < (config.minAttendancePercentage || 75) ? 'text-red-500' : 'text-green-600'}`}>{liveAttendancePercentage}%</td>

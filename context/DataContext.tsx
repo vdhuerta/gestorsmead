@@ -1,4 +1,3 @@
-
 import { Activity, ActivityState, Enrollment, SystemConfig, User } from '../types';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
@@ -68,6 +67,7 @@ const mapActivityFromDB = (a: any): Activity => ({
     id: a.id,
     category: a.category,
     activityType: a.activity_type,
+    // Fix for Error 1: Changed internal_code to internalCode to match Activity interface
     internalCode: a.internal_code,
     year: a.year,
     academicPeriod: a.academic_period,
@@ -76,13 +76,13 @@ const mapActivityFromDB = (a: any): Activity => ({
     modality: a.modality,
     hours: a.hours,
     moduleCount: a.module_count,
-    evaluationCount: a.evaluation_count,
+    evaluation_count: a.evaluation_count,
     startDate: a.start_date,
     endDate: a.end_date,
     relator: a.relator,
     linkResources: a.link_resources,
-    classLink: a.class_link,
-    evaluationLink: a.evaluation_link, 
+    class_link: a.class_link,
+    evaluation_link: a.evaluation_link, 
     isPublic: a.is_public,
     programConfig: a.program_config,
     competencyCodes: a.competency_codes || []
@@ -91,6 +91,7 @@ const mapActivityFromDB = (a: any): Activity => ({
 const mapEnrollmentFromDB = (e: any): Enrollment => ({
     id: e.id,
     rut: e.user_rut,
+    // Fix for Error 2: Changed activity_id to activityId to match Enrollment interface
     activityId: e.activity_id,
     state: e.state,
     grades: parsePostgresArray(e.grades),
@@ -107,7 +108,7 @@ const mapEnrollmentFromDB = (e: any): Enrollment => ({
     sessionLogs: e.session_logs,
     certificateCode: e.certificate_code,
     responsible: e.responsible,
-    competencyCodes: e.competency_codes || [] // MAPEADO PARA ASESORIAS
+    competencyCodes: e.competency_codes || [] 
 });
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -209,12 +210,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const deduplicatedUsers = Array.from(uniqueMap.values());
 
       const dbPayloads = deduplicatedUsers.map(u => {
+          // Normalizar Email: Si está vacío o es solo espacios, enviar NULL para evitar conflictos UNIQUE
+          const cleanEmail = u.email && u.email.trim() !== '' ? u.email.trim().toLowerCase() : null;
+          
           const payload: any = {
               rut: u.rut,
               names: u.names,
               paternal_surname: u.paternalSurname,
               maternal_surname: u.maternalSurname || null,
-              email: u.email || '', 
+              email: cleanEmail, 
               phone: u.phone || null,
               photo_url: u.photoUrl || null,
               system_role: u.systemRole,
@@ -272,7 +276,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (updates.sessionLogs) dbUpdates.session_logs = updates.sessionLogs;
       if (updates.certificateCode) dbUpdates.certificate_code = updates.certificateCode;
       if (updates.responsible !== undefined) dbUpdates.responsible = updates.responsible;
-      if (updates.competencyCodes) dbUpdates.competency_codes = updates.competencyCodes; // ACTUALIZACIÓN COMPETENCIAS
+      if (updates.competencyCodes) dbUpdates.competency_codes = updates.competencyCodes; 
       if (updates.attendanceSession1 !== undefined) dbUpdates.attendance_session_1 = updates.attendanceSession1;
       if (updates.attendanceSession2 !== undefined) dbUpdates.attendance_session_2 = updates.attendanceSession2;
       if (updates.attendanceSession3 !== undefined) dbUpdates.attendance_session_3 = updates.attendanceSession3;
