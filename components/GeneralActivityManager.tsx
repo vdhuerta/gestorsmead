@@ -430,9 +430,9 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                 
                                 {/* TAGS TAXONÓMICOS DE COMPETENCIAS (DEBAJO DE FECHA) */}
                                 {act.competencyCodes && act.competencyCodes.length > 0 && (
-                                    <div className="flex flex-wrap gap-1 mt-2 min-h-[22px]">
+                                    <div className="flex flex-wrap gap-1 mt-2 h-auto min-h-[22px]">
                                         {act.competencyCodes.map(code => {
-                                            const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code.replace(/-/g, '') === code.replace(/-/g, ''));
+                                            const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code.replace(/-/g, '').toUpperCase() === code.replace(/-/g, '').toUpperCase());
                                             return (
                                                 <span 
                                                     key={code} 

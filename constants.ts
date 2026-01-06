@@ -25,21 +25,21 @@ export const PMI_COMPETENCIES = [
 
 export const ACADEMIC_PROFILE_COMPETENCIES = [
   // Pedagógica (Rose/Red)
-  { code: 'PA-PED1', name: 'Diseño para el aprendizaje', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
-  { code: 'PA-PED2', name: 'Didáctica para el aprendizaje', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
-  { code: 'PA-PED3', name: 'Evaluación para el aprendizaje', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
-  { code: 'PA-PED4', name: 'Tecnologías para el aprendizaje y el conocimiento', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
-  { code: 'PA-PED5', name: 'Reflexión pedagógica', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
+  { code: 'PA-PED-1', name: 'Diseño para el aprendizaje', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
+  { code: 'PA-PED-2', name: 'Didáctica para el aprendizaje', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
+  { code: 'PA-PED-3', name: 'Evaluación para el aprendizaje', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
+  { code: 'PA-PED-4', name: 'Tecnologías para el aprendizaje y el conocimiento', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
+  { code: 'PA-PED-5', name: 'Reflexión pedagógica', dimension: 'Pedagógica', color: 'bg-rose-600', textColor: 'text-rose-700', lightColor: 'bg-rose-50', borderColor: 'border-rose-100' },
   // Investigación (Green/Emerald)
-  { code: 'PA-INV1', name: 'Desarrollo del conocimiento', dimension: 'Investigación y/o Creación', color: 'bg-emerald-600', textColor: 'text-emerald-700', lightColor: 'bg-emerald-50', borderColor: 'border-emerald-100' },
+  { code: 'PA-INV-1', name: 'Desarrollo del conocimiento', dimension: 'Investigación y/o Creación', color: 'bg-emerald-600', textColor: 'text-emerald-700', lightColor: 'bg-emerald-50', borderColor: 'border-emerald-100' },
   // Vinculación (Purple)
-  { code: 'PA-VIN1', name: 'Vinculación con el medio y el territorio', dimension: 'Vinculación', color: 'bg-purple-600', textColor: 'text-purple-700', lightColor: 'bg-purple-50', borderColor: 'border-purple-100' },
-  { code: 'PA-VIN2', name: 'Vinculación interna', dimension: 'Vinculación', color: 'bg-purple-600', textColor: 'text-purple-700', lightColor: 'bg-purple-50', borderColor: 'border-purple-100' },
+  { code: 'PA-VIN-1', name: 'Vinculación con el medio y el territorio', dimension: 'Vinculación', color: 'bg-purple-600', textColor: 'text-purple-700', lightColor: 'bg-purple-50', borderColor: 'border-purple-100' },
+  { code: 'PA-VIN-2', name: 'Vinculación interna', dimension: 'Vinculación', color: 'bg-purple-600', textColor: 'text-purple-700', lightColor: 'bg-purple-50', borderColor: 'border-purple-100' },
   // Interpersonal y Ética (Blue)
-  { code: 'PA-INT1', name: 'Interpersonal', dimension: 'Interpersonal y Ética', color: 'bg-blue-600', textColor: 'text-blue-700', lightColor: 'bg-blue-50', borderColor: 'border-blue-100' },
-  { code: 'PA-INT2', name: 'Acción ética', dimension: 'Interpersonal y Ética', color: 'bg-blue-600', textColor: 'text-blue-700', lightColor: 'bg-blue-50', borderColor: 'border-blue-100' },
+  { code: 'PA-INT-1', name: 'Interpersonal', dimension: 'Interpersonal y Ética', color: 'bg-blue-600', textColor: 'text-blue-700', lightColor: 'bg-blue-50', borderColor: 'border-blue-100' },
+  { code: 'PA-INT-2', name: 'Acción ética', dimension: 'Interpersonal y Ética', color: 'bg-blue-600', textColor: 'text-blue-700', lightColor: 'bg-blue-50', borderColor: 'border-blue-100' },
   // Formación Continua (Pink)
-  { code: 'PA-FOR1', name: 'Fortalecimiento académico', dimension: 'Formación Continua', color: 'bg-pink-600', textColor: 'text-pink-700', lightColor: 'bg-pink-50', borderColor: 'border-pink-100' }
+  { code: 'PA-FOR-1', name: 'Fortalecimiento académico', dimension: 'Formación Continua', color: 'bg-pink-600', textColor: 'text-pink-700', lightColor: 'bg-pink-50', borderColor: 'border-pink-100' }
 ];
 
 export const GENERAL_ACTIVITY_TYPES = [
@@ -164,6 +164,7 @@ export const CAREER_LIST = [
   "Postgrado/Magíster En Bibliotecología E Información",
   "Postgrado/Magíster En Educación De Adultos Y Procesos Formativos",
   "Postgrado/Magíster En Enseñanza De Las Ciencias",
+  "Postgrado/Magíster En Evaluación Educacional",
   "Postgrado/Magíster En Evaluación Educacional",
   "Postgrado/Magíster En Gestión Cultural",
   "Postgrado/Magíster En Liderazgo Y Gestión De Organizaciones Educativas",
