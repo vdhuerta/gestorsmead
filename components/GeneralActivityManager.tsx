@@ -430,9 +430,9 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                 
                                 {/* TAGS TAXONÓMICOS DE COMPETENCIAS (DEBAJO DE FECHA) */}
                                 {act.competencyCodes && act.competencyCodes.length > 0 && (
-                                    <div className="flex flex-wrap gap-1 mt-2">
+                                    <div className="flex flex-wrap gap-1 mt-2 min-h-[22px]">
                                         {act.competencyCodes.map(code => {
-                                            const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code === code);
+                                            const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code.replace(/-/g, '') === code.replace(/-/g, ''));
                                             return (
                                                 <span 
                                                     key={code} 
@@ -706,7 +706,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                             </div>
                                         </div>
                                     </div>
-                                    {enrollMsg && (<div className={`text-xs p-3 rounded-xl text-center font-bold animate-fadeIn ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-red-100 text-red-800 border border-red-200'}`}>{enrollMsg.text}</div>)}
+                                    {enrollMsg && (<div className={`text-xs p-3 rounded-xl text-center font-bold animate-fadeIn ${enrollMsg.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{enrollMsg.text}</div>)}
                                 </form>
                             </div>
                             <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col">

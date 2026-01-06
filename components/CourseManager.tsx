@@ -1281,9 +1281,9 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                   <div className="flex items-center gap-4 text-xs text-slate-500 mb-4"><span>{enrolledCount} Inscritos</span><span>{course.modality}</span><span>{course.hours}h</span></div>
                   
                   {course.competencyCodes && course.competencyCodes.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-4 h-10 overflow-hidden">
+                      <div className="flex flex-wrap gap-1 mb-4 min-h-[22px] overflow-hidden">
                           {course.competencyCodes.slice(0, 8).map(code => {
-                              const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code === code);
+                              const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code.replace(/-/g, '') === code.replace(/-/g, ''));
                               return (
                                 <span 
                                     key={code} 
