@@ -208,6 +208,47 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const [tagInput, setTagInput] = useState('');
     const [manageTab, setManageTab] = useState<'management' | 'tracking'>('management');
 
+    // --- LOGICA DE ADVERTENCIA DE SALIDA (DIRTY STATE) ---
+    const [showExitConfirm, setShowExitConfirm] = useState(false);
+    const [pendingExitAction, setPendingExitAction] = useState<(() => void) | null>(null);
+
+    const hasUnsavedChanges = useMemo(() => {
+        if (view !== 'manage') return false;
+        // Se considera "sucio" si hay texto en observaciones, tags seleccionados, o se está editando una sesión previa
+        return (
+            sessionForm.observation.trim() !== '' || 
+            sessionForm.tags.length > 0 || 
+            editingLogId !== null || 
+            editingLogIndex !== null ||
+            signatureStep !== 'form'
+        );
+    }, [view, sessionForm.observation, sessionForm.tags, editingLogId, editingLogIndex, signatureStep]);
+
+    // Comunicar estado dirty a App.tsx mediante window para el navbar
+    useEffect(() => {
+        (window as any).isAdvisoryDirty = hasUnsavedChanges;
+        return () => { (window as any).isAdvisoryDirty = false; };
+    }, [hasUnsavedChanges]);
+
+    // Escuchar intento de navegación desde el Navbar
+    useEffect(() => {
+        const handleNavAttempt = (e: any) => {
+            setPendingExitAction(() => () => window.dispatchEvent(new CustomEvent('force-nav', { detail: e.detail })));
+            setShowExitConfirm(true);
+        };
+        window.addEventListener('app-nav-attempt', handleNavAttempt);
+        return () => window.removeEventListener('app-nav-attempt', handleNavAttempt);
+    }, []);
+
+    const handleSafeAction = (action: () => void) => {
+        if (hasUnsavedChanges) {
+            setPendingExitAction(() => action);
+            setShowExitConfirm(true);
+        } else {
+            action();
+        }
+    };
+
     // --- EFFECT: Suggestions Click Outside ---
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => { if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) { setShowSuggestions(false); } };
@@ -643,7 +684,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         return (
             <div className="animate-fadeIn max-w-6xl mx-auto space-y-6">
                 <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm sticky top-20 z-40">
-                    <button onClick={() => setView('list')} className="text-slate-500 hover:text-slate-700 flex items-center gap-1 text-sm font-bold">← Volver al Listado</button>
+                    <button onClick={() => handleSafeAction(() => setView('list'))} className="text-slate-500 hover:text-slate-700 flex items-center gap-1 text-sm font-bold">← Volver al Listado</button>
                     <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 rounded-full border border-slate-200">
                             <div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-green-500'}`}></div>
@@ -655,8 +696,8 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
 
                 <div className="mt-8">
                     <div className="flex items-end gap-2 border-b border-indigo-200 pl-4 mb-0">
-                        <button onClick={() => setManageTab('management')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 ${manageTab === 'management' ? 'bg-white text-indigo-700 border-t-indigo-600 shadow-sm z-10' : 'bg-slate-200 text-slate-600 border-transparent hover:bg-slate-100'}`}>GESTIÓN ASESORÍA</button>
-                        <button onClick={() => setManageTab('tracking')} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 ${manageTab === 'tracking' ? 'bg-white text-indigo-700 border-t-indigo-600 shadow-sm z-10' : 'bg-slate-200 text-slate-600 border-transparent hover:bg-slate-100'}`}>SEGUIMIENTO</button>
+                        <button onClick={() => handleSafeAction(() => setManageTab('management'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 ${manageTab === 'management' ? 'bg-white text-indigo-700 border-t-indigo-600 shadow-sm z-10' : 'bg-slate-200 text-slate-600 border-transparent hover:bg-slate-100'}`}>GESTIÓN ASESORÍA</button>
+                        <button onClick={() => handleSafeAction(() => setManageTab('tracking'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 ${manageTab === 'tracking' ? 'bg-white text-indigo-700 border-t-indigo-600 shadow-sm z-10' : 'bg-slate-200 text-slate-600 border-transparent hover:bg-slate-100'}`}>SEGUIMIENTO</button>
                     </div>
 
                     <div className="bg-white rounded-b-xl rounded-tr-xl shadow-sm border border-indigo-200 border-t-0 p-8 animate-fadeIn">
@@ -824,6 +865,24 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                         )}
                     </div>
                 </div>
+
+                {/* MODAL DE ADVERTENCIA DE SALIDA */}
+                {showExitConfirm && (
+                    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
+                        <div className="bg-white rounded-[2rem] shadow-2xl max-w-md w-full p-10 text-center border border-rose-100">
+                            <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner">
+                                <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                            </div>
+                            <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-2">Información sin Guardar</h3>
+                            <p className="text-slate-500 text-sm leading-relaxed mb-8">Has ingresado observaciones o etiquetas que no han sido registradas formalmente. Si sales ahora, perderás estos datos.</p>
+                            <div className="flex flex-col gap-3">
+                                <button onClick={() => setShowExitConfirm(false)} className="w-full py-4 bg-slate-800 hover:bg-black text-white rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-lg transition-all transform active:scale-95">Seguir Trabajando</button>
+                                <button onClick={() => { setShowExitConfirm(false); if (pendingExitAction) pendingExitAction(); }} className="w-full py-3 text-rose-500 font-bold uppercase tracking-widest text-[10px] hover:underline">Salir de todos modos</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {showVerificationModal && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
                         <div className="bg-white rounded-xl shadow-2xl p-6 relative w-full max-md text-center">

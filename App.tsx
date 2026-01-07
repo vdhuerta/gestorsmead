@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, UserRole } from './types';
 import { LoginSimulator } from './components/LoginSimulator';
@@ -175,7 +176,12 @@ const MainContent: React.FC = () => {
   };
 
   const handleTabChange = (newTab: TabType) => {
-      if (activeTab === 'postgraduate' && (window as any).isPostgraduateDirty) {
+      // Detección de cambios sin guardar en Postítulos y Asesorías
+      const isPostgraduateDirty = (window as any).isPostgraduateDirty;
+      const isAdvisoryDirty = (window as any).isAdvisoryDirty;
+
+      if ((activeTab === 'postgraduate' && isPostgraduateDirty) || 
+          (activeTab === 'advisory' && isAdvisoryDirty)) {
           window.dispatchEvent(new CustomEvent('app-nav-attempt', { detail: newTab }));
           return;
       }
