@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { User, Activity, ActivityState, Enrollment, UserRole } from '../types';
 import { useData, normalizeRut } from '../context/DataContext';
-import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST, PEI_COMPETENCIES, PMI_COMPETENCIES } from '../constants';
+import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST, PEI_COMPETENCIES, PMI_COMPETENCIES, ACADEMIC_PROFILE_COMPETENCIES } from '../constants';
 import { SmartSelect } from './SmartSelect';
 import { useReloadDirective } from '../hooks/useReloadDirective';
 import { supabase } from '../services/supabaseClient';
@@ -330,8 +330,8 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
     const normRut = normalizeRut(activeSearchRut);
     const approvedEnrollments = enrollments.filter(e => normalizeRut(e.rut) === normRut && e.state === ActivityState.APROBADO);
     
-    const competencyStats: Record<string, { code: string, name: string, hours: number, activities: {name: string, grade?: number}[] }> = {};
-    const masterList = [...PEI_COMPETENCIES, ...PMI_COMPETENCIES];
+    const competencyStats: Record<string, { code: string, name: string, dimension?: string, hours: number, activities: {name: string, grade?: number}[] }> = {};
+    const masterList = [...PEI_COMPETENCIES, ...PMI_COMPETENCIES, ...ACADEMIC_PROFILE_COMPETENCIES];
 
     approvedEnrollments.forEach(enr => {
         const act = activities.find(a => a.id === enr.activityId);
@@ -339,7 +339,18 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
             act.competencyCodes.forEach(code => {
                 if (!competencyStats[code]) {
                     const meta = masterList.find(m => m.code === code);
-                    competencyStats[code] = { code, name: meta?.name || 'Competencia Institucional', hours: 0, activities: [] };
+                    let dimension = (meta as any)?.dimension;
+                    if (!dimension) {
+                        if (code.startsWith('PEI')) dimension = 'Plan Estratégico';
+                        else if (code.startsWith('PMI')) dimension = 'Plan de Mejora';
+                    }
+                    competencyStats[code] = { 
+                        code, 
+                        name: meta?.name || 'Competencia Institucional', 
+                        dimension,
+                        hours: 0, 
+                        activities: [] 
+                    };
                 }
                 const actHours = Number(act.hours || 0);
                 competencyStats[code].hours += actHours;
@@ -363,8 +374,11 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
         <div class="competency-card">
             <div class="competency-header">
                 <span class="competency-code">${c.code}</span>
-                <span class="competency-name">${c.name}</span>
-                <span class="competency-hours">${c.hours} Horas de Vuelo</span>
+                <div style="flex: 1">
+                    ${c.dimension ? `<span style="display: block; font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase; margin-bottom: 2px;">${c.dimension}</span>` : ''}
+                    <span class="competency-name">${c.name}</span>
+                </div>
+                <span class="competency-hours">${c.hours} Horas</span>
             </div>
             <div class="supporting-docs">
                 <p><strong>Evidencia de Acreditación:</strong></p>
@@ -417,13 +431,13 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
                             {(() => { const found = users.find(u => normalizeRut(u.rut) === normalizeRut(activeSearchRut)); return found ? <span className="text-slate-500 font-bold uppercase truncate">— {found.names} {found.paternalSurname}</span> : null; })()}
                         </h3>
                         
-                        {/* BOTÓN PASAPORTE DE COMPETENCIAS */}
+                        {/* BOTÓN MICRO CREDENCIALES DE COMPETENCIAS (ACTUALIZADO) */}
                         <button 
                             onClick={() => setShowPassportModal(true)}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 transition-all transform active:scale-95"
+                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-5 py-2.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-sm flex items-center gap-2 transition-all transform active:scale-95"
                         >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                            Pasaporte de Competencias
+                            <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                            MICRO CREDENCIALES DE COMPETENCIAS
                         </button>
                     </div>
 
@@ -565,8 +579,8 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
                                 <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
                             </div>
                             <div>
-                                <h3 className="text-3xl font-black tracking-tighter uppercase leading-none mb-1">Pasaporte de Competencias</h3>
-                                <p className="text-xs text-blue-100 font-bold uppercase tracking-widest opacity-80">Micro-credenciales y Capacidades Adquiridas</p>
+                                <h3 className="text-3xl font-black tracking-tighter uppercase leading-none mb-1">Micro-credenciales de Competencia</h3>
+                                <p className="text-xs text-blue-100 font-bold uppercase tracking-widest opacity-80">Capacidades Adquiridas y Acreditadas</p>
                             </div>
                         </div>
                         <button onClick={() => setShowPassportModal(false)} className="text-white/60 hover:text-white text-5xl font-light transition-all active:scale-95 relative z-10">&times;</button>
@@ -590,6 +604,11 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
                                                 {comp.code}
                                             </div>
                                             <div className="flex-1 min-w-0">
+                                                {comp.dimension && (
+                                                    <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">
+                                                        {comp.dimension}
+                                                    </span>
+                                                )}
                                                 <h4 className="font-black text-slate-800 uppercase text-xs tracking-tight leading-tight mb-1 group-hover:text-indigo-700 transition-colors truncate">{comp.name}</h4>
                                                 <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded uppercase">Acreditada</span>
                                             </div>
@@ -597,7 +616,7 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
                                         <div className="flex-1 space-y-4">
                                             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                                                 <div className="flex justify-between items-center">
-                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horas de Vuelo</span>
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horas</span>
                                                     <span className="text-xl font-black text-slate-700">{comp.hours}h</span>
                                                 </div>
                                                 <div className="w-full h-1.5 bg-slate-200 rounded-full mt-2 overflow-hidden">
@@ -648,7 +667,7 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
                         if (!enr || !act || !student) return null;
                         const isApproved = enr.state === ActivityState.APROBADO;
 
-                        // DETECCIÓN DE NUEVA VERSIÓN PARA REMATRICULAR
+                        // DETECCIÓN DE NUEVA VERSIÓN PARA REMATRICULACIÓN
                         const newVersion = !isApproved ? openActivities.find(oa => 
                             oa.internalCode === act.internalCode && 
                             oa.id !== act.id &&
@@ -688,10 +707,10 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
                                     )}
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8"><div className="space-y-3 text-xs text-slate-500 bg-slate-50 p-6 rounded-2xl border border-slate-100"><p className="flex items-center gap-3"><svg className="w-4 h-4 text-[#647FBC]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>Docente: <span className="font-bold text-slate-700">{act.relator || 'No asignado'}</span></p><p className="flex items-center gap-3"><svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> Inicio: <span className="font-bold text-slate-700">{formatDateCL(act.startDate)}</span></p><p className="flex items-center gap-3"><svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Horas: <span className="font-bold text-slate-700">{act.hours}h Cronológicas</span></p><p className="flex items-center gap-3"><svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg> Modalidad: <span className="font-bold text-slate-700">{act.modality}</span></p></div><div className="grid grid-cols-2 gap-4"><div className="bg-indigo-50 border border-indigo-100 p-5 rounded-2xl text-center flex flex-col justify-center"><span className="block text-4xl font-black text-indigo-700 mb-1">{enr.finalGrade || '-'}</span><span className="text-[9px] font-black text-indigo-400 uppercase tracking-wider">Promedio Final</span></div><div className="bg-emerald-50 border border-emerald-100 p-5 rounded-2xl text-center flex flex-col justify-center"><span className={`block text-4xl font-black ${(enr.attendancePercentage || 0) < 75 ? 'text-red-500' : 'text-emerald-700'}`}>{enr.attendancePercentage || 0}%</span><span className="text-[9px] font-black text-emerald-400 uppercase tracking-wider">Asistencia</span></div></div></div>
-                                    <div className="space-y-4"><h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2 flex items-center gap-2"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>Desglose de Calificaciones</h4><div className="flex flex-wrap gap-4">{Array.from({ length: act.evaluationCount || 3 }).map((_, idx) => { const grade = enr.grades?.[idx]; return (<div key={idx} className="bg-white border border-slate-200 rounded-xl p-3 w-20 text-center shadow-sm"><span className="block text-[10px] font-bold text-slate-400 uppercase mb-1">N{idx + 1}</span><span className={`text-lg font-black ${grade && grade < 4 ? 'text-red-500' : 'text-slate-700'}`}>{grade || '-'}</span></div>); })}{(!enr.grades || enr.grades.length === 0) && (<p className="text-sm text-slate-400 italic">No hay calificaciones parciales registradas aún.</p>)}</div></div>
+                                    <div className="space-y-4"><h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2 flex items-center gap-2"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>Desglose de Calificaciones</h4><div className="flex flex-wrap gap-4">{Array.from({ length: act.evaluationCount || 3 }).map((_, idx) => { const grade = enr.grades?.[idx]; return (<div key={idx} className="bg-white border border-slate-200 rounded-xl p-3 w-20 text-center shadow-sm"><span className="block text-[10px] font-bold text-slate-400 uppercase mb-1">N{idx + 1}</span><span className={`textlg font-black ${grade && grade < 4 ? 'text-red-500' : 'text-slate-700'}`}>{grade || '-'}</span></div>); })}{(!enr.grades || enr.grades.length === 0) && (<p className="text-sm text-slate-400 italic">No hay calificaciones parciales registradas aún.</p>)}</div></div>
                                     <div className="pt-8 border-t border-slate-100 flex flex-col items-center">
                                         {isApproved ? (
-                                            <div className="w-full max-w-sm text-center space-y-4"><div className="bg-green-100 text-green-800 p-4 rounded-2xl border-2 border-green-200 flex items-center gap-3 justify-center mb-4"><svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg><span className="font-black uppercase text-xs tracking-widest">Aprobado con Éxito</span></div><button onClick={() => handleDownloadCertificate(enr, act, student)} disabled={isGeneratingPdf} className="w-full bg-[#647FBC] hover:bg-blue-800 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50">{isGeneratingPdf ? (<svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>) : (<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>)}Descargar Certificado PDF</button><p className="text-[9px] text-slate-400 mt-4 leading-tight">Su certificado incluye firma digital y código de validación institucional para acreditar su participación.</p></div>
+                                            <div className="w-full max-w-sm text-center space-y-4"><div className="bg-green-100 text-green-800 p-4 rounded-2xl border-2 border-green-200 flex items-center gap-3 justify-center mb-4"><svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg><span className="font-black uppercase text-xs tracking-widest">Aprobado con Éxito</span></div><button onClick={() => handleDownloadCertificate(enr, act, student)} disabled={isGeneratingPdf} className="w-full bg-[#647FBC] hover:bg-blue-800 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50">{isGeneratingPdf ? (<svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>) : (<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>)}Descargar Certificado PDF</button><p className="text-[9px] text-slate-400 mt-4 leading-tight">Su certificado incluye firma digital y código de validación institucional para acreditar su participación.</p></div>
                                         ) : (<div className="text-center p-8 bg-slate-50 border border-dashed border-slate-200 rounded-3xl w-full"><svg className="w-10 h-10 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg><p className="text-sm font-bold text-slate-500">Certificación no disponible aún</p><p className="text-xs text-slate-400 mt-1">Debe cumplir con los requisitos de aprobación (Nota 4.0 y 75% Asistencia) para descargar su certificado.</p></div>)}
                                     </div>
                                 </div>

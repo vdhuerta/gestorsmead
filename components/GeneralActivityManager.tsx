@@ -37,6 +37,7 @@ const formatDateCL = (dateStr: string | undefined): string => {
 const cleanRutFormat = (rut: string): string => {
     let clean = rut.replace(/[^0-9kK]/g, '').replace(/^0+/, '');
     if (clean.length < 2) return rut;
+    if (clean.length === 8) { clean = '0' + clean; }
     const body = clean.slice(0, -1);
     const dv = clean.slice(-1).toUpperCase();
     return `${body}-${dv}`;
@@ -430,10 +431,8 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                 <p>Docente: {act.relator || 'S/D'}</p>
                                 <p>Fecha: {formatDateCL(act.startDate)}</p>
                                 
-                                {/* TAGS TAXONÓMICOS DE COMPETENCIAS (DEBAJO DE FECHA) */}
                                 {act.competencyCodes && act.competencyCodes.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-2 h-auto min-h-[22px]">
-                                        {/* Fix: Explicitly typing code as any to avoid 'unknown' type errors from Array.from(Set) */}
                                         {Array.from(new Set(act.competencyCodes)).map((code: any) => {
                                             const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code.replace(/-/g, '').toUpperCase() === (code as string).replace(/-/g, '').toUpperCase());
                                             return (
@@ -462,6 +461,15 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         );
     }
 
+    // Mapa de colores para los títulos de dimensiones
+    const dimensionColors: Record<string, string> = {
+        'Pedagógica': 'text-rose-600 border-rose-100',
+        'Investigación y/o Creación': 'text-emerald-600 border-emerald-100',
+        'Vinculación': 'text-purple-600 border-purple-100',
+        'Interpersonal y Ética': 'text-blue-600 border-blue-100',
+        'Formación Continua': 'text-pink-600 border-pink-100'
+    };
+
     return (
         <div className="max-w-6xl mx-auto animate-fadeIn">
             <button onClick={() => setView('list')} className="text-slate-500 hover:text-slate-700 mb-4 flex items-center gap-1 text-sm font-bold">← Volver al listado</button>
@@ -471,7 +479,7 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                     <button onClick={() => setActiveTab('attendance')} className={`px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeTab === 'attendance' ? 'bg-white text-teal-700 border-t-teal-600 border-x border-teal-100 shadow-sm translate-y-[1px] z-10' : 'bg-slate-100 text-slate-500 border-t-transparent hover:bg-slate-200'}`}>Asistencia</button>
                 </div>
             )}
-            <div className={`bg-white rounded-xl shadow-lg border border-slate-200 p-10 ${view === 'edit' && activeTab === 'attendance' ? '' : ''}`}>
+            <div className={`bg-white rounded-xl shadow-lg border border-slate-200 p-10`}>
                 {(activeTab === 'details' || view === 'create') && (
                     <form onSubmit={handleSubmit} className="space-y-10">
                         <div className="flex justify-between items-center border-b border-slate-100 pb-6 mb-4">
@@ -506,94 +514,23 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">Año</label>
-                                <input type="number" value={formData.year} onChange={e => setFormData({...formData, year: Number(e.target.value)})} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-bold"/>
+                                <input type="number" value={formData.year} onChange={e => setFormData({...formData, year: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-bold"/>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">Versión</label>
-                                <input type="text" value={formData.version} onChange={e => setFormData({...formData, version: e.target.value})} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-bold"/>
+                                <input type="text" value={formData.version} onChange={e => setFormData({...formData, version: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-bold"/>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">Semestre</label>
-                                <input type="text" value={formData.semester} onChange={e => setFormData({...formData, semester: e.target.value})} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-bold"/>
+                                <input type="text" value={formData.semester} onChange={e => setFormData({...formData, semester: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-bold"/>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">Modalidad</label>
-                                <select value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm">
+                                <select value={formData.modality} onChange={e => setFormData({...formData, modality: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
                                     <option value="Presencial">Presencial</option>
                                     <option value="Virtual">Virtual</option>
                                     <option value="Híbrido">Híbrido</option>
                                 </select>
-                            </div>
-                        </div>
-
-                        {/* FILA 3: HORAS, RELATOR, INICIO, TERMINO */}
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Horas</label>
-                                <input type="number" value={formData.horas} onChange={e => setFormData({...formData, horas: Number(e.target.value)})} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"/>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Relator (Asesor Responsable)</label>
-                                <select value={formData.relator} onChange={e => setFormData({...formData, relator: e.target.value})} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white">
-                                    <option value="">Seleccione Asesor...</option>
-                                    {advisors.map(adv => <option key={adv.rut} value={`${adv.names} ${adv.paternalSurname}`}>{adv.names} {adv.paternalSurname}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Fecha Inicio</label>
-                                <input type="date" value={formData.fechaInicio} onChange={e => setFormData({...formData, fechaInicio: e.target.value})} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"/>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Fecha Término</label>
-                                <input type="date" value={formData.fechaTermino} onChange={e => setFormData({...formData, fechaTermino: e.target.value})} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"/>
-                            </div>
-                        </div>
-
-                        {/* SECCION RECURSOS DIGITALES */}
-                        <div className="space-y-4 pt-6 border-t-2 border-slate-50">
-                            <h3 className="text-sm font-bold text-teal-600 uppercase tracking-widest flex items-center gap-2">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.826a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.1-1.1" /></svg>
-                                RECURSOS DIGITALES (EDITABLE)
-                            </h3>
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Link de Recursos</label>
-                                <input type="text" placeholder="https://..." value={formData.linkRecursos} onChange={e => setFormData({...formData, linkRecursos: e.target.value})} className="w-full px-4 py-2 border border-teal-100 rounded-lg focus:ring-2 focus:ring-teal-500 bg-teal-50/20 text-sm"/>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Link de la Clase</label>
-                                    <input type="text" placeholder="https://..." value={formData.linkClase} onChange={e => setFormData({...formData, linkClase: e.target.value})} className="w-full px-4 py-2 border border-teal-100 rounded-lg focus:ring-2 focus:ring-teal-500 bg-teal-50/20 text-sm"/>
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Link de Evaluación</label>
-                                    <input type="text" placeholder="https://..." value={formData.linkEvaluacion} onChange={e => setFormData({...formData, linkEvaluacion: e.target.value})} className="w-full px-4 py-2 border border-teal-100 rounded-lg focus:ring-2 focus:ring-teal-500 bg-teal-50/20 text-sm"/>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* SUBIDA DE PROGRAMA Y ANÁLISIS IA */}
-                        <div className="space-y-4 pt-6 border-t-2 border-slate-50">
-                            <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-widest flex items-center gap-2">
-                                <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
-                                PROGRAMA O DESCRIPCIÓN (ANÁLISIS IA)
-                            </h3>
-                            <div className="flex flex-col md:flex-row gap-4 items-center bg-slate-50 p-6 rounded-2xl border border-slate-100 shadow-inner">
-                                <div className="flex-1 w-full">
-                                    <label className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-xl cursor-pointer transition-all ${syllabusFile ? 'border-indigo-400 bg-indigo-50' : 'border-slate-300 bg-white hover:bg-slate-50'}`}>
-                                        <div className="flex flex-col items-center justify-center pt-2">
-                                            {syllabusFile ? (
-                                                <div className="flex items-center gap-2"><svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0116 0z" /></svg><p className="text-xs font-bold text-indigo-700 truncate max-w-[200px]">{syllabusFile.name}</p></div>
-                                            ) : (
-                                                <><svg className="w-6 h-6 text-slate-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg><p className="text-[10px] text-slate-500 font-bold uppercase">Subir Documento (PDF/TXT)</p></>
-                                            )}
-                                        </div>
-                                        <input type="file" className="hidden" accept=".pdf,.txt" onChange={(e) => setSyllabusFile(e.target.files ? e.target.files[0] : null)} />
-                                    </label>
-                                </div>
-                                <button type="button" onClick={handleAnalyzeSyllabus} disabled={isAnalyzingIA || !syllabusFile} className={`flex items-center gap-2 px-8 py-4 rounded-xl text-xs font-black uppercase transition-all shadow-md h-24 ${isAnalyzingIA || !syllabusFile ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:-translate-y-0.5'}`}>
-                                    <svg className={`w-5 h-5 ${isAnalyzingIA ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                    {isAnalyzingIA ? 'Analizando...' : 'Analizar IA'}
-                                </button>
                             </div>
                         </div>
 
@@ -608,7 +545,14 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                     <div className="flex items-center gap-2 mb-2"><span className="w-2 h-2 rounded-full bg-indigo-400"></span><h4 className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Plan Estratégico (PEI)</h4></div>
                                     <div className="flex flex-wrap gap-2">
                                         {PEI_COMPETENCIES.map(c => (
-                                            <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-indigo-100 border-indigo-300 text-indigo-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-200 hover:text-indigo-400'}`}>{c.code}</button>
+                                            <button 
+                                                key={c.code} 
+                                                type="button" 
+                                                onClick={() => handleToggleCompetence(c.code)} 
+                                                title={c.name} 
+                                                className={`px-3 py-1.5 rounded-lg text-[9px] font-normal uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-indigo-50 border-indigo-400 text-black scale-105 shadow-sm' : 'bg-white border-slate-200 text-black hover:border-indigo-300'}`}>
+                                                {c.code}
+                                            </button>
                                         ))}
                                     </div>
                                 </div>
@@ -616,22 +560,38 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                                     <div className="flex items-center gap-2 mb-2"><span className="w-2 h-2 rounded-full bg-emerald-400"></span><h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Plan de Mejora (PMI)</h4></div>
                                     <div className="flex flex-wrap gap-2">
                                         {PMI_COMPETENCIES.map(c => (
-                                            <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-indigo-300 text-indigo-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-200 hover:text-indigo-400'}`}>{c.code}</button>
+                                            <button 
+                                                key={c.code} 
+                                                type="button" 
+                                                onClick={() => handleToggleCompetence(c.code)} 
+                                                title={c.name} 
+                                                className={`px-3 py-1.5 rounded-lg text-[9px] font-normal uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-50 border-emerald-400 text-black scale-105 shadow-sm' : 'bg-white border-slate-200 text-black hover:border-emerald-300'}`}>
+                                                {c.code}
+                                            </button>
                                         ))}
                                     </div>
                                 </div>
                             </div>
 
-                            {/* PERFIL ACADÉMICO (DINÁMICO) - NUEVO */}
+                            {/* PERFIL ACADÉMICO (DINÁMICO) */}
                             <div className="space-y-4 pt-6">
                                 <h4 className="text-sm font-black text-rose-600 uppercase tracking-[0.2em] flex items-center gap-2">Perfil del Académico UPLA</h4>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
                                     {['Pedagógica', 'Investigación y/o Creación', 'Vinculación', 'Interpersonal y Ética', 'Formación Continua'].map(dim => (
                                         <div key={dim} className="space-y-2">
-                                            <h5 className="text-[9px] font-black uppercase text-slate-400 border-b pb-1">{dim}</h5>
+                                            <h5 className={`text-[9px] font-black uppercase border-b pb-1 ${dimensionColors[dim] || 'text-slate-400 border-slate-100'}`}>
+                                                {dim}
+                                            </h5>
                                             <div className="flex flex-wrap gap-1">
                                                 {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === dim).map(c => (
-                                                    <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-black uppercase border transition-all ${formData.competencyCodes.includes(c.code) ? `${c.color} text-white shadow-sm scale-110` : 'bg-white border-slate-100 text-slate-300 hover:border-slate-300'}`}>{c.code}</button>
+                                                    <button 
+                                                        key={c.code} 
+                                                        type="button" 
+                                                        onClick={() => handleToggleCompetence(c.code)} 
+                                                        title={c.name} 
+                                                        className={`px-2 py-1 rounded text-[8px] font-normal uppercase border transition-all ${formData.competencyCodes.includes(c.code) ? `${c.lightColor} ${c.borderColor} text-black shadow-sm scale-110 ring-1 ring-black` : 'bg-white border-slate-200 text-black hover:border-slate-400'}`}>
+                                                        {c.code}
+                                                    </button>
                                                 ))}
                                             </div>
                                         </div>

@@ -574,7 +574,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
             if (usersToUpsert.length > 0) { await upsertUsers(usersToUpsert); }
             const result = await bulkEnroll(rutsToEnroll, selectedCourseId);
             await executeReload();
-            setEnrollMsg({ type: 'success', text: `Carga Masiva: ${result.success} nuevos inscritos.` }); 
+            setEnrollMsg({ type: 'success', text: `¡Carga Masiva: ${result.success} nuevos inscritos.` }); 
             setUploadFile(null);
         } catch (err: any) {
             setEnrollMsg({ type: 'error', text: `Error en carga masiva: ${err.message}` });
@@ -765,26 +765,26 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             <div className="space-y-4">
-                                <h4 className="text-[10px] font-black text-indigo-700 uppercase tracking-widest flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-indigo-400"></span> Dimensiones PEI</h4>
+                                <h4 className="text-[10px] font-black text-indigo-800 uppercase tracking-widest flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-indigo-400"></span> Dimensiones PEI</h4>
                                 <div className="flex flex-wrap gap-2">
                                     {PEI_COMPETENCIES.map(c => (
-                                        <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-indigo-600 border-indigo-700 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-200'}`}>{c.code}</button>
+                                        <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-normal uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-indigo-100 border-indigo-300 text-indigo-950 scale-105 shadow-md' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-200'}`}>{c.code}</button>
                                     ))}
                                 </div>
                             </div>
                             <div className="space-y-4">
-                                <h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-400"></span> Ejes PMI</h4>
+                                <h4 className="text-[10px] font-black text-emerald-800 uppercase tracking-widest flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-400"></span> Ejes PMI</h4>
                                 <div className="flex flex-wrap gap-2">
                                     {PMI_COMPETENCIES.map(c => (
-                                        <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-600 border-emerald-700 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200'}`}>{c.code}</button>
+                                        <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-3 py-1.5 rounded-lg text-[9px] font-normal uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-950 scale-105 shadow-md' : 'bg-white border-slate-200 text-slate-600 hover:border-emerald-200'}`}>{c.code}</button>
                                     ))}
                                 </div>
                             </div>
                         </div>
 
-                        {/* SECCIÓN PERFIL DEL ACADÉMICO UPLA - NUEVO */}
+                        {/* SECCIÓN PERFIL DEL ACADÉMICO UPLA */}
                         <div className="space-y-6 pt-6 border-t border-slate-100">
-                             <h4 className="text-sm font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                             <h4 className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
                                 <svg className="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                                 Perfil del Académico UPLA
                              </h4>
@@ -795,7 +795,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                      <h5 className="text-[9px] font-black text-rose-600 uppercase tracking-widest border-b border-rose-100 pb-1">Pedagógica</h5>
                                      <div className="flex flex-wrap gap-1.5">
                                          {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Pedagógica').map(c => (
-                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-rose-600 border-rose-700 text-white shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-400 hover:border-rose-200'}`}>{c.code}</button>
+                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-normal uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-rose-100 border-rose-300 text-rose-950 shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-600 hover:border-rose-200'}`}>{c.code}</button>
                                          ))}
                                      </div>
                                  </div>
@@ -804,7 +804,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                      <h5 className="text-[9px] font-black text-emerald-600 uppercase tracking-widest border-b border-emerald-100 pb-1">Investigación</h5>
                                      <div className="flex flex-wrap gap-1.5">
                                          {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Investigación y/o Creación').map(c => (
-                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-600 border-emerald-700 text-white shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-400 hover:border-emerald-200'}`}>{c.code}</button>
+                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-normal uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-950 shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-600 hover:border-emerald-200'}`}>{c.code}</button>
                                          ))}
                                      </div>
                                  </div>
@@ -813,7 +813,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                      <h5 className="text-[9px] font-black text-purple-600 uppercase tracking-widest border-b border-purple-100 pb-1">Vinculación</h5>
                                      <div className="flex flex-wrap gap-1.5">
                                          {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Vinculación').map(c => (
-                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-purple-600 border-purple-700 text-white shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-400 hover:border-purple-200'}`}>{c.code}</button>
+                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-normal uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-purple-100 border-purple-300 text-purple-950 shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-600 hover:border-purple-200'}`}>{c.code}</button>
                                          ))}
                                      </div>
                                  </div>
@@ -822,7 +822,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                      <h5 className="text-[9px] font-black text-blue-600 uppercase tracking-widest border-b border-blue-100 pb-1">Interpersonal / Ética</h5>
                                      <div className="flex flex-wrap gap-1.5">
                                          {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Interpersonal y Ética').map(c => (
-                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-blue-600 border-blue-700 text-white shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-400 hover:border-blue-200'}`}>{c.code}</button>
+                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-normal uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-blue-100 border-blue-300 text-blue-950 shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-600 hover:border-blue-200'}`}>{c.code}</button>
                                          ))}
                                      </div>
                                  </div>
@@ -831,7 +831,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                                      <h5 className="text-[9px] font-black text-pink-600 uppercase tracking-widest border-b border-pink-100 pb-1">Formación Continua</h5>
                                      <div className="flex flex-wrap gap-1.5">
                                          {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Formación Continua').map(c => (
-                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-pink-600 border-pink-700 text-white shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-400 hover:border-pink-200'}`}>{c.code}</button>
+                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-normal uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-pink-100 border-pink-300 text-pink-950 shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-600 hover:border-pink-200'}`}>{c.code}</button>
                                          ))}
                                      </div>
                                  </div>
@@ -901,8 +901,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
               </div>
 
               <div className="flex items-end gap-2 border-b border-slate-200 pl-4">
-                  <button onClick={() => handleSafeAction(() => setActiveDetailTab('enrollment'))} className={`px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 transition-all ${activeDetailTab === 'enrollment' ? 'bg-white text-indigo-700 border-t-indigo-600 border-x border-slate-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-500 border-transparent hover:bg-slate-100'}`}>Matrícula</button>
-                  <button onClick={() => handleSafeAction(() => setActiveDetailTab('tracking'))} className={`px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 transition-all ${activeDetailTab === 'tracking' ? 'bg-white text-indigo-700 border-t-indigo-600 border-x border-slate-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-500 border-transparent hover:bg-slate-100'}`}>Notas y Asistencia</button>
+                  <button onClick={() => handleSafeAction(() => setActiveDetailTab('enrollment'))} className={`px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 transition-all ${activeDetailTab === 'enrollment' ? 'bg-white text-indigo-700 border-t-indigo-600 border-x border-slate-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-transparent hover:bg-slate-100'}`}>Matrícula</button>
+                  <button onClick={() => handleSafeAction(() => setActiveDetailTab('tracking'))} className={`px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 transition-all ${activeDetailTab === 'tracking' ? 'bg-white text-indigo-700 border-t-indigo-600 border-x border-slate-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-transparent hover:bg-slate-100'}`}>Notas y Asistencia</button>
                   <button onClick={() => handleSafeAction(() => setActiveDetailTab('acta'))} className={`px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 transition-all ${activeDetailTab === 'acta' ? 'bg-white text-indigo-700 border-t-indigo-600 border-x border-slate-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-transparent hover:bg-slate-100'}`}>Acta Final</button>
               </div>
 
