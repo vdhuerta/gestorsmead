@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole, ProgramModule, ProgramConfig } from '../types';
-import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST, PEI_COMPETENCIES, PMI_COMPETENCIES } from '../constants';
+import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TYPE_LIST, PEI_COMPETENCIES, PMI_COMPETENCIES, ACADEMIC_PROFILE_COMPETENCIES } from '../constants';
 import { SmartSelect } from './SmartSelect'; 
 import { suggestCompetencies, CompetencySuggestion } from '../services/geminiService';
 // @ts-ignore
@@ -256,7 +256,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
         name: formData.nombre, 
         version: formData.version, 
         modality: formData.modality, 
-        hours: formData.horas, 
+        hours: formData.hours, 
         moduleCount: totalModules, 
         evaluationCount: totalModules, 
         relator: formData.relator, 
@@ -785,6 +785,15 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
     URL.revokeObjectURL(url);
   };
 
+  // Mapa de colores para los títulos de dimensiones (Igual que en Gestión Actividades)
+  const dimensionColors: Record<string, string> = {
+    'Pedagógica': 'text-rose-600 border-rose-100',
+    'Investigación y/o Creación': 'text-emerald-600 border-emerald-100',
+    'Vinculación': 'text-purple-600 border-purple-100',
+    'Interpersonal y Ética': 'text-blue-600 border-blue-100',
+    'Formación Continua': 'text-pink-600 border-pink-100'
+  };
+
   if (view === 'list') {
       return (
           <div className="animate-fadeIn space-y-6">
@@ -955,6 +964,32 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                   </div>
                               </div>
                           </div>
+
+                          {/* PERFIL ACADÉMICO (DINÁMICO) - HABILITADO SEGÚN FORMATO GESTIÓN ACTIVIDADES */}
+                          <div className="space-y-4 pt-6">
+                              <h4 className="text-sm font-black text-rose-600 uppercase tracking-[0.2em] flex items-center gap-2">Perfil del Académico UPLA</h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                                  {['Pedagógica', 'Investigación y/o Creación', 'Vinculación', 'Interpersonal y Ética', 'Formación Continua'].map(dim => (
+                                      <div key={dim} className="space-y-2">
+                                          <h5 className={`text-[9px] font-black uppercase border-b pb-1 ${dimensionColors[dim] || 'text-slate-400 border-slate-100'}`}>
+                                              {dim}
+                                          </h5>
+                                          <div className="flex flex-wrap gap-1">
+                                              {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === dim).map(c => (
+                                                  <button 
+                                                      key={c.code} 
+                                                      type="button" 
+                                                      onClick={() => handleToggleCompetence(c.code)} 
+                                                      title={c.name} 
+                                                      className={`px-2 py-1 rounded text-[8px] font-normal uppercase border transition-all ${formData.competencyCodes.includes(c.code) ? `${c.lightColor} ${c.borderColor} text-black shadow-sm scale-110 ring-1 ring-black` : 'bg-white border-slate-200 text-black hover:border-slate-400'}`}>
+                                                      {c.code}
+                                                  </button>
+                                              ))}
+                                          </div>
+                                      </div>
+                                  ))}
+                              </div>
+                          </div>
                       </div>
 
                       <div className="flex justify-between pt-6 border-t border-slate-100">
@@ -1071,10 +1106,10 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
             
             <div className="mt-8">
               <div className="flex items-end gap-2 border-b border-purple-200 pl-4 mb-0">
-                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('enrollment'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'enrollment' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-transparent hover:bg-slate-100'}`}>Matrícula</button>
-                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('config'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'config' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-transparent hover:bg-slate-100'}`}>Configuración Académica</button>
-                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('tracking'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'tracking' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-transparent hover:bg-slate-100'}`}>Seguimiento</button>
-                {isCourseClosed && <button onClick={() => handleAttemptExit(() => setActiveDetailTab('acta'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm transition-all duration-200 border-t-4 ${activeDetailTab === 'acta' ? 'bg-white text-indigo-700 border-t-indigo-600 border-x border-indigo-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-transparent hover:bg-slate-100'}`}>Acta Final</button>}
+                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('enrollment'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 ${activeDetailTab === 'enrollment' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-transparent hover:bg-slate-100'}`}>Matrícula</button>
+                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('config'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 ${activeDetailTab === 'config' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-transparent hover:bg-slate-100'}`}>Configuración Académica</button>
+                <button onClick={() => handleAttemptExit(() => setActiveDetailTab('tracking'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 ${activeDetailTab === 'tracking' ? 'bg-white text-purple-700 border-t-purple-600 border-x border-purple-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-transparent hover:bg-slate-100'}`}>Seguimiento</button>
+                {isCourseClosed && <button onClick={() => handleAttemptExit(() => setActiveDetailTab('acta'))} className={`group relative px-6 py-3 rounded-t-xl font-bold text-sm border-t-4 ${activeDetailTab === 'acta' ? 'bg-white text-indigo-700 border-t-indigo-600 border-x border-indigo-200 shadow-sm translate-y-[1px] z-10' : 'bg-slate-200 text-slate-600 border-t-transparent hover:bg-slate-100'}`}>Acta Final</button>}
               </div>
               <div className="bg-white rounded-b-xl rounded-tr-xl shadow-sm border border-purple-200 border-t-0 p-8">
                 {activeDetailTab === 'enrollment' && (
@@ -1269,7 +1304,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                         </div>
                     </div>
                 </div>
-            )}
+              )}
 
             {/* MODAL CONFIRMACION SALIDA */}
             {showExitModal && (

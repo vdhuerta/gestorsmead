@@ -455,11 +455,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
                           const progress = count > 0 ? (gradesEntered / count) * 100 : 0;
                           const isClosed = act.endDate && act.endDate < todayStr;
                           
-                          // --- LÓGICA DE FONDO AZULADO PARA SEGUNDO SEMESTRE ---
+                          // --- LÓGICA DE FONDO AZULADO PARA SEGUNDO SEMESTRE (INTENSIFICADO) ---
                           const isSecondSemester = act.academicPeriod?.endsWith('-2') || act.academicPeriod?.toLowerCase().includes('2do') || act.academicPeriod?.toLowerCase().includes('segundo');
 
                           return (
-                            <tr key={act.id} className={`hover:bg-slate-50/50 transition-colors group ${isSecondSemester ? 'bg-blue-50/50' : ''}`}>
+                            <tr key={act.id} className={`hover:bg-slate-50 transition-colors group ${isSecondSemester ? 'bg-blue-100/60 border-l-4 border-blue-300' : ''}`}>
                                 <td className="px-6 py-4 overflow-hidden">
                                     <div className={`font-bold transition-colors truncate ${isClosed ? 'text-slate-400 font-medium' : 'text-emerald-600'}`} title={act.name}>
                                         {act.name}
