@@ -47,37 +47,34 @@ export const PublicActaVerification: React.FC<{ code: string }> = ({ code }) => 
     useEffect(() => {
         const verify = async () => {
             try {
-                // CORRECCIÓN CRÍTICA: Usar .contains() para buscar dentro del JSONB de program_config
-                // Esto es más confiable que el filtrado por path ->> en la capa de red
+                const cleanCode = code.trim();
+                
+                // SOLUCIÓN: Usar el operador de ruta directa '->>' que coincide con el índice SQL implementado
+                // Esto es mucho más preciso para JSONB cuando se busca por una llave específica.
                 const { data: actData, error: actError } = await supabase
                     .from('activities')
                     .select('*')
-                    .contains('program_config', { actaCode: code })
+                    .eq('program_config->>actaCode', cleanCode)
                     .maybeSingle();
 
                 if (actError) throw actError;
-                if (!actData) throw new Error('Acta no encontrada o código inválido.');
+                
+                if (!actData) {
+                    // Intento de fallback con contains si el anterior falla por versión de PostgREST
+                    const { data: actDataAlt, error: actErrorAlt } = await supabase
+                        .from('activities')
+                        .select('*')
+                        .contains('program_config', { actaCode: cleanCode })
+                        .maybeSingle();
+                    
+                    if (actErrorAlt || !actDataAlt) throw new Error('Acta no encontrada. El código podría ser inválido o el acta aún no ha sido sincronizada.');
+                    
+                    // Si el fallback funciona, lo usamos
+                    setActaDataState(actDataAlt);
+                } else {
+                    setActaDataState(actData);
+                }
 
-                // Obtener matriculados para mostrar el resumen en la verificación
-                const { data: enrData } = await supabase
-                    .from('enrollments')
-                    .select('*, user:users(names, paternal_surname, maternal_surname)')
-                    .eq('activity_id', actData.id);
-
-                setActaData({ 
-                    activity: {
-                        id: actData.id,
-                        name: actData.name,
-                        internalCode: actData.internal_code,
-                        year: actData.year,
-                        academicPeriod: actData.academic_period,
-                        relator: actData.relator,
-                        hours: actData.hours,
-                        modality: actData.modality,
-                        programConfig: actData.program_config
-                    } as Activity, 
-                    enrollments: enrData || [] 
-                });
             } catch (err: any) {
                 console.error("Verification error:", err);
                 setError(err.message || 'Error desconocido al validar el acta.');
@@ -85,6 +82,33 @@ export const PublicActaVerification: React.FC<{ code: string }> = ({ code }) => 
                 setLoading(false);
             }
         };
+
+        const setActaDataState = async (actData: any) => {
+            // Obtener matriculados para mostrar el resumen en la verificación
+            // Usamos un select simple y luego asociamos nombres si es necesario para evitar fallos de JOIN si las RLS son estrictas
+            const { data: enrData, error: enrError } = await supabase
+                .from('enrollments')
+                .select('*, user:users(names, paternal_surname, maternal_surname)')
+                .eq('activity_id', actData.id);
+
+            if (enrError) console.warn("Error fetching enrollments for verification:", enrError);
+
+            setActaData({ 
+                activity: {
+                    id: actData.id,
+                    name: actData.name,
+                    internalCode: actData.internal_code,
+                    year: actData.year,
+                    academicPeriod: actData.academic_period,
+                    relator: actData.relator,
+                    hours: actData.hours,
+                    modality: actData.modality,
+                    programConfig: actData.program_config
+                } as Activity, 
+                enrollments: enrData || [] 
+            });
+        };
+
         if (code) verify();
     }, [code]);
 
@@ -847,10 +871,11 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const handleDownloadActa = () => {
     if (!selectedCourse) return;
     
+    const cleanCode = selectedCourse.internalCode?.trim();
     // CORRECCIÓN: Usar el actaCode del estado local programConfig para garantizar consistencia inmediata
-    const verificationCode = programConfig.actaCode || selectedCourse.programConfig?.actaCode || `SMEAD-${selectedCourse.internalCode}-${Date.now().toString().slice(-4)}`;
+    const verificationCode = programConfig.actaCode || selectedCourse.programConfig?.actaCode || `SMEAD-${cleanCode}-${Date.now().toString().slice(-4)}`;
     
-    // Generar URL para ambiente Netlify o Localhost
+    // Generar URL absoluta para que el QR funcione en Netlify
     const baseUrl = window.location.origin;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`${baseUrl}/?mode=verify_acta&code=${verificationCode}`)}`;
     
@@ -916,7 +941,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `ACTA_FINAL_${selectedCourse.internalCode}.html`;
+    link.download = `ACTA_FINAL_${cleanCode}.html`;
     link.click();
     URL.revokeObjectURL(url);
   };
