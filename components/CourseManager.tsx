@@ -114,7 +114,12 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   // Estados para Consulta Académica (Kiosko)
   const [showKioskModal, setShowKioskModal] = useState(false);
   const [kioskSearchRut, setKioskSearchRut] = useState('');
+  const [kioskSearchSurname, setKioskSearchSurname] = useState('');
   const [kioskFoundUser, setKioskFoundUser] = useState<User | null>(null);
+  const [kioskSuggestions, setKioskSuggestions] = useState<User[]>([]);
+  const [showKioskSuggestions, setShowKioskSuggestions] = useState(false);
+  const [kioskActiveSearchField, setKioskActiveSearchField] = useState<'rut' | 'surname' | null>(null);
+  const kioskSuggestionsRef = useRef<HTMLDivElement>(null);
 
   // --- LÓGICA: AGRUPAMIENTO POR SEMESTRE PARA CONSULTA ACADÉMICA ---
   const groupedKioskEnrollments = useMemo(() => {
@@ -643,13 +648,69 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   const handleKioskSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    const norm = normalizeRut(kioskSearchRut);
-    const found = users.find(u => normalizeRut(u.rut) === norm);
-    if (found) {
-        setKioskFoundUser(found);
+    // Priorizamos la búsqueda según el campo activo o el RUT si está lleno
+    const searchVal = kioskActiveSearchField === 'rut' ? kioskSearchRut : kioskSearchSurname;
+    if (!searchVal) return;
+
+    if (kioskActiveSearchField === 'rut') {
+        const norm = normalizeRut(kioskSearchRut);
+        const found = users.find(u => normalizeRut(u.rut) === norm);
+        if (found) {
+            setKioskFoundUser(found);
+            setShowKioskSuggestions(false);
+        } else {
+            alert("Docente no encontrado en la Base Maestra.");
+            setKioskFoundUser(null);
+        }
     } else {
-        alert("Docente no encontrado en la Base Maestra.");
-        setKioskFoundUser(null);
+        // En el caso de apellido, como el submit es por form, tomamos el primero de las sugerencias o notificamos
+        if (kioskSuggestions.length === 1) {
+            setKioskFoundUser(kioskSuggestions[0]);
+            setShowKioskSuggestions(false);
+        } else if (kioskSuggestions.length > 1) {
+            alert("Existen múltiples coincidencias. Por favor seleccione una de la lista de sugerencias.");
+        } else {
+            alert("No se encontraron docentes con ese apellido.");
+            setKioskFoundUser(null);
+        }
+    }
+  };
+
+  const handleKioskSelectUser = (u: User) => {
+    setKioskFoundUser(u);
+    setKioskSearchRut(u.rut);
+    setKioskSearchSurname(u.paternalSurname);
+    setShowKioskSuggestions(false);
+    setKioskSuggestions([]);
+  };
+
+  const handleKioskInputChange = (type: 'rut' | 'surname', val: string) => {
+    if (type === 'rut') {
+        setKioskSearchRut(val);
+        setKioskSearchSurname('');
+        setKioskActiveSearchField('rut');
+        const norm = normalizeRut(val);
+        if (norm.length >= 2) {
+            const matches = users.filter(u => normalizeRut(u.rut).includes(norm)).slice(0, 5);
+            setKioskSuggestions(matches);
+            setShowKioskSuggestions(true);
+        } else {
+            setKioskSuggestions([]);
+            setShowKioskSuggestions(false);
+        }
+    } else {
+        setKioskSearchSurname(val);
+        setKioskSearchRut('');
+        setKioskActiveSearchField('surname');
+        const lower = val.toLowerCase().trim();
+        if (lower.length >= 3) {
+            const matches = users.filter(u => u.paternalSurname.toLowerCase().includes(lower)).slice(0, 5);
+            setKioskSuggestions(matches);
+            setShowKioskSuggestions(true);
+        } else {
+            setKioskSuggestions([]);
+            setShowKioskSuggestions(false);
+        }
     }
   };
 
@@ -1257,7 +1318,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
             <div className="flex gap-4 items-center">
                 <div className="flex items-center bg-slate-50 rounded-2xl px-4 py-2 border border-slate-200 shadow-inner group"><label className="text-[10px] font-black text-slate-400 uppercase mr-3">Periodo:</label><select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="text-sm font-black text-[#647FBC] bg-transparent border-none focus:ring-0 p-0 cursor-pointer uppercase"><option value={currentYear}>{currentYear}</option><option value={currentYear - 1}>{currentYear - 1}</option><option value={currentYear - 2}>{currentYear - 2}</option></select></div>
                 <button 
-                    onClick={() => { setKioskFoundUser(null); setKioskSearchRut(''); setShowKioskModal(true); }}
+                    onClick={() => { setKioskFoundUser(null); setKioskSearchRut(''); setKioskSearchSurname(''); setShowKioskModal(true); setKioskSuggestions([]); setShowKioskSuggestions(false); }}
                     className="bg-white border border-[#647FBC] text-[#647FBC] px-4 py-2 rounded-lg font-bold shadow-sm hover:bg-blue-50 transition-colors flex items-center gap-2 h-[42px]"
                 >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -1326,21 +1387,88 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                     <div className="p-6 bg-[#647FBC] text-white flex justify-between items-center">
                         <div>
                             <h3 className="text-xl font-bold uppercase tracking-tight">Módulo de Consulta Académica</h3>
-                            <p className="text-blue-100 text-xs mt-1">Busque por RUT para visualizar el expediente completo del docente.</p>
+                            <p className="text-blue-100 text-xs mt-1">Busque por RUT o Apellido para visualizar el expediente completo del docente.</p>
                         </div>
                         <button onClick={() => setShowKioskModal(false)} className="text-white hover:text-red-200 transition-colors text-3xl font-light">&times;</button>
                     </div>
                     
                     <div className="p-8 bg-slate-50 border-b border-slate-200">
-                        <form onSubmit={handleKioskSearch} className="flex gap-3 max-w-xl mx-auto">
-                            <input 
-                                type="text" 
-                                placeholder="Ingrese RUT (ej: 12.345.678-9)" 
-                                value={kioskSearchRut} 
-                                onChange={(e) => setKioskSearchRut(e.target.value)}
-                                className="flex-1 px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 font-normal shadow-inner"
-                            />
-                            <button type="submit" className="bg-[#647FBC] text-white px-8 py-3 rounded-xl font-black uppercase text-xs tracking-widest shadow-lg hover:bg-blue-800 transition-all transform active:scale-95">Consultar</button>
+                        <form onSubmit={handleKioskSearch} className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl mx-auto relative">
+                            {/* BÚSQUEDA POR RUT */}
+                            <div className="relative">
+                                <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1 tracking-widest">Búsqueda por RUT</label>
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        placeholder="ej: 12.345.678-9" 
+                                        value={kioskSearchRut} 
+                                        onChange={(e) => handleKioskInputChange('rut', e.target.value)}
+                                        className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 font-normal shadow-inner pr-10"
+                                    />
+                                    {kioskActiveSearchField === 'rut' && (
+                                        <div className="absolute right-3 top-3.5 text-blue-500 animate-pulse">
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* BÚSQUEDA POR APELLIDO */}
+                            <div className="relative">
+                                <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1 tracking-widest">Búsqueda por Apellido Paterno</label>
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        placeholder="ej: Silva, Pérez..." 
+                                        value={kioskSearchSurname} 
+                                        onChange={(e) => handleKioskInputChange('surname', e.target.value)}
+                                        className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 font-normal shadow-inner pr-10"
+                                    />
+                                    {kioskActiveSearchField === 'surname' && (
+                                        <div className="absolute right-3 top-3.5 text-blue-500 animate-pulse">
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* DROPDOWN DE SUGERENCIAS */}
+                            {showKioskSuggestions && kioskSuggestions.length > 0 && (
+                                <div 
+                                    ref={kioskSuggestionsRef} 
+                                    className="absolute top-full left-0 right-0 z-50 bg-white border border-slate-200 rounded-2xl shadow-2xl mt-1 overflow-hidden animate-fadeIn"
+                                >
+                                    <div className="p-2 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Sugerencias encontradas</span>
+                                        <button onClick={() => setShowKioskSuggestions(false)} className="text-slate-400 hover:text-slate-600 text-xs">Ocultar</button>
+                                    </div>
+                                    <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                                        {kioskSuggestions.map((u) => (
+                                            <div 
+                                                key={u.rut} 
+                                                onMouseDown={() => handleKioskSelectUser(u)}
+                                                className="px-6 py-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center justify-between group transition-colors"
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-indigo-50 text-[#647FBC] flex items-center justify-center font-bold text-xs uppercase shadow-inner group-hover:bg-indigo-600 group-hover:text-white transition-all">{u.paternalSurname.charAt(0)}</div>
+                                                    <div>
+                                                        <p className="text-sm font-bold text-slate-800">{u.paternalSurname}, {u.names}</p>
+                                                        <p className="text-[10px] text-slate-400 font-mono tracking-tighter">{u.rut} • {u.faculty || 'Sin Facultad'}</p>
+                                                    </div>
+                                                </div>
+                                                <svg className="w-4 h-4 text-slate-300 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="md:col-span-2 text-center mt-2">
+                                <button type="submit" className="hidden">Consultar</button>
+                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+                                    * Seleccione una sugerencia para cargar automáticamente el expediente.
+                                </p>
+                            </div>
                         </form>
                     </div>
 
@@ -1404,7 +1532,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                         ) : (
                             <div className="flex flex-col items-center justify-center py-20 text-slate-300">
                                 <svg className="w-20 h-20 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                                <p className="font-bold uppercase tracking-widest text-sm">Ingrese un RUT para comenzar la búsqueda</p>
+                                <p className="font-bold uppercase tracking-widest text-sm text-center">Ingrese un RUT o Apellido para comenzar la búsqueda de expediente</p>
                             </div>
                         )}
                     </div>

@@ -384,6 +384,20 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
         else reader.readAsText(uploadFile);
     };
 
+    const handleDeleteCurrentActivity = async () => {
+        if (!selectedActivity) return;
+        if (window.confirm(`¿Está seguro que desea eliminar permanentemente la actividad "${selectedActivity.name}"? Esta acción borrará también a todos los inscritos.`)) {
+            try {
+                await deleteActivity(selectedActivity.id);
+                await executeReload();
+                setView('list');
+                setSelectedActivity(null);
+            } catch (err) {
+                alert("Error al intentar eliminar la actividad.");
+            }
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSaving(true);
@@ -600,8 +614,17 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                             </div>
                         </div>
 
-                        <div className="flex justify-end pt-8 border-t border-slate-100">
-                            <button type="submit" disabled={isSaving} className={`px-10 py-3.5 rounded-xl font-bold shadow-lg transition-all transform active:scale-95 flex items-center gap-2 ${isSaving ? 'bg-slate-400 text-white cursor-not-allowed shadow-none' : 'bg-teal-600 text-white hover:bg-teal-700'}`}>
+                        <div className="flex justify-between pt-8 border-t border-slate-100">
+                            {view === 'edit' && (
+                                <button 
+                                    type="button" 
+                                    onClick={handleDeleteCurrentActivity} 
+                                    className="text-rose-600 font-black uppercase text-[10px] tracking-widest hover:underline px-4 py-2 transition-all hover:bg-rose-50 rounded-lg"
+                                >
+                                    Eliminar Actividad
+                                </button>
+                            )}
+                            <button type="submit" disabled={isSaving} className={`ml-auto px-10 py-3.5 rounded-xl font-bold shadow-lg transition-all transform active:scale-95 flex items-center gap-2 ${isSaving ? 'bg-slate-400 text-white cursor-not-allowed shadow-none' : 'bg-teal-600 text-white hover:bg-teal-700'}`}>
                                 {isSaving ? (
                                     <>
                                         <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
