@@ -47,14 +47,16 @@ export const PublicActaVerification: React.FC<{ code: string }> = ({ code }) => 
     useEffect(() => {
         const verify = async () => {
             try {
-                // Buscar actividad que contenga el actaCode en su program_config
+                // CORRECCIÓN CRÍTICA: Usar .contains() para buscar dentro del JSONB de program_config
+                // Esto es más confiable que el filtrado por path ->> en la capa de red
                 const { data: actData, error: actError } = await supabase
                     .from('activities')
                     .select('*')
-                    .eq('program_config->>actaCode', code)
+                    .contains('program_config', { actaCode: code })
                     .maybeSingle();
 
-                if (actError || !actData) throw new Error('Acta no encontrada o código inválido.');
+                if (actError) throw actError;
+                if (!actData) throw new Error('Acta no encontrada o código inválido.');
 
                 // Obtener matriculados para mostrar el resumen en la verificación
                 const { data: enrData } = await supabase
@@ -77,7 +79,8 @@ export const PublicActaVerification: React.FC<{ code: string }> = ({ code }) => 
                     enrollments: enrData || [] 
                 });
             } catch (err: any) {
-                setError(err.message);
+                console.error("Verification error:", err);
+                setError(err.message || 'Error desconocido al validar el acta.');
             } finally {
                 setLoading(false);
             }
@@ -420,16 +423,17 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       if (!selectedCourse) return;
       if (!isCourseClosed) {
           if (confirm("¿Está seguro de CERRAR este postítulo? Se inhabilitará la edición de notas y asistencia.")) {
-              // Generar código de acta permanente al cerrar
+              // Generar código de acta permanente al cerrar si no existe
+              const existingCode = programConfig.actaCode;
               const hash = Math.random().toString(36).substr(2, 6).toUpperCase();
-              const newActaCode = `SMEAD-ACT-${selectedCourse.internalCode}-${hash}`;
+              const newActaCode = existingCode || `SMEAD-ACT-${selectedCourse.internalCode}-${hash}`;
               
               const newConfig = { ...programConfig, isClosed: true, actaCode: newActaCode };
               const updatedActivity: Activity = { ...selectedCourse, programConfig: newConfig };
               await addActivity(updatedActivity);
               await executeReload();
               setProgramConfig(newConfig);
-              alert(`Postítulo cerrado correctamente. Código de Acta generado: ${newActaCode}`);
+              alert(`Postítulo cerrado correctamente. Código de Acta: ${newActaCode}`);
           }
       } else {
           const pass = prompt("Para REABRIR el curso ingrese la clave de ADMINISTRADOR:");
@@ -843,7 +847,8 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
   const handleDownloadActa = () => {
     if (!selectedCourse) return;
     
-    const verificationCode = selectedCourse.programConfig?.actaCode || `SMEAD-${selectedCourse.internalCode}-${Date.now().toString().slice(-4)}`;
+    // CORRECCIÓN: Usar el actaCode del estado local programConfig para garantizar consistencia inmediata
+    const verificationCode = programConfig.actaCode || selectedCourse.programConfig?.actaCode || `SMEAD-${selectedCourse.internalCode}-${Date.now().toString().slice(-4)}`;
     
     // Generar URL para ambiente Netlify o Localhost
     const baseUrl = window.location.origin;
@@ -1087,7 +1092,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                               type="button"
                                               onClick={() => handleToggleCompetence(c.code)}
                                               title={c.name}
-                                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200 hover:text-indigo-400'}`}
+                                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-200 hover:text-indigo-400'}`}
                                           >
                                               {c.code}
                                           </button>
@@ -1272,7 +1277,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                 <div className="md:col-span-1"><label className="block text-xs font-medium text-slate-700 mb-1">Nombres *</label><input type="text" name="names" value={manualForm.names} onChange={handleManualFormChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/></div>
                                 <div className="md:col-span-1 relative">
                                 <label className="block text-xs font-medium text-slate-700 mb-1">Ap. Paterno *</label>
-                                <input type="text" name="paternalSurname" value={manualForm.paternalSurname} onChange={handleManualFormChange} autoComplete="off" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/>
+                                <input type="text" name="paternalSurname" value={manualForm.paternalSurname} onChange={handleManualFormChange} autoComplete="off" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"/>
                                 {showSuggestions && activeSearchField === 'paternalSurname' && suggestions.length > 0 && (
                                     <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
                                     <div className="px-2 py-1 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">Sugerencias por Apellido</div>
