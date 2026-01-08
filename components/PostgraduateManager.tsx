@@ -7,6 +7,7 @@ import { suggestCompetencies, CompetencySuggestion } from '../services/geminiSer
 // @ts-ignore
 import { read, utils } from 'xlsx';
 import { useReloadDirective } from '../hooks/useReloadDirective';
+import { supabase } from '../services/supabaseClient';
 
 // --- Utility Functions ---
 
@@ -35,6 +36,106 @@ const normalizeValue = (val: string, masterList: string[]): string => {
     if (masterList.includes(trimmed)) return trimmed;
     const match = masterList.find(item => item.toLowerCase() === trimmed.toLowerCase());
     return match || trimmed;
+};
+
+// --- COMPONENTE DE VERIFICACIÓN PÚBLICA DE ACTA ---
+export const PublicActaVerification: React.FC<{ code: string }> = ({ code }) => {
+    const [loading, setLoading] = useState(true);
+    const [actaData, setActaData] = useState<{ activity: Activity, enrollments: any[] } | null>(null);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        const verify = async () => {
+            try {
+                // Buscar actividad que contenga el actaCode en su program_config
+                const { data: actData, error: actError } = await supabase
+                    .from('activities')
+                    .select('*')
+                    .eq('program_config->>actaCode', code)
+                    .maybeSingle();
+
+                if (actError || !actData) throw new Error('Acta no encontrada o código inválido.');
+
+                // Obtener matriculados para mostrar el resumen en la verificación
+                const { data: enrData } = await supabase
+                    .from('enrollments')
+                    .select('*, user:users(names, paternal_surname, maternal_surname)')
+                    .eq('activity_id', actData.id);
+
+                setActaData({ 
+                    activity: {
+                        id: actData.id,
+                        name: actData.name,
+                        internalCode: actData.internal_code,
+                        year: actData.year,
+                        academicPeriod: actData.academic_period,
+                        relator: actData.relator,
+                        hours: actData.hours,
+                        modality: actData.modality,
+                        programConfig: actData.program_config
+                    } as Activity, 
+                    enrollments: enrData || [] 
+                });
+            } catch (err: any) {
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+        if (code) verify();
+    }, [code]);
+
+    if (loading) return <div className="min-h-screen bg-slate-100 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-4 border-indigo-600"></div></div>;
+    if (error || !actaData) return <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4"><div className="bg-white p-8 rounded-xl shadow-lg text-center max-w-md w-full border-t-4 border-red-500"><h2 className="text-2xl font-bold text-slate-800 mb-2">Verificación Fallida</h2><p className="text-slate-600 mb-6">{error}</p><a href="/" className="text-indigo-600 hover:underline text-sm font-bold">Volver al inicio</a></div></div>;
+
+    const { activity, enrollments } = actaData;
+    const approvedCount = enrollments.filter(e => e.state === 'Aprobado').length;
+
+    return (
+        <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200">
+                <div className="bg-indigo-700 p-8 text-white text-center">
+                    <h1 className="text-2xl font-black uppercase tracking-tighter">Acta Oficial Verificada</h1>
+                    <p className="text-indigo-200 text-sm mt-1">Unidad de Acompañamiento Docente UPLA</p>
+                </div>
+                <div className="p-8 space-y-6">
+                    <div className="flex items-center gap-4 bg-emerald-50 border border-emerald-200 p-4 rounded-2xl">
+                        <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shadow-inner">
+                            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0116 0z" /></svg>
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black text-emerald-600 uppercase">Estado del Documento</p>
+                            <p className="text-lg font-bold text-emerald-800">INTEGRIDAD CONFIRMADA</p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                            <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">Programa</span>
+                            <p className="text-sm font-bold text-slate-800 leading-tight">{activity.name}</p>
+                        </div>
+                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                            <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">Código Acta</span>
+                            <p className="text-sm font-mono font-bold text-indigo-600">{code}</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-3">
+                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-1">Resumen Académico</h4>
+                        <div className="grid grid-cols-3 gap-4 text-center">
+                            <div><span className="block text-2xl font-black text-slate-700">{enrollments.length}</span><span className="text-[9px] font-bold text-slate-400 uppercase">Inscritos</span></div>
+                            <div><span className="block text-2xl font-black text-emerald-600">{approvedCount}</span><span className="text-[9px] font-bold text-slate-400 uppercase">Aprobados</span></div>
+                            <div><span className="block text-2xl font-black text-indigo-600">{activity.hours}h</span><span className="text-[9px] font-bold text-slate-400 uppercase">Duración</span></div>
+                        </div>
+                    </div>
+
+                    <div className="pt-6 border-t border-slate-100 text-center">
+                        <p className="text-xs text-slate-400">Esta acta ha sido emitida por el Sistema GestorSMEAD y constituye un registro inalterable de los resultados académicos del programa citado.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 };
 
 type ViewState = 'list' | 'create' | 'details' | 'edit';
@@ -73,7 +174,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
     competencyCodes: [] as string[]
   });
 
-  const [programConfig, setProgramConfig] = useState<ProgramConfig & { isClosed?: boolean }>({
+  const [programConfig, setProgramConfig] = useState<ProgramConfig & { isClosed?: boolean, actaCode?: string }>({
       programType: 'Diplomado', modules: [], globalAttendanceRequired: 75, isClosed: false
   });
 
@@ -319,12 +420,16 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
       if (!selectedCourse) return;
       if (!isCourseClosed) {
           if (confirm("¿Está seguro de CERRAR este postítulo? Se inhabilitará la edición de notas y asistencia.")) {
-              const newConfig = { ...programConfig, isClosed: true };
+              // Generar código de acta permanente al cerrar
+              const hash = Math.random().toString(36).substr(2, 6).toUpperCase();
+              const newActaCode = `SMEAD-ACT-${selectedCourse.internalCode}-${hash}`;
+              
+              const newConfig = { ...programConfig, isClosed: true, actaCode: newActaCode };
               const updatedActivity: Activity = { ...selectedCourse, programConfig: newConfig };
               await addActivity(updatedActivity);
               await executeReload();
               setProgramConfig(newConfig);
-              alert("Postítulo cerrado correctamente.");
+              alert(`Postítulo cerrado correctamente. Código de Acta generado: ${newActaCode}`);
           }
       } else {
           const pass = prompt("Para REABRIR el curso ingrese la clave de ADMINISTRADOR:");
@@ -737,10 +842,16 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
 
   const handleDownloadActa = () => {
     if (!selectedCourse) return;
-    const verificationCode = `SMEAD-${selectedCourse.internalCode}-${Date.now().toString().slice(-4)}`;
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`${window.location.origin}/?mode=verify_acta&code=${verificationCode}`)}`;
+    
+    const verificationCode = selectedCourse.programConfig?.actaCode || `SMEAD-${selectedCourse.internalCode}-${Date.now().toString().slice(-4)}`;
+    
+    // Generar URL para ambiente Netlify o Localhost
+    const baseUrl = window.location.origin;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`${baseUrl}/?mode=verify_acta&code=${verificationCode}`)}`;
+    
     const coordinadores = users.filter(u => u.academicRole?.toLowerCase().includes("coordinación") || u.academicRole?.toLowerCase().includes("coordinador"));
     const encargadoPrincipal = selectedCourse.relator || (coordinadores.length > 0 ? `${coordinadores[0].names} ${coordinadores[0].paternalSurname}` : "COORDINADOR UNIDAD");
+    
     const rowsHTML = sortedEnrollments.map(enr => {
         const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut));
         const activeGrades = enr.grades || [];
@@ -976,7 +1087,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                                               type="button"
                                               onClick={() => handleToggleCompetence(c.code)}
                                               title={c.name}
-                                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-200 hover:text-indigo-400'}`}
+                                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200 hover:text-indigo-400'}`}
                                           >
                                               {c.code}
                                           </button>
@@ -1220,7 +1331,7 @@ export const PostgraduateManager: React.FC<PostgraduateManagerProps> = ({ curren
                             <p className="text-sm text-slate-600">Suba un archivo con las 13 columnas requeridas para la matrícula.<br/><span className="text-xs text-slate-400">.csv, .xls, .xlsx</span></p>
                             <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-purple-200 bg-purple-50 hover:bg-purple-100'}`}>
                             <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                {uploadFile ? (<><svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="mb-1 text-sm font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 11-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-sm text-purple-600 font-semibold">Seleccionar archivo</p></>)}
+                                {uploadFile ? (<><svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="mb-1 text-sm font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-sm text-purple-600 font-semibold">Seleccionar archivo</p></>)}
                             </div>
                             <input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} />
                             </label>

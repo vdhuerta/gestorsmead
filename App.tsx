@@ -14,7 +14,7 @@ import { CourseManager } from './components/CourseManager';
 import { GeneralActivityManager } from './components/GeneralActivityManager'; 
 import { ParticipantManager } from './components/ParticipantManager';
 import { AdvisorManager } from './components/AdvisorManager'; 
-import { PostgraduateManager } from './components/PostgraduateManager'; 
+import { PostgraduateManager, PublicActaVerification } from './components/PostgraduateManager'; 
 import { AdvisoryManager, PublicVerification } from './components/AdvisoryManager';
 import { StudentSignature } from './components/StudentSignature'; 
 import { CertificateVerification } from './components/CertificateVerification'; 
@@ -50,6 +50,7 @@ const MainContent: React.FC = () => {
 
   const [signatureParams, setSignatureParams] = useState<{eid: string, sid: string} | null>(null);
   const [verificationCode, setVerificationCode] = useState<string | null>(null);
+  const [actaVerificationCode, setActaVerificationCode] = useState<string | null>(null);
   const [certVerificationCode, setCertVerificationCode] = useState<string | null>(null); 
   const [passportCode, setPassportCode] = useState<string | null>(null);
 
@@ -87,6 +88,9 @@ const MainContent: React.FC = () => {
       } else if (mode === 'verify') {
           const code = params.get('code');
           if (code) setVerificationCode(code);
+      } else if (mode === 'verify_acta') {
+          const code = params.get('code');
+          if (code) setActaVerificationCode(code);
       } else if (mode === 'verify_cert') { 
           const code = params.get('code');
           if (code) setCertVerificationCode(code);
@@ -206,6 +210,10 @@ const MainContent: React.FC = () => {
 
   if (verificationCode) {
       return <PublicVerification code={verificationCode} />;
+  }
+
+  if (actaVerificationCode) {
+      return <PublicActaVerification code={actaVerificationCode} />;
   }
 
   if (certVerificationCode) {
