@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { User, UserRole } from './types';
 import { LoginSimulator } from './components/LoginSimulator';
@@ -21,7 +20,8 @@ import { StudentSignature } from './components/StudentSignature';
 import { CertificateVerification } from './components/CertificateVerification'; 
 import { ReportManager } from './components/ReportManager'; 
 import { DatabaseCleaner } from './components/DatabaseCleaner'; 
-import { TMSManager } from './components/TMSManager'; // Nuevo Import
+import { TMSManager } from './components/TMSManager'; 
+import { PassportVerification } from './components/PassportVerification';
 import { DataProvider, useData } from './context/DataContext';
 import { checkConnection, supabase } from './services/supabaseClient'; 
 
@@ -51,6 +51,7 @@ const MainContent: React.FC = () => {
   const [signatureParams, setSignatureParams] = useState<{eid: string, sid: string} | null>(null);
   const [verificationCode, setVerificationCode] = useState<string | null>(null);
   const [certVerificationCode, setCertVerificationCode] = useState<string | null>(null); 
+  const [passportCode, setPassportCode] = useState<string | null>(null);
 
   const [onlinePeers, setOnlinePeers] = useState<{rut: string, names: string, photoUrl: string}[]>([]);
   const channelRef = useRef<any>(null);
@@ -89,6 +90,9 @@ const MainContent: React.FC = () => {
       } else if (mode === 'verify_cert') { 
           const code = params.get('code');
           if (code) setCertVerificationCode(code);
+      } else if (mode === 'verify_passport') {
+          const code = params.get('code');
+          if (code) setPassportCode(code);
       }
 
   }, []);
@@ -206,6 +210,10 @@ const MainContent: React.FC = () => {
 
   if (certVerificationCode) {
       return <CertificateVerification code={certVerificationCode} />;
+  }
+
+  if (passportCode) {
+      return <PassportVerification code={passportCode} />;
   }
 
   const handleLogout = () => {
