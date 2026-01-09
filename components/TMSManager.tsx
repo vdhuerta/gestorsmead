@@ -28,21 +28,23 @@ export const TMSManager: React.FC = () => {
   // States for Talent Search
   const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
 
-  // --- LÓGICA: PERFIL INDIVIDUAL (LOGRO DE RUTA FORMATIVA) ---
+  const dimensionColors: Record<string, string> = {
+    'Pedagógica': 'text-rose-600 border-rose-100',
+    'Investigación y/o Creación': 'text-emerald-600 border-emerald-100',
+    'Vinculación': 'text-purple-600 border-purple-100',
+    'Interpersonal y Ética': 'text-blue-600 border-blue-100',
+    'Formación Continua': 'text-pink-600 border-pink-100'
+  };
+
+  // --- LÓGICA: PERFIL INDIVIDUAL ---
   const individualProgressData = useMemo(() => {
     if (!selectedUser) return [];
-    
     const userRut = normalizeRut(selectedUser.rut);
     
-    // FILTRADO DE LOGROS: Aplicando regla diferenciada por categoría
     const achievementEnrollments = enrollments.filter(e => {
       if (normalizeRut(e.rut) !== userRut) return false;
       const act = activities.find(a => a.id === e.activityId);
       if (!act) return false;
-
-      // REGLA TMS: 
-      // 1. Cursos y Postítulos requieren APROBADO
-      // 2. Extensión y Asesorías basta con la participación registrada
       if (act.category === 'ACADEMIC' || act.category === 'POSTGRADUATE') {
           return e.state === ActivityState.APROBADO;
       }
@@ -57,7 +59,6 @@ export const TMSManager: React.FC = () => {
       });
     });
 
-    // UNIFICACIÓN DE TAXONOMÍAS: PEI + PMI + PERFIL ACADÉMICO (PA)
     return [...PEI_COMPETENCIES, ...PMI_COMPETENCIES, ...ACADEMIC_PROFILE_COMPETENCIES].map(c => {
       const count = counts[c.code] || 0;
       let level = 'Pendiente';
@@ -96,41 +97,23 @@ export const TMSManager: React.FC = () => {
     return Math.round((individualProgressData.reduce((acc, curr) => acc + curr.percentage, 0) / (individualProgressData.length * 100)) * 100);
   }, [individualProgressData]);
 
-  // --- LÓGICA: RECOMENDACIÓN DE PRÓXIMOS PASOS (TALENT PATHWAY) ---
+  // --- LÓGICA: RECOMENDACIÓN DE PRÓXIMOS PASOS ---
   const suggestedCourses = useMemo(() => {
     if (!selectedUser) return [];
-    
     const userRut = normalizeRut(selectedUser.rut);
-    
-    // 1. Obtener IDs de todos los cursos en los que el estudiante ya tiene un historial (aprobado o no)
-    const userTakenIds = new Set(
-        enrollments
-            .filter(e => normalizeRut(e.rut) === userRut)
-            .map(e => e.activityId)
-    );
-    
-    // 2. Identificar brechas: Competencias con avance pero no consolidadas
-    const gaps = individualProgressData
-        .filter(c => c.count < 3)
-        .sort((a, b) => b.count - a.count); // Prioridad: los que están más cerca de consolidar
-
+    const userTakenIds = new Set(enrollments.filter(e => normalizeRut(e.rut) === userRut).map(e => e.activityId));
+    const gaps = individualProgressData.filter(c => c.count < 3).sort((a, b) => b.count - a.count);
     const recommendations: Activity[] = [];
-    const seenNames = new Set<string>(); // Para evitar proponer el mismo curso con distinto ID
+    const seenNames = new Set<string>();
 
-    // 3. Escanear el pool completo de actividades históricas de UAD
     for (const gap of gaps) {
         const matchingPool = activities.filter(act => 
-            // Debe ser del catálogo curricular o avanzado
             (act.category === 'ACADEMIC' || act.category === 'POSTGRADUATE') &&
-            // Debe tributar a la competencia en brecha
             act.competencyCodes?.includes(gap.code) &&
-            // NO debe estar en el historial del estudiante
             !userTakenIds.has(act.id)
         );
-
         for (const act of matchingPool) {
             const normalizedName = act.name.toLowerCase().trim();
-            // Asegurar que no se repita el nombre de la actividad en la propuesta
             if (!seenNames.has(normalizedName)) {
                 recommendations.push(act);
                 seenNames.add(normalizedName);
@@ -139,54 +122,23 @@ export const TMSManager: React.FC = () => {
         }
         if (recommendations.length >= 4) break;
     }
-
-    // 4. Si aún faltan sugerencias, buscar cursos de competencias "Pendientes"
-    if (recommendations.length < 4) {
-        const pendingGaps = individualProgressData
-            .filter(c => c.count === 0);
-            
-        for (const gap of pendingGaps) {
-            const extraPool = activities.filter(act => 
-                (act.category === 'ACADEMIC' || act.category === 'POSTGRADUATE') &&
-                act.competencyCodes?.includes(gap.code) &&
-                !userTakenIds.has(act.id)
-            );
-            
-            for (const act of extraPool) {
-                const normalizedName = act.name.toLowerCase().trim();
-                if (!seenNames.has(normalizedName)) {
-                    recommendations.push(act);
-                    seenNames.add(normalizedName);
-                    if (recommendations.length >= 4) break;
-                }
-            }
-            if (recommendations.length >= 4) break;
-        }
-    }
-
     return recommendations.slice(0, 4);
   }, [selectedUser, enrollments, activities, individualProgressData]);
 
-  // --- LÓGICA: COBERTURA INSTITUCIONAL (BAR CHART) ---
+  // --- LÓGICA: COBERTURA INSTITUCIONAL ---
   const coverageData = useMemo(() => {
     const counts: Record<string, number> = {};
     activities.filter(a => a.year === selectedYear).forEach(act => {
-      act.competencyCodes?.forEach(code => {
-        counts[code] = (counts[code] || 0) + 1;
-      });
+      act.competencyCodes?.forEach(code => { counts[code] = (counts[code] || 0) + 1; });
     });
-
     return [...PEI_COMPETENCIES, ...PMI_COMPETENCIES, ...ACADEMIC_PROFILE_COMPETENCIES].map(c => ({
-      code: c.code,
-      name: c.name,
-      count: counts[c.code] || 0
+      code: c.code, name: c.name, count: counts[c.code] || 0
     })).sort((a, b) => b.count - a.count);
   }, [activities, selectedYear]);
 
-  // --- LÓGICA: BÚSQUEDA DE TALENTO (EXPERT FINDER) ---
+  // --- LÓGICA: BUSCADOR DE TALENTO ---
   const expertUsers = useMemo(() => {
     if (!selectedSkill) return [];
-    
     const matchingEnrollments = enrollments.filter(e => {
       const act = activities.find(a => a.id === e.activityId);
       if (!act || act.year !== selectedYear || !act.competencyCodes?.includes(selectedSkill)) return false;
@@ -195,30 +147,20 @@ export const TMSManager: React.FC = () => {
       }
       return true;
     });
-
     const expertRuts = Array.from(new Set(matchingEnrollments.map(e => normalizeRut(e.rut))));
     return expertRuts.map(rut => users.find(u => normalizeRut(u.rut) === rut)).filter(u => u !== undefined) as User[];
   }, [selectedSkill, enrollments, activities, users, selectedYear]);
 
-  // --- AI INSIGHTS ---
   const generateAiInsight = async () => {
     if (!process.env.API_KEY) return;
     setIsAnalyzing(true);
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const dataStr = JSON.stringify(coverageData);
-    const prompt = `Analiza la cobertura de competencias institucionales UPLA (PEI, PMI y Perfil Académico). Datos: ${dataStr}. Identifica los 2 mayores vacíos y genera una recomendación estratégica breve.`;
-
+    const prompt = `Analiza la cobertura de competencias institucionales UPLA. Datos: ${dataStr}. Genera una recomendación estratégica breve.`;
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt
-      });
+      const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
       setAiInsight(response.text || "No se pudo generar el análisis.");
-    } catch (err) {
-      setAiInsight("Error conectando con la IA.");
-    } finally {
-      setIsAnalyzing(false);
-    }
+    } catch (err) { setAiInsight("Error conectando con la IA."); } finally { setIsAnalyzing(false); }
   };
 
   const handleSearchTeacher = (e: React.FormEvent) => {
@@ -228,7 +170,6 @@ export const TMSManager: React.FC = () => {
     else alert("Docente no encontrado.");
   };
 
-  // Helper para renderizar grupos de progreso
   const renderProgressGroup = (title: string, data: any[], colorClass: string) => (
     <div className="space-y-4">
         <div className="flex items-center gap-3">
@@ -253,10 +194,7 @@ export const TMSManager: React.FC = () => {
                         </span>
                     </div>
                     <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-100 shadow-inner">
-                        <div 
-                            className={`h-full transition-all duration-1000 ${comp.colorClass}`}
-                            style={{ width: `${comp.percentage}%` }}
-                        ></div>
+                        <div className={`h-full transition-all duration-1000 ${comp.colorClass}`} style={{ width: `${comp.percentage}%` }}></div>
                     </div>
                 </div>
             ))}
@@ -266,13 +204,10 @@ export const TMSManager: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-fadeIn">
-      {/* HEADER TMS */}
       <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
           </div>
           <div>
             <h2 className="text-3xl font-black text-slate-800 tracking-tight">Talent Management System (TMS)</h2>
@@ -282,236 +217,109 @@ export const TMSManager: React.FC = () => {
         <div className="flex flex-col sm:flex-row gap-4 items-center">
           <div className="flex items-center bg-slate-50 rounded-xl px-3 py-1.5 border border-slate-200 shadow-inner group">
             <label className="text-[9px] font-black text-slate-400 uppercase mr-2">Periodo:</label>
-            <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="text-xs font-black text-[#647FBC] bg-transparent border-none focus:ring-0 p-0 cursor-pointer uppercase">
-                <option value={currentYear}>{currentYear}</option>
-                <option value={currentYear - 1}>{currentYear - 1}</option>
-            </select>
+            <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="text-xs font-black text-[#647FBC] bg-transparent border-none focus:ring-0 p-0 cursor-pointer uppercase"><option value={currentYear}>{currentYear}</option><option value={currentYear - 1}>{currentYear - 1}</option></select>
           </div>
           <div className="flex bg-slate-100 p-1 rounded-xl">
             {['individual', 'institutional', 'search'].map((t) => (
-                <button key={t} onClick={() => setActiveTab(t as TMSTab)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{t === 'individual' ? 'Mi Perfil' : t === 'institutional' ? 'Cobertura' : 'Buscador'}</button>
+                <button key={t} onClick={() => setActiveTab(t as TMSTab)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{t === 'individual' ? 'Perfil Docente' : t === 'institutional' ? 'Cobertura' : 'Buscador'}</button>
             ))}
           </div>
-          <button onClick={() => setShowHelpModal(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-[#647FBC] hover:text-white transition-all font-black uppercase text-[10px] tracking-widest border border-slate-200">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Ayuda
-          </button>
+          <button onClick={() => setShowHelpModal(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-[#647FBC] hover:text-white transition-all font-black uppercase text-[10px] tracking-widest border border-slate-200"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Ayuda</button>
         </div>
       </div>
 
-      {/* --- VISTA: PERFIL INDIVIDUAL --- */}
       {activeTab === 'individual' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-4 space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
               <h3 className="font-bold text-slate-800 mb-4 uppercase text-xs tracking-widest">Consultar Docente</h3>
-              <form onSubmit={handleSearchTeacher} className="flex gap-2">
-                <input type="text" placeholder="RUT Docente..." value={searchRut} onChange={e => setSearchRut(e.target.value)} className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 text-sm font-bold"/>
-                <button type="submit" className="bg-indigo-600 text-white p-2 rounded-xl hover:bg-indigo-700 shadow-md">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                </button>
-              </form>
+              <form onSubmit={handleSearchTeacher} className="flex gap-2"><input type="text" placeholder="RUT Docente..." value={searchRut} onChange={e => setSearchRut(e.target.value)} className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 text-sm font-bold"/><button type="submit" className="bg-indigo-600 text-white p-2 rounded-xl hover:bg-indigo-700 shadow-md"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg></button></form>
             </div>
             {selectedUser && (
               <div className="space-y-6 animate-fadeIn">
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div className="flex items-center gap-4 mb-6">
-                        <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center font-black text-2xl shadow-inner border border-white">{selectedUser.names.charAt(0)}</div>
-                        <div><h4 className="font-bold text-slate-800">{selectedUser.names} {selectedUser.paternalSurname}</h4><p className="text-xs text-slate-400 font-mono uppercase">{selectedUser.rut}</p></div>
-                    </div>
-                    <div className="p-3 bg-slate-50 rounded-xl text-center">
-                        <span className="block text-[10px] font-black text-slate-400 uppercase mb-1">Índice de Madurez Profesional</span>
-                        <span className="text-xl font-black text-indigo-600">{maturityIndex}%</span>
-                    </div>
-                </div>
-
-                {/* --- CAJA DE RECOMENDACIONES: RUTA DE APRENDIZAJE --- */}
-                <div className="bg-white p-6 rounded-3xl border border-indigo-200 shadow-sm relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-3 opacity-10">
-                        <svg className="w-12 h-12 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
-                    </div>
-                    <h4 className="text-xs font-black text-indigo-700 uppercase tracking-widest mb-4 flex items-center gap-2">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                        Ruta de Aprendizaje Sugerida
-                    </h4>
-                    
-                    <div className="space-y-4">
-                        {suggestedCourses.length > 0 ? suggestedCourses.map((course, i) => (
-                            <div key={course.id} className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 hover:bg-indigo-100 transition-colors cursor-default group">
-                                <div className="flex justify-between items-start mb-1">
-                                    <span className="text-[9px] font-black text-indigo-400 uppercase tracking-tighter">Sugerencia {i+1}</span>
-                                    <span className={`text-[8px] font-bold px-1.5 rounded border ${course.category === 'POSTGRADUATE' ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
-                                        {course.category === 'POSTGRADUATE' ? 'POST' : 'CUR'}
-                                    </span>
-                                </div>
-                                <p className="text-xs font-bold text-slate-700 leading-tight mb-2 line-clamp-2">{course.name}</p>
-                                <div className="flex flex-wrap gap-1">
-                                    {course.competencyCodes?.slice(0, 2).map(code => (
-                                        <span key={code} className="text-[8px] bg-white px-1 py-0.5 rounded border border-indigo-100 font-black text-indigo-600 uppercase">{code}</span>
-                                    ))}
-                                </div>
-                            </div>
-                        )) : (
-                            <div className="text-center py-4">
-                                <p className="text-xs text-slate-400 italic">No hay vacíos detectados para sugerir cursos en este momento.</p>
-                            </div>
-                        )}
-                    </div>
-                    
-                    <div className="mt-6 pt-4 border-t border-slate-100">
-                        <p className="text-[8px] text-slate-400 leading-tight italic">
-                            * El sistema prioriza cursos que consolidan competencias en desarrollo según su historial académico UAD. No se proponen cursos ya cursados.
-                        </p>
-                    </div>
-                </div>
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><div className="flex items-center gap-4 mb-6"><div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center font-black text-2xl shadow-inner border border-white">{selectedUser.names.charAt(0)}</div><div><h4 className="font-bold text-slate-800">{selectedUser.names} {selectedUser.paternalSurname}</h4><p className="text-xs text-slate-400 font-mono uppercase">{selectedUser.rut}</p></div></div><div className="p-3 bg-slate-50 rounded-xl text-center"><span className="block text-[10px] font-black text-slate-400 uppercase mb-1">Índice de Madurez Profesional</span><span className="text-xl font-black text-indigo-600">{maturityIndex}%</span></div></div>
+                <div className="bg-white p-6 rounded-3xl border border-indigo-200 shadow-sm relative overflow-hidden"><div className="absolute top-0 right-0 p-3 opacity-10"><svg className="w-12 h-12 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg></div><h4 className="text-xs font-black text-indigo-700 uppercase tracking-widest mb-4 flex items-center gap-2"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>Ruta de Aprendizaje Sugerida</h4><div className="space-y-4">{suggestedCourses.length > 0 ? suggestedCourses.map((course, i) => (<div key={course.id} className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 hover:bg-indigo-100 transition-colors cursor-default group"><div className="flex justify-between items-start mb-1"><span className="text-[9px] font-black text-indigo-400 uppercase tracking-tighter">Sugerencia {i+1}</span><span className={`text-[8px] font-bold px-1.5 rounded border ${course.category === 'POSTGRADUATE' ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>{course.category === 'POSTGRADUATE' ? 'POST' : 'CUR'}</span></div><p className="text-xs font-bold text-slate-700 leading-tight mb-2 line-clamp-2">{course.name}</p><div className="flex flex-wrap gap-1">{course.competencyCodes?.slice(0, 2).map(code => (<span key={code} className="text-[8px] bg-white px-1 py-0.5 rounded border border-indigo-100 font-black text-indigo-600 uppercase">{code}</span>))}</div></div>)) : (<div className="text-center py-4"><p className="text-xs text-slate-400 italic">No hay vacíos detectados para sugerir cursos en este momento.</p></div>)}</div><div className="mt-6 pt-4 border-t border-slate-100"><p className="text-[8px] text-slate-400 leading-tight italic">* El sistema prioriza cursos que consolidan competencias en desarrollo.</p></div></div>
               </div>
             )}
           </div>
-
-          <div className="lg:col-span-8 bg-white p-8 rounded-3xl border border-slate-200 shadow-sm relative min-h-[500px] flex flex-col">
-            <h3 className="text-lg font-black text-slate-800 mb-2 uppercase tracking-tight flex items-center gap-2">
-              <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              Evolución de Competencias y Perfil Académico
-            </h3>
-            <p className="text-xs text-slate-400 mb-8 font-medium">Estado de tributación institucional basado en hitos de formación continua.</p>
-            
-            {selectedUser ? (
-              <div className="flex-1 w-full space-y-12 overflow-y-auto max-h-[700px] pr-4 custom-scrollbar">
-                {/* GRUPO PEI */}
-                {renderProgressGroup('Dimensiones PEI', individualProgressData.filter(d => d.type === 'PEI'), 'bg-indigo-600')}
-
-                {/* GRUPO PMI */}
-                {renderProgressGroup('Ejes PMI', individualProgressData.filter(d => d.type === 'PMI'), 'bg-emerald-600')}
-
-                {/* --- SECCIÓN: DIMENSIONES DEL PERFIL ACADÉMICO UPLA --- */}
-                <div className="space-y-6 pt-4 border-t border-slate-50">
-                    <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                        <h4 className="text-sm font-black text-rose-600 uppercase tracking-[0.2em]">Dimensiones del Perfil Académico</h4>
-                    </div>
-
-                    <div className="space-y-10">
-                        {['Pedagógica', 'Investigación y/o Creación', 'Vinculación', 'Interpersonal y Ética', 'Formación Continua'].map(dim => {
-                            const dimData = individualProgressData.filter(d => d.type === 'PA' && d.dimension === dim);
-                            if (dimData.length === 0) return null;
-                            
-                            const dimColor = dim === 'Pedagógica' ? 'bg-rose-500' : dim === 'Investigación y/o Creación' ? 'bg-emerald-500' : dim === 'Vinculación' ? 'bg-purple-500' : dim === 'Interpersonal y Ética' ? 'bg-blue-500' : 'bg-pink-500';
-
-                            return (
-                                <div key={dim} className="space-y-4">
-                                    <div className="flex items-center gap-2">
-                                        <div className={`w-1.5 h-1.5 rounded-full ${dimColor}`}></div>
-                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{dim}</span>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                                        {dimData.map(comp => (
-                                            <div key={comp.code} className="space-y-1.5">
-                                                <div className="flex justify-between items-end">
-                                                    <span className="text-[10px] font-bold text-slate-700 truncate pr-2" title={comp.name}>{comp.name}</span>
-                                                    <span className={`text-[7px] font-black uppercase px-1 py-0.5 rounded border border-slate-100 ${comp.percentage > 0 ? 'text-indigo-600' : 'text-slate-300'}`}>{comp.level}</span>
-                                                </div>
-                                                <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-100 shadow-inner">
-                                                    <div className={`h-full transition-all duration-1000 ${comp.percentage === 100 ? 'bg-emerald-400' : comp.percentage > 0 ? 'bg-indigo-400' : 'bg-slate-200'}`} style={{ width: `${comp.percentage}%` }}></div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                {/* LEYENDA */}
-                <div className="mt-10 p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-wrap justify-center gap-6">
-                    {['Iniciación', 'Desarrollo', 'Consolidación'].map((lvl, i) => (
-                        <div key={lvl} className="flex items-center gap-2">
-                            <div className={`w-3 h-3 rounded ${i === 0 ? 'bg-blue-400' : i === 1 ? 'bg-indigo-500' : 'bg-emerald-500'}`}></div>
-                            <span className="text-[10px] font-bold text-slate-500 uppercase">{lvl} ({i+1} Act.)</span>
-                        </div>
-                    ))}
-                </div>
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-slate-300 opacity-50 space-y-4">
-                <svg className="w-20 h-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                <p className="font-bold text-lg uppercase tracking-widest">Ingrese un RUT para auditar el perfil</p>
-              </div>
-            )}
-          </div>
+          <div className="lg:col-span-8 bg-white p-8 rounded-3xl border border-slate-200 shadow-sm relative min-h-[500px] flex flex-col"><h3 className="text-lg font-black text-slate-800 mb-2 uppercase tracking-tight flex items-center gap-2"><svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>Evolución de Competencias y Perfil Académico</h3><p className="text-xs text-slate-400 mb-8 font-medium">Estado de tributación institucional basado en hitos de formación continua.</p>{selectedUser ? (<div className="flex-1 w-full space-y-12 overflow-y-auto max-h-[700px] pr-4 custom-scrollbar">{renderProgressGroup('Dimensiones PEI', individualProgressData.filter(d => d.type === 'PEI'), 'bg-indigo-600')}{renderProgressGroup('Ejes PMI', individualProgressData.filter(d => d.type === 'PMI'), 'bg-emerald-600')}<div className="space-y-6 pt-4 border-t border-slate-50"><div className="flex items-center gap-2"><svg className="w-5 h-5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg><h4 className="text-sm font-black text-rose-600 uppercase tracking-[0.2em]">Dimensiones del Perfil Académico</h4></div><div className="space-y-10">{['Pedagógica', 'Investigación y/o Creación', 'Vinculación', 'Interpersonal y Ética', 'Formación Continua'].map(dim => { const dimData = individualProgressData.filter(d => d.type === 'PA' && d.dimension === dim); if (dimData.length === 0) return null; const dimColor = dim === 'Pedagógica' ? 'bg-rose-500' : dim === 'Investigación y/o Creación' ? 'bg-emerald-500' : dim === 'Vinculación' ? 'bg-purple-500' : dim === 'Interpersonal y Ética' ? 'bg-blue-500' : 'bg-pink-500'; return (<div key={dim} className="space-y-4"><div className="flex items-center gap-2"><div className={`w-1.5 h-1.5 rounded-full ${dimColor}`}></div><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{dim}</span></div><div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">{dimData.map(comp => (<div key={comp.code} className="space-y-1.5"><div className="flex justify-between items-end"><span className="text-[10px] font-bold text-slate-700 truncate pr-2" title={comp.name}>{comp.name}</span><span className={`text-[7px] font-black uppercase px-1 py-0.5 rounded border border-slate-100 ${comp.percentage > 0 ? 'text-indigo-600' : 'text-slate-300'}`}>{comp.level}</span></div><div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-100 shadow-inner"><div className={`h-full transition-all duration-1000 ${comp.percentage === 100 ? 'bg-emerald-400' : comp.percentage > 0 ? 'bg-indigo-400' : 'bg-slate-200'}`} style={{ width: `${comp.percentage}%` }}></div></div></div>))}</div></div>); })}</div></div><div className="mt-10 p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-wrap justify-center gap-6">{['Iniciación', 'Desarrollo', 'Consolidación'].map((lvl, i) => (<div key={lvl} className="flex items-center gap-2"><div className={`w-3 h-3 rounded ${i === 0 ? 'bg-blue-400' : i === 1 ? 'bg-indigo-500' : 'bg-emerald-500'}`}></div><span className="text-[10px] font-bold text-slate-500 uppercase">{lvl} ({i+1} Act.)</span></div>))}</div></div>) : (<div className="flex-1 flex flex-col items-center justify-center text-slate-300 opacity-50 space-y-4"><svg className="w-20 h-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg><p className="font-bold text-lg uppercase tracking-widest">Ingrese un RUT para auditar el perfil</p></div>)}</div>
         </div>
       )}
 
-      {/* --- VISTA: COBERTURA INSTITUCIONAL --- */}
       {activeTab === 'institutional' && (
         <div className="space-y-8 animate-fadeIn">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-              <div className="flex justify-between items-center mb-8">
-                <div><h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Mapa de Gaps Formativos</h3><p className="text-xs text-slate-400 font-medium">Densidad de la oferta académica en {selectedYear}.</p></div>
-                <div className="flex items-center gap-2">
-                   {['Optimo', 'Medio', 'Crítico'].map((l, i) => (
-                       <div key={l} className="flex items-center gap-1"><div className={`w-2.5 h-2.5 rounded-full ${i === 0 ? 'bg-emerald-500' : i === 1 ? 'bg-amber-500' : 'bg-rose-500'}`}></div><span className="text-[9px] font-black text-slate-400 uppercase">{l}</span></div>
-                   ))}
-                </div>
-              </div>
-              <div className="h-[600px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={coverageData} layout="vertical" margin={{ left: 40, right: 40 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
-                    <XAxis type="number" hide />
-                    <YAxis dataKey="code" type="category" width={70} tick={{ fontSize: 9, fontWeight: 'black', fill: '#64748b' }} />
-                    <Tooltip cursor={{ fill: '#f8fafc' }} content={({ payload }) => {
-                        if (payload && payload.length) {
-                          const d = payload[0].payload;
-                          return (<div className="bg-white border border-slate-200 p-3 rounded-xl shadow-xl"><p className="text-xs font-black text-indigo-600 mb-1">{d.code}</p><p className="text-[10px] font-bold text-slate-700">{d.name}</p><p className="text-[10px] text-slate-400 mt-2">Actividades vinculadas: <span className="text-slate-900 font-black">{d.count}</span></p></div>);
-                        }
-                        return null;
-                    }}/>
-                    <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={16}>
-                      {coverageData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.count >= 5 ? '#10b981' : entry.count >= 2 ? '#f59e0b' : '#ef4444'} />))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            <div className="space-y-6">
-              <div className="bg-gradient-to-br from-indigo-600 to-blue-700 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
-                <div className="relative z-10">
-                  <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-6"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg></div>
-                  <h4 className="text-xl font-black mb-2 uppercase tracking-tight">AI Curricular Analysis</h4>
-                  <p className="text-blue-100 text-sm mb-8 leading-relaxed">¿Deseas que Gemini analice los gaps y sugiera la oferta del próximo periodo?</p>
-                  <button onClick={generateAiInsight} disabled={isAnalyzing} className="w-full py-4 bg-white text-indigo-700 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-blue-50 transition-all flex items-center justify-center gap-3 disabled:opacity-50">
-                    {isAnalyzing ? <><svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Analizando...</> : "Generar Insights"}
-                  </button>
-                </div>
-              </div>
-              {aiInsight && (<div className="bg-white p-6 rounded-3xl border border-indigo-100 shadow-sm animate-fadeInUp"><h5 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-3 flex items-center gap-2"><span className="w-2 h-2 bg-green-500 rounded-full"></span>Recomendación de la IA</h5><p className="text-sm text-slate-700 leading-relaxed italic">"{aiInsight}"</p></div>)}
-            </div>
-          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8"><div className="lg:col-span-2 bg-white p-8 rounded-3xl border border-slate-200 shadow-sm"><div className="flex justify-between items-center mb-8"><div><h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Mapa de Gaps Formativos</h3><p className="text-xs text-slate-400 font-medium">Densidad de la oferta académica en {selectedYear}.</p></div><div className="flex items-center gap-2">{['Optimo', 'Medio', 'Crítico'].map((l, i) => (<div key={l} className="flex items-center gap-1"><div className={`w-2.5 h-2.5 rounded-full ${i === 0 ? 'bg-emerald-500' : i === 1 ? 'bg-amber-500' : 'bg-rose-500'}`}></div><span className="text-[9px] font-black text-slate-400 uppercase">{l}</span></div>))}</div></div><div className="h-[600px] w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={coverageData} layout="vertical" margin={{ left: 40, right: 40 }}><CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" /><XAxis type="number" hide /><YAxis dataKey="code" type="category" width={70} tick={{ fontSize: 9, fontWeight: 'black', fill: '#64748b' }} /><Tooltip cursor={{ fill: '#f8fafc' }} content={({ payload }) => { if (payload && payload.length) { const d = payload[0].payload; return (<div className="bg-white border border-slate-200 p-3 rounded-xl shadow-xl"><p className="text-xs font-black text-indigo-600 mb-1">{d.code}</p><p className="text-[10px] font-bold text-slate-700">{d.name}</p><p className="text-[10px] text-slate-400 mt-2">Actividades vinculadas: <span className="text-slate-900 font-black">{d.count}</span></p></div>); } return null; }}/><Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={16}>{coverageData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.count >= 5 ? '#10b981' : entry.count >= 2 ? '#f59e0b' : '#ef4444'} />))}</Bar></BarChart></ResponsiveContainer></div></div><div className="space-y-6"><div className="bg-gradient-to-br from-indigo-600 to-blue-700 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden group"><div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div><div className="relative z-10"><div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-6"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg></div><h4 className="text-xl font-black mb-2 uppercase tracking-tight">AI Curricular Analysis</h4><p className="text-blue-100 text-sm mb-8 leading-relaxed">Análisis predictivo de oferta académica.</p><button onClick={generateAiInsight} disabled={isAnalyzing} className="w-full py-4 bg-white text-indigo-700 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-blue-50 transition-all flex items-center justify-center gap-3 disabled:opacity-50">{isAnalyzing ? <><svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Analizando...</> : "Generar Insights"}</button></div></div>{aiInsight && (<div className="bg-white p-6 rounded-3xl border border-indigo-100 shadow-sm animate-fadeInUp"><h5 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-3 flex items-center gap-2"><span className="w-2 h-2 bg-green-500 rounded-full"></span>Recomendación de la IA</h5><p className="text-sm text-slate-700 leading-relaxed italic">"{aiInsight}"</p></div>)}</div></div>
         </div>
       )}
 
-      {/* --- VISTA: BUSCADOR DE TALENTO --- */}
       {activeTab === 'search' && (
         <div className="space-y-8 animate-fadeIn">
           <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-            <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight mb-6">Expertise Finder (Buscador de Talentos)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Filtrar por Competencia o Dimensión</label>
-                <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
-                  {[...PEI_COMPETENCIES, ...PMI_COMPETENCIES, ...ACADEMIC_PROFILE_COMPETENCIES].map(c => (
-                    <button key={c.code} onClick={() => setSelectedSkill(c.code)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all border ${selectedSkill === c.code ? 'bg-indigo-600 border-indigo-700 text-white shadow-md scale-105' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-indigo-50'}`}>{c.code}</button>
-                  ))}
+            <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight mb-8 border-b border-slate-100 pb-4 flex items-center gap-3">
+               <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg></div>
+               Expertise Finder (Buscador de Talentos)
+            </h3>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              {/* FILTROS DE COMPETENCIA */}
+              <div className="lg:col-span-9 space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+                    {/* BLOQUE PEI */}
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-2 mb-2"><span className="w-2 h-2 rounded-full bg-indigo-400"></span><h4 className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Plan Estratégico (PEI)</h4></div>
+                        <div className="flex flex-wrap gap-2">
+                            {PEI_COMPETENCIES.map(c => (
+                                <button key={c.code} onClick={() => setSelectedSkill(c.code)} className={`px-2 py-1 rounded text-[10px] font-black uppercase transition-all border ${selectedSkill === c.code ? 'bg-indigo-600 border-indigo-700 text-white shadow-md scale-105' : 'bg-indigo-50 border-indigo-100 text-indigo-700 hover:bg-indigo-100'}`}>{c.code}</button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* BLOQUE PMI */}
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-2 mb-2"><span className="w-2 h-2 rounded-full bg-emerald-400"></span><h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Plan de Mejora (PMI)</h4></div>
+                        <div className="flex flex-wrap gap-2">
+                            {PMI_COMPETENCIES.map(c => (
+                                <button key={c.code} onClick={() => setSelectedSkill(c.code)} className={`px-2 py-1 rounded text-[10px] font-black uppercase transition-all border ${selectedSkill === c.code ? 'bg-emerald-600 border-emerald-700 text-white shadow-md scale-105' : 'bg-emerald-50 border-emerald-100 text-emerald-700 hover:bg-emerald-100'}`}>{c.code}</button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* PERFIL ACADÉMICO (DINÁMICO) */}
+                <div className="space-y-4 pt-4 border-t border-slate-100">
+                    <h4 className="text-sm font-black text-rose-600 uppercase tracking-[0.2em] flex items-center gap-2">Perfil del Académico UPLA</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                        {['Pedagógica', 'Investigación y/o Creación', 'Vinculación', 'Interpersonal y Ética', 'Formación Continua'].map(dim => (
+                            <div key={dim} className="space-y-2">
+                                <h5 className={`text-[9px] font-black uppercase border-b pb-1 ${dimensionColors[dim] || 'text-slate-400 border-slate-100'}`}>{dim}</h5>
+                                <div className="flex flex-wrap gap-1">
+                                    {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === dim).map(c => (
+                                        <button key={c.code} onClick={() => setSelectedSkill(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-black uppercase border transition-all ${selectedSkill === c.code ? 'bg-slate-800 border-black text-white shadow-md scale-110 ring-1 ring-black' : `${c.lightColor} ${c.borderColor} ${c.textColor} hover:brightness-95`}`}>{c.code}</button>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
               </div>
-              <div className="bg-indigo-50/50 p-6 rounded-2xl border border-indigo-100 flex items-center justify-between">
-                <div><h4 className="text-sm font-bold text-indigo-900 mb-1">Resultados Encontrados</h4><p className="text-xs text-indigo-700">Docentes acreditados en la competencia.</p></div>
-                <div className="text-center"><span className="block text-4xl font-black text-indigo-600">{expertUsers.length}</span><span className="text-[10px] font-bold uppercase text-indigo-400">Docentes</span></div>
+
+              {/* RESULTADOS ENCONTRADOS (ANCHO REDUCIDO) */}
+              <div className="lg:col-span-3">
+                  <div className="bg-indigo-50 border border-indigo-100 p-8 rounded-[2rem] flex flex-col items-center justify-center text-center h-full shadow-inner animate-fadeIn">
+                    <h4 className="text-xs font-black text-indigo-900 mb-2 uppercase tracking-widest">Docentes Identificados</h4>
+                    <div className="text-center relative">
+                        <span className="block text-6xl font-black text-indigo-600 leading-none">{expertUsers.length}</span>
+                        <div className="absolute -right-4 -top-2 w-4 h-4 bg-emerald-500 rounded-full animate-ping"></div>
+                    </div>
+                    <div className="mt-6 pt-6 border-t border-indigo-200 w-full">
+                        <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-tighter">Búsqueda Actual:</p>
+                        <p className="text-xs font-black text-indigo-800 mt-1 uppercase truncate max-w-full">{selectedSkill || 'Ninguna Selección'}</p>
+                    </div>
+                  </div>
               </div>
             </div>
           </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {expertUsers.map(user => (
               <div key={user.rut} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-indigo-400 hover:shadow-xl transition-all group relative overflow-hidden">
@@ -519,8 +327,9 @@ export const TMSManager: React.FC = () => {
                   <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center font-black text-xl shadow-inner group-hover:bg-indigo-600 group-hover:text-white transition-colors">{user.names.charAt(0)}</div>
                   <div className="min-w-0"><h4 className="font-bold text-slate-800 truncate">{user.names} {user.paternalSurname}</h4><p className="text-[10px] text-slate-400 font-mono">{user.rut}</p></div>
                 </div>
-                <div className="space-y-2 mb-6">
-                  <p className="text-xs text-slate-500 flex items-center gap-2 truncate"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>{user.faculty}</p>
+                <div className="space-y-2 mb-6 text-xs text-slate-500">
+                  <p className="flex items-center gap-2 truncate font-medium"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>{user.faculty}</p>
+                  <p className="flex items-center gap-2 truncate font-bold text-indigo-600"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>{user.academicRole}</p>
                 </div>
                 <div className="pt-4 border-t border-slate-50">
                   <button onClick={() => { setSearchRut(user.rut); setSelectedUser(user); setActiveTab('individual'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="w-full py-2 bg-slate-50 text-[#647FBC] text-[10px] font-black uppercase tracking-widest rounded-xl border border-slate-100 hover:bg-[#647FBC] hover:text-white transition-all">Ver Perfil de Logro</button>
@@ -533,7 +342,6 @@ export const TMSManager: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL DE AYUDA TMS */}
       {showHelpModal && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
           <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-4xl max-h-[95vh] flex flex-col overflow-hidden border border-indigo-100">
@@ -547,17 +355,15 @@ export const TMSManager: React.FC = () => {
             </div>
             <div className="flex-1 overflow-y-auto p-10 bg-[#F9F8F6] custom-scrollbar space-y-12">
                 <section className="space-y-4">
-                    <div className="flex items-center gap-3 border-b-2 border-indigo-100 pb-2"><span className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center font-bold text-sm">01</span><h4 className="text-xl font-black text-slate-800 uppercase tracking-tight">Módulo "Mi Perfil" (Índice de Madurez)</h4></div>
+                    <div className="flex items-center gap-3 border-b-2 border-indigo-100 pb-2"><span className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center font-bold text-sm">01</span><h4 className="text-xl font-black text-slate-800 uppercase tracking-tight">Módulo "Perfil Docente"</h4></div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><h5 className="font-bold text-indigo-700 text-sm mb-2 uppercase">Mecánica de Progresión</h5><p className="text-xs text-slate-600 leading-relaxed">El sistema mide la <strong>densidad curricular</strong> analizando participaciones registradas y aprobación formal.</p>
-                            <ul className="mt-4 space-y-2 text-[11px] text-slate-500">
-                                <li className="flex items-center gap-2"><div className="w-2 h-2 rounded bg-blue-400"></div> <strong>Iniciación (33%):</strong> 1 actividad registrada.</li>
-                                <li className="flex items-center gap-2"><div className="w-2 h-2 rounded bg-indigo-500"></div> <strong>Desarrollo (66%):</strong> 2 actividades acumuladas.</li>
-                                <li className="flex items-center gap-2"><div className="w-2 h-2 rounded bg-emerald-500"></div> <strong>Consolidación (100%):</strong> 3+ actividades. Maestría en el área.</li>
-                            </ul>
-                        </div>
-                        <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 shadow-sm"><h5 className="font-bold text-indigo-800 text-sm mb-2 uppercase">Perfil Académico UPLA</h5><p className="text-xs text-slate-700 leading-relaxed">Ahora el sistema audita las 5 dimensiones clave: Pedagógica, Investigación, Vinculación, Ética y Formación Continua, cruzando sus logros con el Plan Estratégico Institucional.</p></div>
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><h5 className="font-bold text-indigo-700 text-sm mb-2 uppercase">Índice de Madurez</h5><p className="text-xs text-slate-600 leading-relaxed">El sistema analiza el historial acumulado del docente para asignar niveles de progreso por competencia.</p></div>
+                        <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 shadow-sm"><h5 className="font-bold text-indigo-800 text-sm mb-2 uppercase">Algoritmo de Recomendación</h5><p className="text-xs text-slate-700 leading-relaxed">Detecta "Gaps" o brechas en el perfil y sugiere cursos del catálogo vigente que permiten al docente completar su ruta formativa.</p></div>
                     </div>
+                </section>
+                <section className="space-y-4">
+                    <div className="flex items-center gap-3 border-b-2 border-purple-100 pb-2"><span className="w-8 h-8 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center font-bold text-sm">02</span><h4 className="text-xl font-black text-slate-800 uppercase tracking-tight">Módulo "Expertise Finder"</h4></div>
+                    <p className="text-xs text-slate-600">Herramienta estratégica para coordinadores. Permite identificar rápidamente a docentes que poseen capacidades específicas para liderar proyectos, mentorías o procesos de acreditación según su historial formativo UPLA.</p>
                 </section>
             </div>
             <div className="p-6 bg-slate-50 border-t border-slate-200 text-center"><p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.3em] italic">Strategic Intelligence Unit • GestorSMEAD TMS</p></div>
