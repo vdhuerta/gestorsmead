@@ -355,7 +355,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           hours: Number(formData.hours),
           moduleCount: Number(formData.moduleCount),
           evaluationCount: Number(formData.evaluationCount),
-          isPublic: true
+          isPublic: true,
+          inConstruction: formData.inConstruction // Aseguramos que se pase el valor del estado
       };
       
       try { 
@@ -388,7 +389,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           startDate: course.startDate || '', 
           endDate: course.endDate || '', 
           competencyCodes: course.competencyCodes || [],
-          inConstruction: course.inConstruction || false 
+          inConstruction: !!course.inConstruction // Carga el valor real desde el objeto
       });
       setSyllabusFile(null);
       setView('edit');
@@ -409,7 +410,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
         startDate: '', 
         endDate: '',
         competencyCodes: course.competencyCodes || [],
-        inConstruction: course.inConstruction || false 
+        inConstruction: !!course.inConstruction // Copia el estado también
     });
     setSelectedCourseId(null); 
     setSyllabusFile(null);

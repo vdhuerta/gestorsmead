@@ -83,9 +83,9 @@ const mapActivityFromDB = (a: any): Activity => ({
     linkResources: a.link_resources,
     classLink: a.class_link,
     evaluationLink: a.evaluation_link, 
-    is_public: a.is_public,
-    in_construction: a.in_construction,
-    program_config: a.program_config,
+    isPublic: !!a.is_public,
+    inConstruction: !!a.in_construction, // Forzamos booleano para consistencia
+    programConfig: a.program_config,
     competencyCodes: a.competency_codes || []
 });
 
@@ -165,15 +165,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [fetchData]);
 
   const addActivity = async (activity: Activity) => {
-    const { error } = await supabase.from('activities').upsert({
+    // Limpiar el objeto para Supabase asegurando que in_construction se envíe correctamente
+    const payload = {
         id: activity.id,
         name: activity.name,
         category: activity.category,
         activity_type: activity.activityType,
-        // Fix: Use internalCode instead of internal_code from Activity interface
         internal_code: activity.internalCode,
         year: activity.year,
-        // Fix: Use academicPeriod instead of academic_period from Activity interface
         academic_period: activity.academicPeriod,
         version: activity.version,
         modality: activity.modality,
@@ -186,11 +185,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         link_resources: activity.linkResources,
         class_link: activity.classLink,
         evaluation_link: activity.evaluationLink, 
-        is_public: activity.isPublic,
-        in_construction: activity.inConstruction,
+        is_public: activity.isPublic ?? true,
+        in_construction: activity.inConstruction ?? false, // Mapeo explícito
         program_config: activity.programConfig || null,
         competency_codes: activity.competencyCodes || []
-    });
+    };
+
+    const { error } = await supabase.from('activities').upsert(payload);
     if (error) throw error;
   };
 
