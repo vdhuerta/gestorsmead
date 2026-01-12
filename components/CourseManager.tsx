@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Activity, ActivityState, Enrollment, User, UserRole } from '../types';
@@ -213,7 +214,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     nombre: '', version: 'V1', modality: 'Presencial', hours: 0,
     moduleCount: 1, evaluationCount: 3, relator: '',
     startDate: '', endDate: '',
-    competencyCodes: [] as string[]
+    competencyCodes: [] as string[],
+    inConstruction: false 
   });
 
   const [enrollForm, setEnrollForm] = useState({
@@ -237,7 +239,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
       return [...courseEnrollments].sort((a, b) => {
           const userA = users.find(u => normalizeRut(u.rut) === normalizeRut(a.rut));
           const userB = users.find(u => normalizeRut(u.rut) === normalizeRut(b.rut));
-          return (userA?.paternalSurname || '').localeCompare(userB?.paternalSurname || '');
+          return (userA?.paternalSurname || '').localeCompare(userB?.paternalSurname || '', 'es');
       });
   }, [courseEnrollments, users]);
 
@@ -385,7 +387,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           relator: course.relator || '', 
           startDate: course.startDate || '', 
           endDate: course.endDate || '', 
-          competencyCodes: course.competencyCodes || [] 
+          competencyCodes: course.competencyCodes || [],
+          inConstruction: course.inConstruction || false 
       });
       setSyllabusFile(null);
       setView('edit');
@@ -405,7 +408,8 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
         relator: course.relator || '',
         startDate: '', 
         endDate: '',
-        competencyCodes: course.competencyCodes || []
+        competencyCodes: course.competencyCodes || [],
+        inConstruction: course.inConstruction || false 
     });
     setSelectedCourseId(null); 
     setSyllabusFile(null);
@@ -729,13 +733,26 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                     <div className="space-y-6">
                         <h3 className="text-sm font-black text-slate-400 uppercase tracking-[0.2em] border-b pb-2">Información de Cabecera</h3>
                         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                            <div className="md:col-span-8">
+                            <div className="md:col-span-7">
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Nombre de la Asignatura / Curso *</label>
                                 <input required type="text" value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#647FBC] text-sm font-normal shadow-sm"/>
                             </div>
-                            <div className="md:col-span-4">
+                            <div className="md:col-span-3">
                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Código Interno</label>
                                 <input required type="text" value={formData.internalCode} onChange={e => setFormData({...formData, internalCode: e.target.value.toUpperCase()})} className="w-full px-4 py-3 border border-slate-200 rounded-xl uppercase font-mono text-sm bg-slate-50"/>
+                            </div>
+                            <div className="md:col-span-2 flex items-end pb-3">
+                                <label className="flex items-center gap-2 cursor-pointer group/check">
+                                    <div className="relative flex items-center">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={formData.inConstruction} 
+                                            onChange={e => setFormData({...formData, inConstruction: e.target.checked})} 
+                                            className="w-5 h-5 text-[#647FBC] rounded-lg border-slate-300 focus:ring-[#647FBC] cursor-pointer transition-all"
+                                        />
+                                    </div>
+                                    <span className="text-[10px] font-black text-slate-500 uppercase leading-tight group-hover/check:text-[#647FBC] transition-colors">Curso en Construcción</span>
+                                </label>
                             </div>
                         </div>
 
@@ -843,65 +860,25 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                             </div>
                         </div>
 
-                        {/* SECCIÓN PERFIL DEL ACADÉMICO UPLA */}
                         <div className="space-y-6 pt-6 border-t border-slate-100">
-                             <h4 className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                                <svg className="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                                Perfil del Académico UPLA
-                             </h4>
-                             
+                             <h4 className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2"><svg className="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>Perfil del Académico UPLA</h4>
                              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
-                                 {/* PEDAGÓGICA */}
-                                 <div className="space-y-3">
-                                     <h5 className="text-[9px] font-black text-rose-600 uppercase tracking-widest border-b border-rose-100 pb-1">Pedagógica</h5>
-                                     <div className="flex flex-wrap gap-1.5">
-                                         {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Pedagógica').map(c => (
-                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-normal uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-rose-100 border-rose-300 text-rose-950 shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-600 hover:border-rose-200'}`}>{c.code}</button>
-                                         ))}
-                                     </div>
-                                 </div>
-                                 {/* INVESTIGACIÓN */}
-                                 <div className="space-y-3">
-                                     <h5 className="text-[9px] font-black text-emerald-600 uppercase tracking-widest border-b border-emerald-100 pb-1">Investigación</h5>
-                                     <div className="flex flex-wrap gap-1.5">
-                                         {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Investigación y/o Creación').map(c => (
-                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-normal uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-950 shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-600 hover:border-emerald-200'}`}>{c.code}</button>
-                                         ))}
-                                     </div>
-                                 </div>
-                                 {/* VINCULACIÓN */}
-                                 <div className="space-y-3">
-                                     <h5 className="text-[9px] font-black text-purple-600 uppercase tracking-widest border-b border-purple-100 pb-1">Vinculación</h5>
-                                     <div className="flex flex-wrap gap-1.5">
-                                         {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Vinculación').map(c => (
-                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-normal uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-purple-100 border-purple-300 text-purple-950 shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-600 hover:border-purple-200'}`}>{c.code}</button>
-                                         ))}
-                                     </div>
-                                 </div>
-                                 {/* INTERPERSONAL */}
-                                 <div className="space-y-3">
-                                     <h5 className="text-[9px] font-black text-blue-600 uppercase tracking-widest border-b border-blue-100 pb-1">Interpersonal / Ética</h5>
-                                     <div className="flex flex-wrap gap-1.5">
-                                         {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Interpersonal y Ética').map(c => (
-                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-normal uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-blue-100 border-blue-300 text-blue-950 shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-600 hover:border-blue-200'}`}>{c.code}</button>
-                                         ))}
-                                     </div>
-                                 </div>
-                                 {/* FORMACIÓN */}
-                                 <div className="space-y-3">
-                                     <h5 className="text-[9px] font-black text-pink-600 uppercase tracking-widest border-b border-pink-100 pb-1">Formación Continua</h5>
-                                     <div className="flex flex-wrap gap-1.5">
-                                         {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === 'Formación Continua').map(c => (
-                                             <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-normal uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-pink-100 border-pink-300 text-pink-950 shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-600 hover:border-pink-200'}`}>{c.code}</button>
-                                         ))}
-                                     </div>
-                                 </div>
+                                {['Pedagógica', 'Investigación y/o Creación', 'Vinculación', 'Interpersonal y Ética', 'Formación Continua'].map(dim => (
+                                    <div key={dim} className="space-y-3">
+                                        <h5 className="text-[9px] font-black text-rose-600 uppercase tracking-widest border-b border-rose-100 pb-1">{dim}</h5>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === dim).map(c => (
+                                                <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-normal uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-rose-100 border-rose-300 text-rose-950 shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-600 hover:border-rose-200'}`}>{c.code}</button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
                              </div>
                         </div>
                     </div>
 
                     <div className="flex justify-between pt-10 border-t border-slate-100">
-                        {view === 'edit' && <button type="button" onClick={() => { if(confirm("¿Eliminar permanentemente?")) deleteActivity(selectedCourseId!).then(() => setView('list')); }} className="text-rose-600 font-black uppercase text-[10px] tracking-widest hover:underline">Eliminar Curso Académico</button>}
+                        {view === 'edit' && <button type="button" onClick={() => { if(confirm("¿Eliminar?")) deleteActivity(selectedCourseId!).then(() => setView('list')); }} className="text-rose-600 font-black uppercase text-[10px] tracking-widest hover:underline">Eliminar Curso Académico</button>}
                         <div className="flex gap-3 ml-auto">
                             <button type="button" onClick={() => setView('list')} className="px-8 py-3 text-slate-500 font-bold">Cancelar</button>
                             <button type="submit" disabled={isSaving} className={`px-10 py-3 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all transform active:scale-95 ${isSaving ? 'bg-slate-400 text-white cursor-not-allowed' : 'bg-[#647FBC] text-white hover:bg-blue-800'}`}>
@@ -912,7 +889,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                 </form>
             </div>
 
-            {/* MODAL SUGERENCIAS IA */}
             {showAiReview && (
                 <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl flex flex-col overflow-hidden border border-indigo-200">
@@ -926,7 +902,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                             {aiSuggestions.map((s, i) => (
                                 <div key={i} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex gap-4">
                                     <div className="w-12 h-12 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-xs shrink-0 uppercase">{s.code}</div>
-                                    <div className="flex-1"><h4 className="font-bold text-slate-800 text-sm uppercase">{PEI_COMPETENCIES.find(c => c.code === s.code)?.name || PMI_COMPETENCIES.find(c => c.code === s.code)?.name || ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code === s.code)?.name}</h4><p className="text-xs text-slate-500 mt-1">"{s.reason}"</p></div>
+                                    <div className="flex-1"><h4 className="font-bold text-slate-800 text-sm uppercase">{s.code}</h4><p className="text-xs text-slate-500 mt-1">"{s.reason}"</p></div>
                                 </div>
                             ))}
                         </div>
@@ -941,7 +917,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
     );
   }
 
-  // --- DETAILS VIEW (Matrícula / Notas / Acta) ---
+  // --- DETAILS VIEW ---
   if (view === 'details' && selectedCourse) {
       return (
           <div className="animate-fadeIn space-y-6">
@@ -971,570 +947,122 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                   {activeDetailTab === 'enrollment' && (
                       <div className="space-y-8 animate-fadeIn">
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            {/* INSCRIPCIÓN INDIVIDUAL */}
-                            <div className="bg-slate-50 p-8 rounded-2xl border border-slate-200 shadow-inner">
-                                <h3 className="font-bold text-slate-800 text-lg mb-6 flex items-center gap-2">
-                                  <div className="p-2 bg-indigo-600 text-white rounded-lg"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg></div>
-                                  Inscripción Individual
-                                </h3>
-                                <form onSubmit={async (e) => {
-                                    e.preventDefault();
-                                    setIsProcessingBatch(true);
-                                    const formatted = cleanRutFormat(enrollForm.rut);
-                                    try {
-                                        await upsertUsers([{ ...enrollForm, rut: formatted, systemRole: enrollForm.systemRole as UserRole }]);
-                                        await enrollUser(formatted, selectedCourseId!);
-                                        await executeReload();
-                                        setEnrollMsg({ type: 'success', text: 'Estudiante matriculado.' });
-                                        setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE });
-                                    } catch (err: any) { 
-                                        setEnrollMsg({ type: 'error', text: `Error al matricular: ${err.message || JSON.stringify(err)}` }); 
-                                    } finally { setIsProcessingBatch(false); }
-                                }} className="space-y-8">
-                                    <div className="space-y-4">
-                                        <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest border-b pb-1">Identidad y Contacto</h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div className="relative">
-                                                <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">RUT *</label>
-                                                <input required type="text" name="rut" value={enrollForm.rut} placeholder="12345678-9" onChange={e => { setEnrollForm({...enrollForm, rut: e.target.value}); if(e.target.value.length >= 2) { const clean = normalizeRut(e.target.value); setSuggestions(users.filter(u => normalizeRut(u.rut).includes(clean)).slice(0, 5)); setShowSuggestions(true); } else { setShowSuggestions(false); } }} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} className="w-full px-3 py-2 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500"/>
-                                                {showSuggestions && suggestions.length > 0 && (
-                                                    <div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                                                        {suggestions.map(s => (<div key={s.rut} onMouseDown={() => { setEnrollForm({...s, maternalSurname: s.maternalSurname || '', phone: s.phone || '', academicRole: s.academicRole || '', faculty: s.faculty || '', department: s.department || '', career: s.career || '', contractType: s.contractType || '', teachingSemester: s.teachingSemester || '', campus: s.campus || '', systemRole: UserRole.ESTUDIANTE }); setShowSuggestions(false); }} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-xs border-b last:border-0"><span className="font-bold block">{s.rut}</span><span>{s.names} {s.paternalSurname}</span></div>))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Email Institucional</label><input type="email" name="email" value={enrollForm.email} onChange={e => setEnrollForm({...enrollForm, email: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"/></div>
-                                        </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                            <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Nombres *</label><input required type="text" name="names" value={enrollForm.names} onChange={e => setEnrollForm({...enrollForm, names: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"/></div>
-                                            <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Ap. Paterno *</label><input required type="text" name="paternalSurname" value={enrollForm.paternalSurname} onChange={e => setEnrollForm({...enrollForm, paternalSurname: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div>
-                                            <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={enrollForm.maternalSurname} onChange={e => setEnrollForm({...enrollForm, maternalSurname: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div>
-                                        </div>
-                                        <div className="md:col-span-2"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Teléfono</label><input type="text" name="phone" value={enrollForm.phone} onChange={e => setEnrollForm({...enrollForm, phone: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div>
-                                    </div>
-
-                                    <div className="space-y-4">
-                                        <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest border-b pb-1">Datos Institucionales</h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <SmartSelect label="Sede" name="campus" value={enrollForm.campus} options={config.campuses || ["Valparaíso"]} onChange={e => setEnrollForm({...enrollForm, campus: e.target.value})} />
-                                            <SmartSelect label="Facultad" name="faculty" value={enrollForm.faculty} options={listFaculties} onChange={e => setEnrollForm({...enrollForm, faculty: e.target.value})} />
-                                            <SmartSelect label="Departamento" name="department" value={enrollForm.department} options={listDepts} onChange={e => setEnrollForm({...enrollForm, department: e.target.value})} />
-                                            <SmartSelect label="Carrera" name="career" value={enrollForm.career} options={listCareers} onChange={e => setEnrollForm({...enrollForm, career: e.target.value})} />
-                                            <SmartSelect label="Rol Académico" name="academicRole" value={enrollForm.academicRole} options={listRoles} onChange={e => setEnrollForm({...enrollForm, academicRole: e.target.value})} />
-                                            <SmartSelect label="Tipo Contrato" name="contractType" value={enrollForm.contractType} options={listContracts} onChange={e => setEnrollForm({...enrollForm, contractType: e.target.value})} />
-                                            <SmartSelect label="Semestre" name="teachingSemester" value={enrollForm.teachingSemester} options={listSemesters} onChange={e => setEnrollForm({...enrollForm, teachingSemester: e.target.value})} />
-                                            <div className="flex items-end"><button type="submit" disabled={isProcessingBatch} className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold text-sm shadow hover:bg-indigo-700">{isProcessingBatch ? 'Procesando...' : 'Inscribir Estudiante'}</button></div>
-                                        </div>
-                                    </div>
-                                    {enrollMsg && <p className={`text-xs text-center font-bold ${enrollMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{enrollMsg.text}</p>}
-                                </form>
-                            </div>
-
-                            {/* CARGA MASIVA */}
-                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 flex flex-col">
-                                <h3 className="font-bold text-slate-800 text-lg mb-6 pb-2 border-b border-slate-100 flex items-center gap-2">
-                                    <div className="p-2 bg-emerald-600 text-white rounded-lg"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg></div>
-                                    Carga Masiva (CSV / Excel)
-                                </h3>
-                                <div className="flex-1 space-y-6 flex flex-col justify-center">
-                                    <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 mb-4">
-                                        <p className="text-sm text-emerald-800 font-medium">Requisito:</p>
-                                        <p className="text-xs text-emerald-600">Suba un archivo con las 13 columnas requeridas para la matrícula institucional (RUT como campo clave).</p>
-                                    </div>
-                                    <label className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-2xl cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-indigo-200 bg-indigo-50 hover:bg-indigo-100'}`}>
-                                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                            {uploadFile ? (
-                                                <><svg className="w-10 h-10 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="mb-1 text-sm font-bold text-emerald-700">{uploadFile.name}</p></>
-                                            ) : (
-                                                <><svg className="w-10 h-10 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-sm text-indigo-600 font-semibold">Haga clic para subir archivo</p><p className="text-xs text-slate-400">xlsx, xls, csv</p></>
-                                            )}
-                                        </div>
-                                        <input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} />
-                                    </label>
-                                    <div className="flex items-center justify-center gap-2 mt-2">
-                                        <input type="checkbox" id="hasHeadersEnrollment" checked={hasHeaders} onChange={e => setHasHeaders(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer" />
-                                        <label htmlFor="hasHeadersEnrollment" className="text-sm text-slate-700 cursor-pointer select-none">Ignorar primera fila (encabezados)</label>
-                                    </div>
-                                    <button 
-                                        onClick={handleBulkUpload} 
-                                        disabled={!uploadFile || isProcessingBatch} 
-                                        className="mt-auto w-full bg-slate-800 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-black transition-all transform active:scale-95 disabled:opacity-50"
-                                    >
-                                        {isProcessingBatch ? 'Procesando...' : 'Cargar y Matricular'}
-                                    </button>
-                                </div>
-                            </div>
+                            <div className="bg-slate-50 p-8 rounded-2xl border border-slate-200 shadow-inner"><h3 className="font-bold text-slate-800 text-lg mb-6 flex items-center gap-2"><div className="p-2 bg-indigo-600 text-white rounded-lg"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg></div>Inscripción Individual</h3><form onSubmit={async (e) => { e.preventDefault(); setIsProcessingBatch(true); const formatted = cleanRutFormat(enrollForm.rut); try { await upsertUsers([{ ...enrollForm, rut: formatted, systemRole: enrollForm.systemRole as UserRole }]); await enrollUser(formatted, selectedCourseId!); await executeReload(); setEnrollMsg({ type: 'success', text: 'Estudiante matriculado.' }); setEnrollForm({ rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', academicRole: '', faculty: '', department: '', career: '', contractType: '', teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE }); } catch (err: any) { setEnrollMsg({ type: 'error', text: 'Error al matricular.' }); } finally { setIsProcessingBatch(false); } }} className="space-y-8"><div className="space-y-4"><h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest border-b pb-1">Identidad y Contacto</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="relative"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">RUT *</label><input required type="text" name="rut" value={enrollForm.rut} placeholder="12345678-9" onChange={e => { setEnrollForm({...enrollForm, rut: e.target.value}); if(e.target.value.length >= 2) { const clean = normalizeRut(e.target.value); setSuggestions(users.filter(u => normalizeRut(u.rut).includes(clean)).slice(0, 5)); setShowSuggestions(true); } else { setShowSuggestions(false); } }} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} className="w-full px-3 py-2 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500"/>{showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">{suggestions.map(s => (<div key={s.rut} onMouseDown={() => { setEnrollForm({...s, maternalSurname: s.maternalSurname || '', phone: s.phone || '', academicRole: s.academicRole || '', faculty: s.faculty || '', department: s.department || '', career: s.career || '', contractType: s.contractType || '', teachingSemester: s.teachingSemester || '', campus: s.campus || '', systemRole: UserRole.ESTUDIANTE }); setShowSuggestions(false); }} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-xs border-b last:border-0"><span className="font-bold block">{s.rut}</span><span>{s.names} {s.paternalSurname}</span></div>))}</div>)}</div><div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Email Institucional</label><input type="email" name="email" value={enrollForm.email} onChange={e => setEnrollForm({...enrollForm, email: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"/></div></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Nombres *</label><input required type="text" name="names" value={enrollForm.names} onChange={e => setEnrollForm({...enrollForm, names: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"/></div><div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Ap. Paterno *</label><input required type="text" name="paternalSurname" value={enrollForm.paternalSurname} onChange={e => setEnrollForm({...enrollForm, paternalSurname: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div><div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Ap. Materno</label><input type="text" name="maternalSurname" value={enrollForm.maternalSurname} onChange={e => setEnrollForm({...enrollForm, maternalSurname: e.target.value})} className="w-full px-4 py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm"/></div></div></div><div className="space-y-4"><h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest border-b pb-1">Datos Institucionales</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><SmartSelect label="Sede" name="campus" value={enrollForm.campus} options={config.campuses || ["Valparaíso"]} onChange={e => setEnrollForm({...enrollForm, campus: e.target.value})} /><SmartSelect label="Facultad" name="faculty" value={enrollForm.faculty} options={listFaculties} onChange={e => setEnrollForm({...enrollForm, faculty: e.target.value})} /><SmartSelect label="Departamento" name="department" value={enrollForm.department} options={listDepts} onChange={e => setEnrollForm({...enrollForm, department: e.target.value})} /><SmartSelect label="Carrera" name="career" value={enrollForm.career} options={listCareers} onChange={e => setEnrollForm({...enrollForm, career: e.target.value})} /><SmartSelect label="Rol Académico" name="academicRole" value={enrollForm.academicRole} options={listRoles} onChange={e => setEnrollForm({...enrollForm, academicRole: e.target.value})} /><SmartSelect label="Tipo Contrato" name="contractType" value={enrollForm.contractType} options={listContracts} onChange={e => setEnrollForm({...enrollForm, contractType: e.target.value})} /><SmartSelect label="Semestre" name="teachingSemester" value={enrollForm.teachingSemester} options={listSemesters} onChange={e => setEnrollForm({...enrollForm, teachingSemester: e.target.value})} /><div className="flex items-end"><button type="submit" disabled={isProcessingBatch} className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold text-sm shadow hover:bg-indigo-700">Inscribir</button></div></div></div>{enrollMsg && <p className={`text-xs text-center font-bold ${enrollMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{enrollMsg.text}</p>}</form></div>
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 flex flex-col"><h3 className="font-bold text-slate-800 mb-6 pb-2 border-b border-slate-100 flex items-center gap-2"><div className="p-2 bg-emerald-600 text-white rounded-lg"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg></div>Carga Masiva</h3><div className="flex-1 space-y-6 flex flex-col justify-center"><label className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-2xl cursor-pointer transition-all ${uploadFile ? 'border-emerald-400 bg-emerald-50' : 'border-indigo-200 bg-indigo-50 hover:bg-indigo-100'}`}><div className="flex flex-col items-center justify-center pt-5 pb-6">{uploadFile ? (<><svg className="w-10 h-10 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="mb-1 text-sm font-bold text-emerald-700">{uploadFile.name}</p></>) : (<><svg className="w-10 h-10 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg><p className="mb-1 text-sm text-indigo-600 font-semibold">Seleccionar archivo</p></>)}</div><input type="file" className="hidden" accept=".csv, .xls, .xlsx" onChange={(e) => { setUploadFile(e.target.files ? e.target.files[0] : null); setEnrollMsg(null); }} /></label><div className="flex items-center justify-center gap-2 mt-2"><input type="checkbox" id="hasHeadersEnrollment" checked={hasHeaders} onChange={e => setHasHeaders(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded border-slate-300"/><label htmlFor="hasHeadersEnrollment" className="text-sm text-slate-700 cursor-pointer">Ignorar encabezados</label></div><button onClick={handleBulkUpload} disabled={!uploadFile || isProcessingBatch} className="mt-auto w-full bg-slate-800 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-black transition-all">Procesar</button></div></div>
                           </div>
-
-                          <div className="overflow-hidden rounded-xl border border-slate-200 shadow-sm">
-                              <div className="bg-slate-50 px-6 py-3 border-b border-slate-200 flex justify-between items-center">
-                                  <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest">Nómina de Inscritos Actual</h4>
-                                  {courseEnrollments.length > 0 && !isProcessingBatch && (
-                                      <button 
-                                          onClick={() => setShowClearConfirm(true)}
-                                          className="text-[10px] font-black text-rose-500 hover:text-rose-700 uppercase tracking-widest bg-rose-50 px-3 py-1 rounded-lg border border-rose-100 transition-all flex items-center gap-1"
-                                      >
-                                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                          LIMPIAR LISTA
-                                      </button>
-                                  )}
-                              </div>
-                              <table className="w-full text-sm text-left">
-                                  <thead className="bg-white text-slate-400 font-bold border-b text-[10px] uppercase tracking-tighter">
-                                      <tr><th className="px-6 py-3">Participante</th><th className="px-6 py-3">Unidad Académica</th><th className="px-6 py-3">Estado</th><th className="px-6 py-3 text-center">Acciones</th></tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100">
-                                      {sortedEnrollments.map(enr => {
-                                          const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut));
-                                          return (
-                                              <tr key={enr.id} className="hover:bg-slate-50 transition-colors">
-                                                  <td className="px-6 py-3 font-medium"><div>{u?.names} {u?.paternalSurname}</div><div className="text-[10px] text-slate-400 font-mono">{enr.rut}</div></td>
-                                                  <td className="px-6 py-3 text-slate-500 text-xs"><div>{u?.faculty}</div><div className="italic">{u?.career}</div></td>
-                                                  <td className="px-6 py-3 text-[10px] font-black uppercase"><span className={`px-2 py-1 rounded-full border ${enr.state === ActivityState.APROBADO ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>{enr.state}</span></td>
-                                                  <td className="px-6 py-3 text-center"><button onClick={() => { if(confirm("¿Eliminar matrícula?")) deleteEnrollment(enr.id).then(() => executeReload()); }} className="text-red-500 font-black text-[10px] uppercase hover:underline">Retirar</button></td>
-                                              </tr>
-                                          );
-                                      })}
-                                      {sortedEnrollments.length === 0 && (
-                                          <tr><td colSpan={4} className="py-20 text-center text-slate-400 italic">No hay estudiantes matriculados en este programa curricular.</td></tr>
-                                      )}
-                                  </tbody>
-                              </table>
-                          </div>
+                          <div className="overflow-hidden rounded-xl border border-slate-200 shadow-sm"><div className="bg-slate-50 px-6 py-3 border-b border-slate-200 flex justify-between items-center"><h4 className="text-xs font-black text-slate-500 uppercase tracking-widest">Nómina Actual</h4>{courseEnrollments.length > 0 && !isProcessingBatch && (<button onClick={() => setShowClearConfirm(true)} className="text-[10px] font-black text-rose-500 hover:text-rose-700 bg-rose-50 px-3 py-1 rounded-lg border border-rose-100 transition-all">LIMPIAR</button>)}</div><table className="w-full text-sm text-left"><thead className="bg-white text-slate-400 font-bold border-b text-[10px] uppercase"><tr><th className="px-6 py-3">Participante</th><th className="px-6 py-3">Unidad</th><th className="px-6 py-3">Estado</th><th className="px-6 py-3 text-center">Acciones</th></tr></thead><tbody className="divide-y divide-slate-100">{sortedEnrollments.map(enr => { const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut)); return (<tr key={enr.id} className="hover:bg-slate-50 transition-colors"><td className="px-6 py-3 font-medium"><div>{u?.names} {u?.paternalSurname}</div><div className="text-[10px] text-slate-400 font-mono">{enr.rut}</div></td><td className="px-6 py-3 text-slate-500 text-xs"><div>{u?.faculty}</div><div className="italic">{u?.career}</div></td><td className="px-6 py-3 text-[10px] font-black uppercase"><span className={`px-2 py-1 rounded-full border ${enr.state === ActivityState.APROBADO ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>{enr.state}</span></td><td className="px-6 py-3 text-center"><button onClick={() => { if(confirm("¿Eliminar?")) deleteEnrollment(enr.id).then(() => executeReload()); }} className="text-red-500 font-black text-[10px] uppercase hover:underline">Retirar</button></td></tr>); })}</tbody></table></div>
                       </div>
                   )}
-
                   {activeDetailTab === 'tracking' && (
-                      <div className="space-y-6 animate-fadeIn">
-                          <div className="flex justify-between items-center bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
-                              <div><h3 className="font-bold text-indigo-800">Carga de Calificaciones y Asistencia</h3><p className="text-xs text-indigo-600">Sistema centralizado de evaluación continua con DIRECTIVA_ESTADO activa.</p></div>
-                              <button onClick={handleBatchCommit} disabled={!hasUnsavedChanges || isProcessingBatch} className={`px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg ${hasUnsavedChanges ? 'bg-indigo-600 text-white animate-pulse' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>Sincronizar Cambios</button>
-                          </div>
-                          <div className="overflow-x-auto rounded-xl border border-slate-200">
-                              <table className="w-full text-sm text-left">
-                                  <thead className="bg-slate-50 text-slate-500 font-bold border-b">
-                                      <tr>
-                                        <th className="px-4 py-3 sticky left-0 bg-white border-r z-10">Docente</th>
-                                        <th className="px-4 py-3 text-center border-r bg-slate-50 w-24 text-[10px] uppercase">Situación</th>
-                                        {Array.from({length: selectedCourse.evaluationCount || 0}).map((_, i) => (<th key={`h-n-${i}`} className="px-2 py-3 text-center border-r text-[10px]">N{i+1}</th>))}
-                                        <th className="px-4 py-3 text-center bg-slate-100 border-r">Prom.</th>
-                                        <th className="px-4 py-3 text-center border-r bg-slate-50 text-[10px] uppercase">Estado</th>
-                                        {Array.from({length: selectedCourse.evaluationCount || 0}).map((_, i) => (<th key={`h-a-${i}`} className="px-2 py-3 text-center border-r text-[10px]">S{i+1}</th>))}
-                                        <th className="px-4 py-3 text-center border-r">% Asist.</th>
-                                        <th className="px-4 py-3 text-center bg-slate-50 text-[10px] uppercase">Certificado</th>
-                                      </tr>
-                                  </thead>
-                                  <tbody className="divide-y bg-white">
-                                      {sortedEnrollments.map(enr => {
-                                          const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut));
-                                          const isInactive = enr.situation === 'INACTIVO';
-                                          
-                                          // Resolver valores actuales (Original + Pendiente)
-                                          const currentGrades = pendingGrades[enr.id] || enr.grades || [];
-                                          const validGrades = currentGrades.filter(g => g > 0);
-                                          const avgValue = validGrades.length > 0 ? (validGrades.reduce((a,b)=>a+b,0)/validGrades.length).toFixed(1) : '-';
-                                          const isAvgFailing = avgValue !== '-' && parseFloat(avgValue) < 4.0;
-
-                                          // Calcular asistencia en tiempo real incluyendo pendientes locales
-                                          let presentCount = 0;
-                                          const totalSessions = selectedCourse.evaluationCount || 0;
-                                          const pendingAttMap = pendingAttendance[enr.id] || {};
-                                          
-                                          for (let i = 0; i < totalSessions; i++) {
-                                              const sessionKey = `attendanceSession${i + 1}`;
-                                              const val = pendingAttMap[sessionKey] !== undefined ? pendingAttMap[sessionKey] : (enr as any)[sessionKey];
-                                              if (val) presentCount++;
-                                          }
-                                          
-                                          const liveAttendancePercentage = totalSessions > 0 ? Math.round((presentCount / totalSessions) * 100) : 0;
-
-                                          // CÁLCULO DE ESTADO EN TIEMPO REAL PARA EL FEEDBACK VISUAL
-                                          const liveState = calculateState(currentGrades, liveAttendancePercentage, totalSessions);
-
-                                          return (
-                                              <tr key={enr.id} className={`hover:bg-slate-50 transition-colors ${isInactive ? 'opacity-50 grayscale' : ''}`}>
-                                                  <td className="px-4 py-3 sticky left-0 bg-white border-r z-10">
-                                                    <div className="font-bold text-slate-700">{student?.paternalSurname}, {student?.names}</div>
-                                                    <div className="text-[10px] text-slate-400 font-mono">{enr.rut}</div>
-                                                  </td>
-                                                  <td className="px-4 py-3 text-center border-r bg-slate-50/50">
-                                                    <button 
-                                                        onClick={() => handleToggleSituation(enr.id, enr.situation)}
-                                                        className={`px-3 py-1 rounded-full text-[10px] font-black border transition-all ${isInactive ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200'}`}
-                                                    >
-                                                        {enr.situation || 'ACTIVO'}
-                                                    </button>
-                                                  </td>
-                                                  {Array.from({length: totalSessions}).map((_, i) => {
-                                                      const gradeVal = currentGrades[i];
-                                                      const isFailing = gradeVal > 0 && gradeVal < 4.0;
-                                                      return (
-                                                        <td key={`c-n-${enr.id}-${i}`} className="px-1 py-2 border-r">
-                                                          <input 
-                                                            type="number" 
-                                                            step="0.1" 
-                                                            disabled={isInactive}
-                                                            value={gradeVal || ''} 
-                                                            onChange={(e) => handleUpdateGradeLocal(enr.id, i, e.target.value)} 
-                                                            className={`w-12 text-center border rounded py-1 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:bg-slate-100 disabled:text-slate-400 ${isFailing ? 'text-red-600 border-red-200 bg-red-50' : 'text-slate-700'}`}
-                                                          />
-                                                        </td>
-                                                      );
-                                                  })}
-                                                  <td className={`px-4 py-3 text-center font-black bg-slate-50 border-r ${isAvgFailing ? 'text-red-600' : 'text-indigo-700'}`}>
-                                                    {avgValue}
-                                                  </td>
-                                                  <td className="px-4 py-3 text-center border-r font-black uppercase text-[9px]">
-                                                    <span className={`px-2 py-1 rounded-full border transition-colors ${
-                                                        liveState === ActivityState.APROBADO ? 'bg-green-50 text-green-700 border-green-200' : 
-                                                        liveState === ActivityState.REPROBADO ? 'bg-red-50 text-red-700 border-red-200' : 
-                                                        liveState === ActivityState.AVANZANDO ? 'bg-indigo-50 text-indigo-700 border-indigo-200 animate-pulse' :
-                                                        'bg-slate-50 text-slate-600 border-slate-200'
-                                                    }`}>
-                                                        {liveState}
-                                                    </span>
-                                                  </td>
-                                                  {Array.from({length: totalSessions}).map((_, i) => {
-                                                      const sessionKey = `attendanceSession${i + 1}`;
-                                                      const isChecked = pendingAttMap[sessionKey] !== undefined ? pendingAttMap[sessionKey] : (enr as any)[sessionKey];
-                                                      return (
-                                                          <td key={`c-a-${enr.id}-${i}`} className="px-2 py-3 text-center border-r">
-                                                              <input 
-                                                                type="checkbox" 
-                                                                disabled={isInactive}
-                                                                checked={!!isChecked} 
-                                                                onChange={() => handleToggleAttendanceLocal(enr.id, i)} 
-                                                                className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-30"
-                                                              />
-                          </td>
-                                                      );
-                                                  })}
-                                                  <td className={`px-4 py-3 text-center font-bold border-r ${liveAttendancePercentage < (config.minAttendancePercentage || 75) ? 'text-red-500' : 'text-green-600'}`}>{liveAttendancePercentage}%</td>
-                                                  <td className="px-4 py-3 text-center">
-                                                    {enr.state === ActivityState.APROBADO ? (
-                                                        <button 
-                                                            disabled={isGeneratingCert !== null || isInactive}
-                                                            onClick={() => student && handleDownloadCertificate(enr, selectedCourse, student)}
-                                                            className={`bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 transition-all shadow-sm flex items-center justify-center gap-1 mx-auto disabled:opacity-50`}
-                                                            title="Descargar Certificado"
-                                                        >
-                                                            {isGeneratingCert === enr.id ? (
-                                                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                                            ) : (
-                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                                            )}
-                                                            <span className="text-[10px] font-black uppercase">PDF</span>
-                                                        </button>
-                                                    ) : (
-                                                        <span className="text-[9px] text-slate-400 font-bold uppercase italic">No disponible</span>
-                                                    )}
-                                                  </td>
-                                              </tr>
-                                          );
-                                      })}
-                                  </tbody>
-                              </table>
-                          </div>
-                      </div>
+                      <div className="space-y-6 animate-fadeIn"><div className="flex justify-between items-center bg-indigo-50 p-4 rounded-2xl border border-indigo-100"><div><h3 className="font-bold text-indigo-800">Calificaciones y Asistencia</h3><p className="text-xs text-indigo-600">Sistema centralizado con DIRECTIVA_ESTADO.</p></div><button onClick={handleBatchCommit} disabled={!hasUnsavedChanges || isProcessingBatch} className={`px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg ${hasUnsavedChanges ? 'bg-indigo-600 text-white animate-pulse' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
+    {isProcessingBatch ? 'Guardando notas...' : 'GUARDAR NOTAS'}
+</button></div><div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-500 font-bold border-b"><tr><th className="px-4 py-3 sticky left-0 bg-white border-r z-10">Docente</th><th className="px-4 py-3 text-center border-r bg-slate-50 w-24 text-[10px] uppercase">Situación</th>{Array.from({length: selectedCourse.evaluationCount || 0}).map((_, i) => (<th key={`h-n-${i}`} className="px-2 py-3 text-center border-r text-[10px]">N{i+1}</th>))}<th className="px-4 py-3 text-center bg-slate-100 border-r">Prom.</th><th className="px-4 py-3 text-center border-r bg-slate-50 text-[10px] uppercase">Estado</th>{Array.from({length: selectedCourse.evaluationCount || 0}).map((_, i) => (<th key={`h-a-${i}`} className="px-2 py-3 text-center border-r text-[10px]">S{i+1}</th>))}<th className="px-4 py-3 text-center border-r">% Asist.</th><th className="px-4 py-3 text-center bg-slate-50 text-[10px] uppercase">Cert.</th></tr></thead><tbody className="divide-y bg-white">{sortedEnrollments.map(enr => { const student = users.find(u => normalizeRut(u.rut) === normalizeRut(enr.rut)); const isInactive = enr.situation === 'INACTIVO'; const currentGrades = pendingGrades[enr.id] || enr.grades || []; const validGrades = currentGrades.filter(g => g > 0); const avgValue = validGrades.length > 0 ? (validGrades.reduce((a,b)=>a+b,0)/validGrades.length).toFixed(1) : '-'; let presentCount = 0; const totalSessions = selectedCourse.evaluationCount || 0; const pendingAttMap = pendingAttendance[enr.id] || {}; for (let i = 0; i < totalSessions; i++) { const val = pendingAttMap[`attendanceSession${i+1}`] !== undefined ? pendingAttMap[`attendanceSession${i+1}`] : (enr as any)[`attendanceSession${i+1}`]; if (val) presentCount++; } const liveAttendancePercentage = totalSessions > 0 ? Math.round((presentCount / totalSessions) * 100) : 0; const liveState = calculateState(currentGrades, liveAttendancePercentage, totalSessions); return (
+                                              <tr key={enr.id} className={`hover:bg-slate-50 transition-colors ${isInactive ? 'opacity-50 grayscale' : ''}`}><td className="px-4 py-3 sticky left-0 bg-white border-r z-10"><div className="font-bold text-slate-700">{student?.paternalSurname}, {student?.names}</div><div className="text-[10px] text-slate-400 font-mono">{enr.rut}</div></td><td className="px-4 py-3 text-center border-r bg-slate-50/50"><button onClick={() => handleToggleSituation(enr.id, enr.situation)} className={`px-3 py-1 rounded-full text-[10px] font-black border transition-all ${isInactive ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200'}`}>{enr.situation || 'ACTIVO'}</button></td>{Array.from({length: totalSessions}).map((_, i) => (<td key={`c-n-${enr.id}-${i}`} className="px-1 py-2 border-r"><input type="number" step="0.1" disabled={isInactive} value={currentGrades[i] || ''} onChange={(e) => handleUpdateGradeLocal(enr.id, i, e.target.value)} className={`w-12 text-center border rounded py-1 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none ${currentGrades[i] < 4.0 && currentGrades[i] > 0 ? 'text-red-600 bg-red-50' : ''}`} /></td>))}<td className={`px-4 py-3 text-center font-black bg-slate-50 border-r ${avgValue !== '-' && parseFloat(avgValue) < 4.0 ? 'text-red-600' : 'text-indigo-700'}`}>{avgValue}</td><td className="px-4 py-3 text-center border-r font-black uppercase text-[9px]"><span className={`px-2 py-1 rounded-full border transition-colors ${liveState === ActivityState.APROBADO ? 'bg-green-50 text-green-700' : 'bg-slate-50'}`}>{liveState}</span></td>{Array.from({length: totalSessions}).map((_, i) => (<td key={`c-a-${enr.id}-${i}`} className="px-2 py-3 text-center border-r"><input type="checkbox" disabled={isInactive} checked={!!(pendingAttMap[`attendanceSession${i+1}`] !== undefined ? pendingAttMap[`attendanceSession${i+1}`] : (enr as any)[`attendanceSession${i+1}`])} onChange={() => handleToggleAttendanceLocal(enr.id, i)} /></td>))}<td className={`px-4 py-3 text-center font-bold border-r ${liveAttendancePercentage < 75 ? 'text-red-500' : 'text-green-600'}`}>{liveAttendancePercentage}%</td><td className="px-4 py-3 text-center">{enr.state === ActivityState.APROBADO && (<button disabled={isGeneratingCert !== null || isInactive} onClick={() => student && handleDownloadCertificate(enr, selectedCourse, student)} className="bg-indigo-600 text-white p-2 rounded-lg text-[10px] font-black uppercase">PDF</button>)}</td></tr>);})}</tbody></table></div></div>
                   )}
-
                   {activeDetailTab === 'acta' && (
-                      <div className="flex flex-col items-center justify-center py-20 text-center animate-fadeIn">
-                          <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center mb-6 shadow-inner"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div>
-                          <h3 className="text-2xl font-black text-slate-800">Generación de Acta Oficial</h3>
-                          <p className="text-slate-500 mt-2 mb-8 max-w-lg leading-relaxed">Este reporte consolida el rendimiento final y la asistencia oficial de todos los inscritos en el programa vigente.</p>
-                          <button onClick={() => {
-                              const doc = new jsPDF('landscape');
-                              doc.setFontSize(18); doc.text(`ACTA DE CALIFICACIONES - ${selectedCourse.name}`, 14, 20);
-                              doc.setFontSize(10); doc.text(`Periodo: ${selectedCourse.academicPeriod} | Relator: ${selectedCourse.relator}`, 14, 30);
-                              const body = sortedEnrollments.map(enr => {
-                                  const u = users.find(x => normalizeRut(x.rut) === normalizeRut(enr.rut));
-                                  return [enr.rut, `${u?.paternalSurname} ${u?.names}`, enr.finalGrade || '-', `${enr.attendancePercentage || 0}%`, enr.state.toUpperCase()];
-                              });
-                              // @ts-ignore
-                              doc.autoTable({ head: [['RUT', 'NOMBRE', 'NOTA', '% ASIST.', 'ESTADO']], body, startY: 40 });
-                              doc.save(`ACTA_${selectedCourse.internalCode}_${selectedYear}.pdf`);
-                          }} className="bg-indigo-600 text-white px-12 py-4 rounded-2xl font-black uppercase text-sm tracking-widest shadow-xl hover:bg-indigo-700 transition-all active:scale-95 flex items-center gap-3"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>Descargar Acta PDF</button>
-                      </div>
+                      <div className="flex flex-col items-center justify-center py-20 text-center animate-fadeIn"><div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center mb-6 shadow-inner"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div><h3 className="text-2xl font-black text-slate-800">Generación de Acta</h3><button onClick={() => { const doc = new jsPDF('landscape'); doc.text(`ACTA - ${selectedCourse.name}`, 14, 20); doc.save(`ACTA_${selectedCourse.internalCode}.pdf`); }} className="bg-indigo-600 text-white px-12 py-4 rounded-2xl font-black uppercase text-sm tracking-widest shadow-xl">Descargar Acta PDF</button></div>
                   )}
               </div>
-
-              {/* MODAL DE ADVERTENCIA DE SALIDA */}
-              {showExitWarning && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
-                    <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 text-center border border-red-100">
-                        <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
-                            <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                        </div>
-                        <h3 className="text-xl font-bold text-slate-800 mb-2">¿Desea salir sin guardar?</h3>
-                        <p className="text-slate-500 text-sm mb-8">Ha realizado cambios en las calificaciones o asistencia que no han sido sincronizados. Si sale ahora, perderá estos datos.</p>
-                        <div className="flex flex-col gap-3">
-                            <button onClick={() => setShowExitWarning(false)} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all">Continuar Editando</button>
-                            <button onClick={handleBatchCommit} className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all">Sincronizar y Salir</button>
-                            <button onClick={() => { setPendingGrades({}); setPendingAttendance({}); setShowExitWarning(false); if(pendingAction) pendingAction(); }} className="w-full py-3 text-red-500 font-bold hover:underline">Salir de todas formas</button>
-                        </div>
-                    </div>
-                </div>
-              )}
-
-              {/* MODAL DE CONFIRMACIÓN LIMPIAR LISTA */}
-              {showClearConfirm && (
-                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
-                    <div className="bg-white rounded-3xl shadow-2xl max-md w-full p-10 text-center border border-rose-100">
-                        <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
-                            <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                        </div>
-                        <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-2">¡ADVERTENCIA CRÍTICA!</h3>
-                        <p className="text-slate-500 text-sm leading-relaxed mb-8">
-                            Estás a punto de <strong>eliminar todas las matrículas</strong> de este curso. Esta acción no se puede deshacer y borrará permanentemente el progreso de todos los estudiantes inscritos.
-                        </p>
-                        <div className="flex flex-col gap-3">
-                            <button 
-                                onClick={handleClearAllEnrollments}
-                                disabled={isProcessingBatch}
-                                className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-lg transition-all transform active:scale-95 disabled:opacity-50"
-                            >
-                                {isProcessingBatch ? 'Procesando...' : 'SEGUIR (Borrar Todo)'}
-                            </button>
-                            <button 
-                                onClick={() => setShowClearConfirm(false)}
-                                className="w-full py-3 text-slate-500 font-bold uppercase tracking-widest text-[10px] hover:underline"
-                            >
-                                CANCELAR
-                            </button>
-                        </div>
-                    </div>
-                </div>
-              )}
+              {showExitWarning && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn"><div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 text-center"><h3 className="text-xl font-bold text-slate-800 mb-2">¿Salir sin guardar?</h3><div className="flex flex-col gap-3"><button onClick={() => setShowExitWarning(false)} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold">Continuar</button><button onClick={() => { setPendingGrades({}); setPendingAttendance({}); setShowExitWarning(false); if(pendingAction) pendingAction(); }} className="w-full py-3 text-red-500 font-bold">Salir</button></div></div></div>)}
+              {showClearConfirm && (<div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn"><div className="bg-white rounded-3xl shadow-2xl max-md w-full p-10 text-center border border-rose-100"><h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-2">ADVERTENCIA CRÍTICA</h3><p className="text-slate-500 text-sm leading-relaxed mb-8">¿Eliminar todas las matrículas?</p><div className="flex flex-col gap-3"><button onClick={handleClearAllEnrollments} className="w-full py-4 bg-rose-600 text-white rounded-2xl font-black">BORRAR TODO</button><button onClick={() => setShowClearConfirm(false)} className="w-full py-3 text-slate-500 font-bold uppercase">CANCELAR</button></div></div></div>)}
           </div>
       );
   }
 
-  // DEFAULT LIST VIEW
   return (
       <div className="animate-fadeIn space-y-6">
         <div className="flex justify-between items-center">
-            <div><h2 className="text-2xl font-bold text-slate-800">Gestión de Cursos Curriculares</h2><p className="text-sm text-slate-500">Administración de asignaturas académicas y registro de notas.</p></div>
+            <div><h2 className="text-2xl font-bold text-slate-800">Gestión de Cursos Curriculares</h2><p className="text-sm text-slate-500">Administración de asignaturas académicas.</p></div>
             <div className="flex gap-4 items-center">
-                <div className="flex items-center bg-slate-50 rounded-2xl px-4 py-2 border border-slate-200 shadow-inner group"><label className="text-[10px] font-black text-slate-400 uppercase mr-3">Periodo:</label><select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="text-sm font-black text-[#647FBC] bg-transparent border-none focus:ring-0 p-0 cursor-pointer uppercase"><option value={currentYear}>{currentYear}</option><option value={currentYear - 1}>{currentYear - 1}</option><option value={currentYear - 2}>{currentYear - 2}</option></select></div>
-                <button 
-                    onClick={() => { setKioskFoundUser(null); setKioskSearchRut(''); setKioskSearchSurname(''); setShowKioskModal(true); setKioskSuggestions([]); setShowKioskSuggestions(false); }}
-                    className="bg-white border border-[#647FBC] text-[#647FBC] px-4 py-2 rounded-lg font-bold shadow-sm hover:bg-blue-50 transition-colors flex items-center gap-2 h-[42px]"
-                >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                    CONSULTA ACADÉMICA
-                </button>
-                {(isAdmin || isAdvisor) && (<button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), academicPeriod: '1er Semestre', nombre: '', version: 'V1', modality: 'Presencial', hours: 0, moduleCount: 1, evaluationCount: 3, relator: '', startDate: '', endDate: '', competencyCodes: [] }); setSyllabusFile(null); setView('create'); }} className="bg-[#647FBC] text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-800 transition-colors flex items-center gap-2 h-[42px]"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Nuevo Curso</button>)}
+                <div className="flex items-center bg-slate-50 rounded-2xl px-4 py-2 border border-slate-200 shadow-inner group"><label className="text-[10px] font-black text-slate-400 uppercase mr-3">Periodo:</label><select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="text-sm font-black text-[#647FBC] bg-transparent border-none focus:ring-0 p-0 cursor-pointer uppercase"><option value={currentYear}>{currentYear}</option><option value={currentYear - 1}>{currentYear - 1}</option></select></div>
+                <button onClick={() => { setKioskFoundUser(null); setKioskSearchRut(''); setKioskSearchSurname(''); setShowKioskModal(true); setKioskSuggestions([]); setShowKioskSuggestions(false); }} className="bg-white border border-[#647FBC] text-[#647FBC] px-4 py-2 rounded-lg font-bold shadow-sm hover:bg-blue-50 flex items-center gap-2 h-[42px]"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>CONSULTA ACADÉMICA</button>
+                {(isAdmin || isAdvisor) && (<button onClick={() => { setFormData({ internalCode: '', year: new Date().getFullYear(), academicPeriod: '1er Semestre', nombre: '', version: 'V1', modality: 'Presencial', hours: 0, moduleCount: 1, evaluationCount: 3, relator: '', startDate: '', endDate: '', competencyCodes: [], inConstruction: false }); setSyllabusFile(null); setView('create'); }} className="bg-[#647FBC] text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-800 transition-colors flex items-center gap-2 h-[42px]"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4" /></svg>Nuevo Curso</button>)}
             </div>
         </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {sortedAcademicActivities.map(course => { 
             const enrolledCount = enrollments.filter(e => e.activityId === course.id).length;
             const isSecondSemester = course.academicPeriod?.endsWith('-2') || course.academicPeriod?.toLowerCase().includes('2do') || course.academicPeriod?.toLowerCase().includes('segundo');
+            const today = new Date().toISOString().split('T')[0];
+            const isClosed = course.endDate && course.endDate < today;
 
             return (
-              <div key={course.id} className={`rounded-xl shadow-sm border p-6 hover:shadow-md transition-all group relative overflow-hidden ${isSecondSemester ? 'bg-blue-100/40 border-blue-200' : 'bg-white border-slate-200'}`}>
-                <div className="relative z-10">
-                  <div className="flex justify-between items-start mb-2">
-                    <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded border ${isSecondSemester ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>
-                      {course.academicPeriod}
-                    </span>
-                    <span className="text-xs text-slate-400 font-mono">{course.internalCode}</span>
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-800 mb-1 leading-tight h-14 line-clamp-2" title={course.name}>{course.name}</h3>
-                  <div className="flex items-center gap-4 text-xs text-slate-500 mb-4"><span>{enrolledCount} Inscritos</span><span>{course.modality}</span><span>{course.hours}h</span></div>
-                  
-                  {course.competencyCodes && course.competencyCodes.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-4 h-auto min-h-[22px] overflow-hidden">
-                          {/* Fix: Explicitly typing code as any to avoid 'unknown' type errors from Array.from(Set) */}
-                          {Array.from(new Set(course.competencyCodes)).map((code: any) => {
-                              const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code.replace(/-/g, '').toUpperCase() === (code as string).replace(/-/g, '').toUpperCase());
-                              return (
-                                <span 
-                                    key={code} 
-                                    className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${
-                                        paMeta ? `${paMeta.lightColor} ${paMeta.textColor} ${paMeta.borderColor}` :
-                                        (code as string).startsWith('PEI') ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 
-                                        'bg-emerald-50 text-emerald-600 border-emerald-100'
-                                    }`}
-                                >
-                                    {code}
-                                </span>
-                              );
-                          })}
-                      </div>
-                  )}
+              <div key={course.id} className={`rounded-xl shadow-sm border p-6 hover:shadow-md transition-all group relative overflow-hidden flex flex-col ${isSecondSemester ? 'bg-blue-100/40 border-blue-200' : 'bg-white border-slate-200'} ${course.inConstruction ? 'border-dashed border-amber-300' : ''}`}>
+                {course.inConstruction && (
+                    <div className="absolute top-0 right-0 bg-amber-400 text-white text-[8px] font-black px-2 py-0.5 rounded-bl-lg uppercase tracking-tighter z-10">Borrador</div>
+                )}
+                <div className="relative z-10 flex flex-col h-full">
+                    <div className="flex justify-between items-start mb-2">
+                        <div className="flex gap-1 items-center">
+                            <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded border ${isSecondSemester ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>{course.academicPeriod}</span>
+                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 rounded border border-slate-200 uppercase">{course.version || 'V1'}</span>
+                        </div>
+                        <span className="text-xs text-slate-400 font-mono">{course.internalCode}</span>
+                    </div>
+                    
+                    <h3 className={`text-lg font-bold mb-1 leading-tight h-14 line-clamp-2 ${isClosed ? 'text-slate-500' : 'text-slate-800'}`} title={course.name}>{course.name}</h3>
+                    
+                    <div className="space-y-1.5 mb-4">
+                        <div className="flex items-center gap-4 text-xs text-slate-500">
+                            <span className="flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>{enrolledCount}</span>
+                            <span className="flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>{course.hours}h</span>
+                            <span className="flex items-center gap-1 uppercase font-bold text-[10px]">{course.modality}</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase truncate flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                            {course.relator || 'No Asignado'}
+                        </p>
+                        <p className="text-[9px] text-slate-400 italic">
+                            {formatDateCL(course.startDate)} al {formatDateCL(course.endDate)}
+                        </p>
+                    </div>
 
-                  <div className="flex gap-2">
-                    <button onClick={() => { setSelectedCourseId(course.id); setView('details'); setActiveDetailTab('enrollment'); }} className="flex-1 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold text-xs hover:bg-[#647FBC] hover:text-white transition-all shadow-sm">Gestionar Curso</button>
-                    {(isAdmin || isAdvisor) && (
-                        <button onClick={() => handleCloneCourse(course)} className="px-3 py-2 bg-white border border-slate-300 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-all shadow-sm" title="Clonar Curso">
+                    {/* TAGS TAXONÓMICOS */}
+                    {course.competencyCodes && course.competencyCodes.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-4 h-auto min-h-[22px]">
+                            {course.competencyCodes.map(code => {
+                                const paMeta = ACADEMIC_PROFILE_COMPETENCIES.find(c => c.code === code);
+                                let colorClasses = 'bg-slate-50 text-slate-600 border-slate-200';
+                                if (code.startsWith('PEI')) colorClasses = 'bg-indigo-50 text-indigo-700 border-indigo-100';
+                                else if (code.startsWith('PMI')) colorClasses = 'bg-emerald-50 text-emerald-600 border-emerald-100';
+                                else if (paMeta) colorClasses = `${paMeta.lightColor} ${paMeta.textColor} ${paMeta.borderColor}`;
+
+                                return (
+                                    <span key={code} className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${colorClasses}`}>
+                                        {code}
+                                    </span>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    <div className="flex gap-2 mt-auto">
+                        <button onClick={() => { setSelectedCourseId(course.id); setView('details'); setActiveDetailTab('enrollment'); }} className="flex-1 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold text-xs hover:bg-[#647FBC] hover:text-white transition-all shadow-sm">Gestionar</button>
+                        <button onClick={() => handleCloneCourse(course)} className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-500 rounded-lg font-bold text-xs hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200 transition-all shadow-sm" title="Clonar Curso">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 012 2h8a2 2 0 012-2v-2" /></svg>
                         </button>
-                    )}
-                  </div>
+                    </div>
                 </div>
               </div>
             );
           })} 
         </div>
-
-        {/* MODAL CONSULTA ACADÉMICA (KIOSKO) */}
         {showKioskModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
                 <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col border border-slate-200">
-                    <div className="p-6 bg-[#647FBC] text-white flex justify-between items-center">
-                        <div>
-                            <h3 className="text-xl font-bold uppercase tracking-tight">Módulo de Consulta Académica</h3>
-                            <p className="text-blue-100 text-xs mt-1">Busque por RUT o Apellido para visualizar el expediente completo del docente.</p>
-                        </div>
-                        <button onClick={() => setShowKioskModal(false)} className="text-white hover:text-red-200 transition-colors text-3xl font-light">&times;</button>
-                    </div>
-                    
+                    <div className="p-6 bg-[#647FBC] text-white flex justify-between items-center"><div><h3 className="text-xl font-bold uppercase tracking-tight">Consulta Académica</h3><p className="text-blue-100 text-xs mt-1">Busque por RUT o Apellido Paterno.</p></div><button onClick={() => setShowKioskModal(false)} className="text-white hover:text-red-200 text-3xl font-light">&times;</button></div>
                     <div className="p-8 bg-slate-50 border-b border-slate-200">
                         <form onSubmit={handleKioskSearch} className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl mx-auto relative">
-                            {/* BÚSQUEDA POR RUT */}
-                            <div className="relative">
-                                <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1 tracking-widest">Búsqueda por RUT</label>
-                                <div className="relative">
-                                    <input 
-                                        type="text" 
-                                        placeholder="ej: 12.345.678-9" 
-                                        value={kioskSearchRut} 
-                                        onChange={(e) => handleKioskInputChange('rut', e.target.value)}
-                                        className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 font-normal shadow-inner pr-10"
-                                    />
-                                    {kioskActiveSearchField === 'rut' && (
-                                        <div className="absolute right-3 top-3.5 text-blue-500 animate-pulse">
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* BÚSQUEDA POR APELLIDO */}
-                            <div className="relative">
-                                <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1 tracking-widest">Búsqueda por Apellido Paterno</label>
-                                <div className="relative">
-                                    <input 
-                                        type="text" 
-                                        placeholder="ej: Silva, Pérez..." 
-                                        value={kioskSearchSurname} 
-                                        onChange={(e) => handleKioskInputChange('surname', e.target.value)}
-                                        className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 font-normal shadow-inner pr-10"
-                                    />
-                                    {kioskActiveSearchField === 'surname' && (
-                                        <div className="absolute right-3 top-3.5 text-blue-500 animate-pulse">
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* DROPDOWN DE SUGERENCIAS */}
-                            {showKioskSuggestions && kioskSuggestions.length > 0 && (
-                                <div 
-                                    ref={kioskSuggestionsRef} 
-                                    className="absolute top-full left-0 right-0 z-50 bg-white border border-slate-200 rounded-2xl shadow-2xl mt-1 overflow-hidden animate-fadeIn"
-                                >
-                                    <div className="p-2 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Sugerencias encontradas</span>
-                                        <button onClick={() => setShowKioskSuggestions(false)} className="text-slate-400 hover:text-slate-600 text-xs">Ocultar</button>
-                                    </div>
-                                    <div className="max-h-60 overflow-y-auto custom-scrollbar">
-                                        {kioskSuggestions.map((u) => (
-                                            <div 
-                                                key={u.rut} 
-                                                onMouseDown={() => handleKioskSelectUser(u)}
-                                                className="px-6 py-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center justify-between group transition-colors"
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-full bg-indigo-50 text-[#647FBC] flex items-center justify-center font-bold text-xs uppercase shadow-inner group-hover:bg-indigo-600 group-hover:text-white transition-all">{u.paternalSurname.charAt(0)}</div>
-                                                    <div>
-                                                        <p className="text-sm font-bold text-slate-800">{u.paternalSurname}, {u.names}</p>
-                                                        <p className="text-[10px] text-slate-400 font-mono tracking-tighter">{u.rut} • {u.faculty || 'Sin Facultad'}</p>
-                                                    </div>
-                                                </div>
-                                                <svg className="w-4 h-4 text-slate-300 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="md:col-span-2 text-center mt-2">
-                                <button type="submit" className="hidden">Consultar</button>
-                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
-                                    * Seleccione una sugerencia para cargar automáticamente el expediente.
-                                </p>
-                            </div>
+                            <div className="relative"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Por RUT</label><input type="text" placeholder="ej: 12.345.678-9" value={kioskSearchRut} onChange={(e) => handleKioskInputChange('rut', e.target.value)} className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 shadow-inner"/></div>
+                            <div className="relative"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Por Apellido Paterno</label><input type="text" placeholder="ej: Silva..." value={kioskSearchSurname} onChange={(e) => handleKioskInputChange('surname', e.target.value)} className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 shadow-inner"/></div>
+                            {showKioskSuggestions && kioskSuggestions.length > 0 && (<div ref={kioskSuggestionsRef} className="absolute top-full left-0 right-0 z-50 bg-white border border-slate-200 rounded-2xl shadow-2xl mt-1 overflow-hidden animate-fadeIn"><div className="p-2 bg-slate-50 border-b border-slate-100 text-[9px] font-black text-slate-400 uppercase">Sugerencias</div><div className="max-h-60 overflow-y-auto">{kioskSuggestions.map((u) => (<div key={u.rut} onMouseDown={() => handleKioskSelectUser(u)} className="px-6 py-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center justify-between group transition-colors"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-indigo-50 text-[#647FBC] flex items-center justify-center font-bold text-xs uppercase">{u.paternalSurname.charAt(0)}</div><div><p className="text-sm font-bold text-slate-800">{u.paternalSurname}, {u.names}</p><p className="text-[10px] text-slate-400 font-mono tracking-tighter">{u.rut}</p></div></div></div>))}</div></div>)}
+                            <div className="md:col-span-2 text-center mt-2"><button type="submit" className="hidden">Consultar</button></div>
                         </form>
                     </div>
-
                     <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
                         {kioskFoundUser ? (
-                            <div className="space-y-12 animate-fadeIn">
-                                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-6">
-                                    <div className="w-16 h-16 bg-blue-50 text-[#647FBC] rounded-full flex items-center justify-center font-black text-2xl border-2 border-blue-100 shadow-inner">{kioskFoundUser.names.charAt(0)}</div>
-                                    <div>
-                                        <h4 className="text-xl font-black text-slate-800">{kioskFoundUser.names} {kioskFoundUser.paternalSurname} {kioskFoundUser.maternalSurname}</h4>
-                                        <p className="text-xs text-slate-400 font-mono font-bold tracking-widest mt-1 uppercase">{kioskFoundUser.rut} • {kioskFoundUser.faculty || 'Sin Facultad'} • {kioskFoundUser.career || 'Sin Carrera'}</p>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-10">
-                                    {groupedKioskEnrollments.map(group => (
-                                        <div key={group.semester} className="space-y-4">
-                                            <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] border-b pb-2 flex justify-between items-center">
-                                                <span>Periodo Académico: {group.semester}</span>
-                                                <span className="bg-indigo-50 px-2 py-0.5 rounded text-indigo-600 font-black">{group.enrollments.length} Registros</span>
-                                            </h4>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                {group.enrollments.map(enr => {
-                                                    const act = activities.find(a => a.id === enr.activityId);
-                                                    if (!act) return null;
-                                                    return (
-                                                        <div key={enr.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:border-blue-300 transition-all flex flex-col justify-between group">
-                                                            <div className="flex justify-between items-start mb-3">
-                                                                <span className={`text-[9px] font-black px-2 py-1 rounded uppercase tracking-tighter ${enr.state === ActivityState.APROBADO ? 'bg-green-50 text-green-700' : 'bg-slate-50 text-slate-400'}`}>
-                                                                    {enr.state}
-                                                                </span>
-                                                                <span className="text-[9px] text-slate-300 font-mono font-bold">{act.internalCode}</span>
-                                                            </div>
-                                                            <h5 className="font-bold text-slate-700 text-sm mb-4 leading-tight min-h-[40px] line-clamp-2">{act.name}</h5>
-                                                            <div className="flex items-center justify-between border-t border-slate-50 pt-3">
-                                                                <div className="flex items-center gap-4">
-                                                                    <div className="text-center">
-                                                                        <span className="block text-xs font-black text-slate-700 leading-none">{enr.finalGrade || '-'}</span>
-                                                                        <span className="text-[8px] font-black text-slate-400 uppercase">Nota Final</span>
-                                                                    </div>
-                                                                    <div className="text-center">
-                                                                        <span className="block text-xs font-black text-slate-700 leading-none">{enr.attendancePercentage || 0}%</span>
-                                                                        <span className="text-[8px] font-black text-slate-400 uppercase">Asistencia</span>
-                                                                    </div>
-                                                                </div>
-                                                                <span className="text-[10px] font-black text-slate-400 uppercase">{act.year}-{act.academicPeriod}</span>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {groupedKioskEnrollments.length === 0 && (
-                                        <div className="py-12 text-center text-slate-400 italic bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
-                                            No se registran actividades para este docente.
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="flex flex-col items-center justify-center py-20 text-slate-300">
-                                <svg className="w-20 h-20 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                                <p className="font-bold uppercase tracking-widest text-sm text-center">Ingrese un RUT o Apellido para comenzar la búsqueda de expediente</p>
-                            </div>
-                        )}
+                            <div className="space-y-12 animate-fadeIn"><div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-6"><div className="w-16 h-16 bg-blue-50 text-[#647FBC] rounded-full flex items-center justify-center font-black text-2xl border-2 border-blue-100 shadow-inner">{kioskFoundUser.names.charAt(0)}</div><div><h4 className="text-xl font-black text-slate-800">{kioskFoundUser.names} {kioskFoundUser.paternalSurname}</h4><p className="text-xs text-slate-400 font-mono font-bold tracking-widest mt-1 uppercase">{kioskFoundUser.rut}</p></div></div><div className="space-y-10">{groupedKioskEnrollments.map(group => (<div key={group.semester} className="space-y-4"><h4 className="text-[10px] font-black text-indigo-400 uppercase border-b pb-2">Periodo: {group.semester}</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-4">{group.enrollments.map(enr => { const act = activities.find(a => a.id === enr.activityId); if (!act) return null; return (<div key={enr.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:border-blue-300 transition-all flex flex-col justify-between group"><div className="flex justify-between items-start mb-3"><span className={`text-[9px] font-black px-2 py-1 rounded uppercase ${enr.state === ActivityState.APROBADO ? 'bg-green-50 text-green-700' : 'bg-slate-50 text-slate-400'}`}>{enr.state}</span><span className="text-[9px] text-slate-300 font-mono font-bold">{act.internalCode}</span></div><h5 className="font-bold text-slate-700 text-sm mb-4 leading-tight min-h-[40px] line-clamp-2">{act.name}</h5><div className="flex items-center justify-between border-t border-slate-50 pt-3"><div className="flex items-center gap-4"><div className="text-center"><span className="block text-xs font-black text-slate-700 leading-none">{enr.finalGrade || '-'}</span><span className="text-[8px] font-black text-slate-400 uppercase">Nota Final</span></div><div className="text-center"><span className="block text-xs font-black text-slate-700 leading-none">{enr.attendancePercentage || 0}%</span><span className="text-[8px] font-black text-slate-400 uppercase">Asistencia</span></div></div><span className="text-[10px] font-black text-slate-400 uppercase">{act.year}-{act.academicPeriod}</span></div></div>); })}</div></div>))}</div></div>
+                        ) : (<div className="flex flex-col items-center justify-center py-20 text-slate-300"><p className="font-bold uppercase tracking-widest text-sm text-center">Ingrese un RUT o Apellido Paterno para consultar</p></div>)}
                     </div>
                 </div>
             </div>

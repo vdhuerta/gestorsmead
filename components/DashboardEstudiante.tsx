@@ -86,7 +86,7 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
             <div className="grid grid-cols-7 gap-1 text-center mb-2">
                 {dayNames.map((d, i) => (<span key={i} className="text-[10px] font-bold text-slate-400 uppercase">{d}</span>))}
             </div>
-            <div className="grid grid-cols-7 gap-1 text-center relative">
+            <div className="grid grid-cols-7 gap-1 text-center relative mb-6">
                 {days.map((day, idx) => {
                     if (day === null) return <div key={idx} className="h-9"></div>;
                     const dayActs = activitiesByDay[day] || [];
@@ -109,6 +109,21 @@ const MiniCalendar: React.FC<{ activities: Activity[] }> = ({ activities }) => {
                         </div>
                     );
                 })}
+            </div>
+            {/* LEYENDA DE COLORES */}
+            <div className="pt-4 border-t border-slate-100 grid grid-cols-1 gap-2">
+                <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-indigo-500"></div>
+                    <span className="text-[8px] text-slate-400 uppercase tracking-widest">Cursos Académicos</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-purple-500"></div>
+                    <span className="text-[8px] text-slate-400 uppercase tracking-widest">Postítulos</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-teal-500"></div>
+                    <span className="text-[8px] text-slate-400 uppercase tracking-widest">Extensión / Talleres</span>
+                </div>
             </div>
         </div>
     );
@@ -137,8 +152,8 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
   });
   const [suggestions, setSuggestions] = useState<User[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const suggestionsRef = useRef<HTMLDivElement>(null);
   const [enrollStatus, setEnrollStatus] = useState<{type: 'success' | 'error', text: string} | null>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   const todayStr = new Date().toISOString().split('T')[0];
 

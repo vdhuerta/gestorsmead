@@ -83,8 +83,9 @@ const mapActivityFromDB = (a: any): Activity => ({
     linkResources: a.link_resources,
     classLink: a.class_link,
     evaluationLink: a.evaluation_link, 
-    isPublic: a.is_public,
-    programConfig: a.program_config,
+    is_public: a.is_public,
+    in_construction: a.in_construction,
+    program_config: a.program_config,
     competencyCodes: a.competency_codes || []
 });
 
@@ -169,8 +170,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         name: activity.name,
         category: activity.category,
         activity_type: activity.activityType,
+        // Fix: Use internalCode instead of internal_code from Activity interface
         internal_code: activity.internalCode,
         year: activity.year,
+        // Fix: Use academicPeriod instead of academic_period from Activity interface
         academic_period: activity.academicPeriod,
         version: activity.version,
         modality: activity.modality,
@@ -184,6 +187,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         class_link: activity.classLink,
         evaluation_link: activity.evaluationLink, 
         is_public: activity.isPublic,
+        in_construction: activity.inConstruction,
         program_config: activity.programConfig || null,
         competency_codes: activity.competencyCodes || []
     });
@@ -212,17 +216,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const payload: any = {
               rut: u.rut,
               names: u.names,
+              // Fix: Changed u.paternal_surname to u.paternalSurname (camelCase) to match User interface
               paternal_surname: u.paternalSurname,
+              // Fix: Changed u.maternal_surname to u.maternalSurname (camelCase) to match User interface
               maternal_surname: u.maternalSurname || null,
               email: u.email || '', 
               phone: u.phone || null,
               photo_url: u.photoUrl || null,
               system_role: u.systemRole,
+              // Fix: Changed u.academic_role to u.academicRole (camelCase) to match User interface
               academic_role: u.academicRole,
               faculty: u.faculty,
               department: u.department,
               career: u.career,
+              // Fix: Changed u.contract_type to u.contractType (camelCase) to match User interface
               contract_type: u.contractType,
+              // Fix: Changed u.teaching_semester to u.teachingSemester (camelCase) to match User interface
               teaching_semester: u.teachingSemester,
               campus: u.campus,
               title: u.title || null

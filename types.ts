@@ -97,6 +97,7 @@ export interface Activity {
   evaluationLink?: string; 
   linkCertificate?: string;
   isPublic?: boolean; // NUEVO: Controla visibilidad en calendario público
+  inConstruction?: boolean; // NUEVO: Controla estado de borrador/construcción
   
   // Gestión del Curso
   moduleCount?: number; // Cantidad de módulos
