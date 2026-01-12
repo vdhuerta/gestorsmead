@@ -122,6 +122,14 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
   const [kioskActiveSearchField, setKioskActiveSearchField] = useState<'rut' | 'surname' | null>(null);
   const kioskSuggestionsRef = useRef<HTMLDivElement>(null);
 
+  const dimensionColors: Record<string, string> = {
+    'Pedagógica': 'text-rose-600 border-rose-100',
+    'Investigación y/o Creación': 'text-emerald-600 border-emerald-100',
+    'Vinculación': 'text-purple-600 border-purple-100',
+    'Interpersonal y Ética': 'text-blue-600 border-blue-100',
+    'Formación Continua': 'text-pink-600 border-pink-100'
+  };
+
   // --- LÓGICA: AGRUPAMIENTO POR SEMESTRE PARA CONSULTA ACADÉMICA ---
   const groupedKioskEnrollments = useMemo(() => {
     if (!kioskFoundUser) return [];
@@ -356,7 +364,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           moduleCount: Number(formData.moduleCount),
           evaluationCount: Number(formData.evaluationCount),
           isPublic: true,
-          inConstruction: formData.inConstruction // Aseguramos que se pase el valor del estado
+          inConstruction: formData.inConstruction 
       };
       
       try { 
@@ -389,7 +397,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
           startDate: course.startDate || '', 
           endDate: course.endDate || '', 
           competencyCodes: course.competencyCodes || [],
-          inConstruction: !!course.inConstruction // Carga el valor real desde el objeto
+          inConstruction: !!course.inConstruction 
       });
       setSyllabusFile(null);
       setView('edit');
@@ -410,7 +418,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
         startDate: '', 
         endDate: '',
         competencyCodes: course.competencyCodes || [],
-        inConstruction: !!course.inConstruction // Copia el estado también
+        inConstruction: !!course.inConstruction 
     });
     setSelectedCourseId(null); 
     setSyllabusFile(null);
@@ -653,7 +661,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
   const handleKioskSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    // Priorizamos la búsqueda según el campo activo o el RUT si está lleno
     const searchVal = kioskActiveSearchField === 'rut' ? kioskSearchRut : kioskSearchSurname;
     if (!searchVal) return;
 
@@ -668,7 +675,6 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
             setKioskFoundUser(null);
         }
     } else {
-        // En el caso de apellido, como el submit es por form, tomamos el primero de las sugerencias o notificamos
         if (kioskSuggestions.length === 1) {
             setKioskFoundUser(kioskSuggestions[0]);
             setShowKioskSuggestions(false);
@@ -863,13 +869,22 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
 
                         <div className="space-y-6 pt-6 border-t border-slate-100">
                              <h4 className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2"><svg className="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>Perfil del Académico UPLA</h4>
-                             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
                                 {['Pedagógica', 'Investigación y/o Creación', 'Vinculación', 'Interpersonal y Ética', 'Formación Continua'].map(dim => (
-                                    <div key={dim} className="space-y-3">
-                                        <h5 className="text-[9px] font-black text-rose-600 uppercase tracking-widest border-b border-rose-100 pb-1">{dim}</h5>
-                                        <div className="flex flex-wrap gap-1.5">
+                                    <div key={dim} className="space-y-2">
+                                        <h5 className={`text-[9px] font-black uppercase border-b pb-1 ${dimensionColors[dim] || 'text-slate-400 border-slate-100'}`}>
+                                            {dim}
+                                        </h5>
+                                        <div className="flex flex-wrap gap-1">
                                             {ACADEMIC_PROFILE_COMPETENCIES.filter(c => c.dimension === dim).map(c => (
-                                                <button key={c.code} type="button" onClick={() => handleToggleCompetence(c.code)} title={c.name} className={`px-2 py-1 rounded text-[8px] font-normal uppercase transition-all border ${formData.competencyCodes.includes(c.code) ? 'bg-rose-100 border-rose-300 text-rose-950 shadow-sm scale-105' : 'bg-white border-slate-100 text-slate-600 hover:border-rose-200'}`}>{c.code}</button>
+                                                <button 
+                                                    key={c.code} 
+                                                    type="button" 
+                                                    onClick={() => handleToggleCompetence(c.code)} 
+                                                    title={c.name} 
+                                                    className={`px-2 py-1 rounded text-[8px] font-normal uppercase border transition-all ${formData.competencyCodes.includes(c.code) ? `${c.lightColor} ${c.borderColor} text-black shadow-sm scale-110 ring-1 ring-black` : 'bg-white border-slate-200 text-black hover:border-slate-400'}`}>
+                                                    {c.code}
+                                                </button>
                                             ))}
                                         </div>
                                     </div>
@@ -879,7 +894,7 @@ export const CourseManager: React.FC<CourseManagerProps> = ({ currentUser }) => 
                     </div>
 
                     <div className="flex justify-between pt-10 border-t border-slate-100">
-                        {view === 'edit' && <button type="button" onClick={() => { if(confirm("¿Eliminar?")) deleteActivity(selectedCourseId!).then(() => setView('list')); }} className="text-rose-600 font-black uppercase text-[10px] tracking-widest hover:underline">Eliminar Curso Académico</button>}
+                        {view === 'edit' && <button type="button" onClick={() => { if(confirm("¿Eliminar?")) deleteActivity(selectedCourseId!).then(() => setView('list')); }} className="text-rose-600 font-black uppercase text-[10px] tracking-widest hover:underline px-4 py-2 transition-all hover:bg-rose-50 rounded-lg">Eliminar Curso Académico</button>}
                         <div className="flex gap-3 ml-auto">
                             <button type="button" onClick={() => setView('list')} className="px-8 py-3 text-slate-500 font-bold">Cancelar</button>
                             <button type="submit" disabled={isSaving} className={`px-10 py-3 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all transform active:scale-95 ${isSaving ? 'bg-slate-400 text-white cursor-not-allowed' : 'bg-[#647FBC] text-white hover:bg-blue-800'}`}>
