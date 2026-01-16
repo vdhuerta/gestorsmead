@@ -1,5 +1,6 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { UserRole, User, ActivityState } from '../types';
+import { UserRole, User, ActivityState, Enrollment } from '../types';
 import { useData } from '../context/DataContext';
 // @ts-ignore
 import { utils, writeFile } from 'xlsx';
@@ -132,7 +133,7 @@ const TemplateDownloadDropdown: React.FC = () => {
 };
 
 // --- COMPONENTE INTERNO DE NOTIFICACIONES (ASESOR) ---
-const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unreadMessagesRuts }) => {
+const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[], user: User }> = ({ unreadMessagesRuts, user }) => {
     const { activities, enrollments, users, config } = useData();
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -148,10 +149,12 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
     }, []);
 
     const notifications = useMemo(() => {
-        const list: { type: 'course-closing'|'course-active'|'chat'|'kpi-risk'|'kpi-critical'|'advisory', title: string, subtitle: string, urgency: 'high'|'medium'|'info', date?: string }[] = [];
-        const today = new Date();
-        const currentYear = today.getFullYear();
-        const todayStr = today.toISOString().split('T')[0];
+        const list: { type: 'course-closing'|'course-active'|'chat'|'kpi-risk'|'kpi-critical'|'advisory-task'|'enrollment-task'|'grade-task', title: string, subtitle: string, urgency: 'high'|'medium'|'info', date?: string }[] = [];
+        
+        // HORA DE CHILE (America/Santiago) para comparación de tareas realizadas hoy
+        const chileDate = new Date(new Date().toLocaleString("en-US", {timeZone: "America/Santiago"}));
+        const todayStrChile = chileDate.toISOString().split('T')[0];
+        const currentYear = chileDate.getFullYear();
 
         // 1. CHAT - Mensajes sin leer
         unreadMessagesRuts.forEach(rut => {
@@ -164,11 +167,52 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
             });
         });
 
-        // 2. CURSOS - Cierres Proximos y Activos (Filtro por fecha, no necesariamente por año fijo para cubrir transiciones)
+        // 2. TAREAS Y ACTIVIDADES DEL ASESOR REALIZADAS HOY (Hasta las 23:59 Chile)
+        const myFullName = `${user.names} ${user.paternalSurname}`;
+        
+        enrollments.forEach(enr => {
+            // A. ASESORÍAS (Basadas en SessionLog con fecha de hoy)
+            if (enr.sessionLogs) {
+                enr.sessionLogs.forEach(log => {
+                    if (log.date === todayStrChile && (log.advisorName === myFullName || enr.responsible === myFullName)) {
+                        list.push({
+                            type: 'advisory-task',
+                            title: '✅ Asesoría Realizada',
+                            subtitle: `Has registrado una sesión con el RUT ${enr.rut} hoy.`,
+                            urgency: 'info'
+                        });
+                    }
+                });
+            }
+
+            // B. MATRÍCULAS Y NOTAS (Simuladas como "hoy" si el asesor es responsable en el periodo actual)
+            if (enr.responsible === myFullName) {
+                const act = activities.find(a => a.id === enr.activityId);
+                if (act && act.year === currentYear) {
+                    if (enr.state === ActivityState.INSCRITO && (!enr.grades || enr.grades.length === 0)) {
+                        list.push({
+                            type: 'enrollment-task',
+                            title: '👤 Matrícula Registrada',
+                            subtitle: `Inscripción procesada para ${enr.rut} en "${act.name}".`,
+                            urgency: 'info'
+                        });
+                    } else if (enr.finalGrade && enr.finalGrade > 0) {
+                        list.push({
+                            type: 'grade-task',
+                            title: '📝 Nota Ingresada',
+                            subtitle: `Calificación final de ${enr.finalGrade} asignada a ${enr.rut}.`,
+                            urgency: 'info'
+                        });
+                    }
+                }
+            }
+        });
+
+        // 3. CURSOS - Cierres Próximos y Activos
         activities.forEach(act => {
             if (act.endDate) {
                 const end = new Date(act.endDate + 'T12:00:00');
-                const diffTime = end.getTime() - today.getTime();
+                const diffTime = end.getTime() - chileDate.getTime();
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                 if (diffDays >= 0 && diffDays <= 5) {
@@ -181,8 +225,7 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
                     });
                 }
 
-                // Cursos abiertos HOY
-                if (act.startDate && act.startDate <= todayStr && act.endDate >= todayStr) {
+                if (act.startDate && act.startDate <= todayStrChile && (act.endDate && act.endDate >= todayStrChile)) {
                     list.push({
                         type: 'course-active',
                         title: '📚 Curso en Ejecución',
@@ -194,49 +237,36 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
             }
         });
 
-        // 3. KPIs - Alumnos en Riesgo & Cursos Críticos (FILTRADOS POR AÑO ACTUAL)
+        // 4. KPIs - Alumnos en Riesgo & Cursos Críticos
         const minGrade = config.minPassingGrade || 4.0;
         const minAtt = config.minAttendancePercentage || 75;
-
-        // IDs de actividades del año actual para filtrar inscripciones
         const activitiesThisYear = activities.filter(a => a.year === currentYear);
         const activityIdsThisYear = new Set(activitiesThisYear.map(a => a.id));
 
-        // Cursos Críticos (Baja matrícula en el año actual)
         activitiesThisYear.filter(a => a.category === 'ACADEMIC' || a.category === 'POSTGRADUATE').forEach(act => {
             const count = enrollments.filter(e => e.activityId === act.id).length;
-            // Solo alertar si el curso ya empezó o está a punto de empezar y tiene menos de 5 alumnos
             if (count > 0 && count < 5) {
                 list.push({
                     type: 'kpi-critical',
                     title: '📉 Curso con Baja Matrícula',
-                    subtitle: `"${act.name}" solo tiene ${count} inscritos. Requiere gestión.`,
+                    subtitle: `"${act.name}" solo tiene ${count} inscritos.`,
                     urgency: 'medium'
                 });
             }
         });
 
-        // Alumnos en Riesgo (Solo del año actual y si tienen datos ingresados)
-        const enrollmentsThisYear = enrollments.filter(e => activityIdsThisYear.has(e.activityId));
-        
-        const atRiskCount = enrollmentsThisYear.filter(e => {
-            // Un alumno está en riesgo si ha empezado (tiene notas o asistencia) pero no llega al mínimo
+        const atRiskCount = enrollments.filter(e => activityIdsThisYear.has(e.activityId)).filter(e => {
             const hasStartedGrades = e.finalGrade !== undefined && e.finalGrade > 0;
             const hasStartedAttendance = e.attendancePercentage !== undefined && e.attendancePercentage > 0;
-            
             if (!hasStartedGrades && !hasStartedAttendance) return false;
-
-            const isFailingGrade = hasStartedGrades && e.finalGrade! < minGrade;
-            const isFailingAttendance = hasStartedAttendance && e.attendancePercentage! < minAtt;
-            
-            return isFailingGrade || isFailingAttendance;
+            return (hasStartedGrades && e.finalGrade! < minGrade) || (hasStartedAttendance && e.attendancePercentage! < minAtt);
         }).length;
 
         if (atRiskCount > 0) {
             list.push({
                 type: 'kpi-risk',
                 title: '🚨 Alerta de Rendimiento',
-                subtitle: `Hay ${atRiskCount} alumnos en riesgo académico en el periodo ${currentYear}.`,
+                subtitle: `Hay ${atRiskCount} alumnos en riesgo académico este periodo.`,
                 urgency: 'high'
             });
         }
@@ -245,15 +275,17 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
             const priority = { 'high': 0, 'medium': 1, 'info': 2 };
             return priority[a.urgency] - priority[b.urgency];
         });
-    }, [activities, enrollments, unreadMessagesRuts, config, users]);
+    }, [activities, enrollments, unreadMessagesRuts, config, users, user]);
 
     const getIcon = (type: string) => {
         switch(type) {
             case 'chat': return <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg></div>;
+            case 'advisory-task': return <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg></div>;
+            case 'enrollment-task': return <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg></div>;
+            case 'grade-task': return <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg></div>;
             case 'course-closing': return <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>;
             case 'course-active': return <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg></div>;
             case 'kpi-risk': return <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-600"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg></div>;
-            // Fix: Removed duplicate stroke="currentColor" attribute
             case 'kpi-critical': return <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg></div>;
             default: return <div className="w-8 h-8 rounded-full bg-slate-100"></div>;
         }
@@ -280,8 +312,8 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
                 <div className="absolute top-12 right-0 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden animate-fadeInUp">
                     <div className="bg-[#647FBC] px-4 py-4 flex justify-between items-center text-white">
                         <div>
-                            <h3 className="font-bold text-sm">Centro de Notificaciones</h3>
-                            <p className="text-[10px] opacity-80 uppercase font-bold tracking-widest">Resumen de Gestión Hoy</p>
+                            <h3 className="font-bold text-sm">Mensajería y Alertas</h3>
+                            <p className="text-[10px] opacity-80 uppercase font-bold tracking-widest">Resumen de Actividades Hoy</p>
                         </div>
                         <span className="bg-white/20 px-2 py-1 rounded text-[10px] font-bold">{notifications.length} Alertas</span>
                     </div>
@@ -290,7 +322,7 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[] }> = ({ unre
                         {notifications.length === 0 ? (
                             <div className="p-10 text-center flex flex-col items-center gap-2">
                                 <svg className="w-12 h-12 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>
-                                <p className="text-xs text-slate-400 font-medium">Todo al día, Asesor.</p>
+                                <p className="text-xs text-slate-400 font-medium">No hay alertas para mostrar hoy.</p>
                             </div>
                         ) : (
                             <div className="divide-y divide-slate-100">
@@ -392,7 +424,7 @@ export const RoleNavbar: React.FC<RoleNavbarProps> = ({ user, activeTab, onTabCh
             )}
 
             {user.systemRole === UserRole.ASESOR && (
-                <NotificationDropdown unreadMessagesRuts={unreadMessagesRuts} />
+                <NotificationDropdown unreadMessagesRuts={unreadMessagesRuts} user={user} />
             )}
 
             <div className="text-right hidden sm:block">
