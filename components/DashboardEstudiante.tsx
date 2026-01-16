@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { User, Activity, ActivityState, Enrollment, UserRole } from '../types';
 import { useData, normalizeRut } from '../context/DataContext';
@@ -213,6 +214,7 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
   };
 
   const handleOpenEnrollment = (act: Activity) => {
+    if (act.inConstruction) return; // Impedir apertura si está en construcción
     setActivityToEnroll(act);
     setEnrollStatus(null);
     if (user.rut !== '9.876.543-2') {
@@ -479,17 +481,28 @@ export const DashboardEstudiante: React.FC<{ user: User }> = ({ user }) => {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {openActivities.map(act => (
-                        <div key={act.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8 hover:shadow-2xl transition-all flex flex-col h-full border-t-8 border-t-emerald-500 group relative overflow-hidden">
+                        <div key={act.id} className={`bg-white rounded-3xl border border-slate-200 shadow-sm p-8 hover:shadow-2xl transition-all flex flex-col h-full group relative overflow-hidden border-t-8 ${act.inConstruction ? 'border-t-amber-400 bg-slate-50/50' : 'border-t-emerald-500'}`}>
+                            {act.inConstruction && (
+                                <div className="absolute top-0 right-0 bg-amber-400 text-white text-[8px] font-black px-3 py-1 rounded-bl-lg uppercase tracking-tighter z-10 animate-pulse">
+                                    En Construcción
+                                </div>
+                            )}
                             <div className="flex justify-between items-start mb-6">
                                 <span className={`text-[10px] font-black px-3 py-1 rounded-full border uppercase ${act.category === 'POSTGRADUATE' ? 'bg-purple-50 text-purple-700 border-purple-100' : act.category === 'GENERAL' ? 'bg-teal-50 text-teal-700 border-teal-100' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>{act.category === 'POSTGRADUATE' ? 'POSTÍTULO' : act.category === 'GENERAL' ? 'EXTENSIÓN' : 'CURSO'}</span>
                                 <span className="text-[10px] text-slate-300 font-mono font-bold">{act.internalCode}</span>
                             </div>
-                            <h3 className="text-xl font-bold text-slate-800 leading-tight mb-6 flex-1 group-hover:text-emerald-700 transition-colors">{act.name}</h3>
+                            <h3 className={`text-xl font-bold leading-tight mb-6 flex-1 transition-colors ${act.inConstruction ? 'text-slate-400' : 'text-slate-800 group-hover:text-emerald-700'}`}>{act.name}</h3>
                             <div className="space-y-3 text-xs text-slate-500 mb-8 bg-slate-50 p-4 rounded-2xl">
-                                <p className="flex items-center gap-3"><svg className="w-4 h-4 text-[#647FBC]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>Docente: <span className="font-bold text-slate-700">{act.relator || 'No asignado'}</span></p>
-                                <p className="flex items-center gap-3"><svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> Inicio: <span className="font-bold text-slate-700">{formatDateCL(act.startDate)}</span></p>
+                                <p className="flex items-center gap-3"><svg className="w-4 h-4 text-[#647FBC]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>Docente: <span className={`font-bold ${act.inConstruction ? 'text-slate-400' : 'text-slate-700'}`}>{act.relator || 'No asignado'}</span></p>
+                                <p className="flex items-center gap-3"><svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> Inicio: <span className={`font-bold ${act.inConstruction ? 'text-slate-400' : 'text-slate-700'}`}>{formatDateCL(act.startDate)}</span></p>
                             </div>
-                            <button onClick={() => handleOpenEnrollment(act)} className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3">Matricúlate Ahora</button>
+                            <button 
+                                onClick={() => handleOpenEnrollment(act)} 
+                                disabled={act.inConstruction}
+                                className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 ${act.inConstruction ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+                            >
+                                {act.inConstruction ? 'Próximamente' : 'Matricúlate Ahora'}
+                            </button>
                         </div>
                     ))}
                 </div>

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Enrollment, User, UserRole, Activity, SessionLog, ActivityState } from '../types';
@@ -5,6 +6,8 @@ import { ACADEMIC_ROLES, FACULTY_LIST, DEPARTMENT_LIST, CAREER_LIST, CONTRACT_TY
 import { SmartSelect } from './SmartSelect';
 import { supabase } from '../services/supabaseClient';
 import { useReloadDirective } from '../hooks/useReloadDirective';
+// @ts-ignore
+import { jsPDF } from 'jspdf';
 
 // Utility
 const cleanRutFormat = (rut: string): string => {
@@ -22,6 +25,17 @@ const formatDateCL = (dateStr: string): string => {
     if (parts.length !== 3) return dateStr;
     const [y, m, d] = parts;
     return `${d}-${m}-${y}`;
+};
+
+// Helper para cargar imágenes en jsPDF
+const loadImageToPdf = (url: string): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => resolve(img);
+        img.onerror = (e) => reject(e);
+        img.src = url;
+    });
 };
 
 // Utility para colores pastel aleatorios basados en texto
@@ -175,10 +189,10 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         rut: '', names: '', paternalSurname: '', maternalSurname: '', email: '', phone: '', 
         academicRole: '', faculty: '', department: '', career: '', contractType: '', 
         teachingSemester: '', campus: '', systemRole: UserRole.ESTUDIANTE, responsible: '',
-        competencyCodes: [] as string[] // NUEVO
+        competencyCodes: [] as string[] 
     });
     const [showEnrollModal, setShowEnrollModal] = useState(false);
-    const [isEditingExpediente, setIsEditingExpediente] = useState(false); // Flag para modo edición
+    const [isEditingExpediente, setIsEditingExpediente] = useState(false); 
     const [enrollMsg, setEnrollMsg] = useState<{ type: 'success'|'error'|'duplicate', text: string, existingId?: string } | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [suggestions, setSuggestions] = useState<User[]>([]);
@@ -193,8 +207,8 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
     const [editingLogId, setEditingLogId] = useState<string | null>(null);
     const [editingLogIndex, setEditingLogIndex] = useState<number | null>(null);
     const [isGeneratingTags, setIsGeneratingTags] = useState(false);
+    const [isDownloadingPdf, setIsDownloadingPdf] = useState<string | null>(null);
     
-    // Updated Session Form to include advisorName
     const [sessionForm, setSessionForm] = useState<{ date: string; duration: number; observation: string; location: string; modality: string; tags: string[]; advisorName: string; }>({ 
         date: new Date().toISOString().split('T')[0], 
         duration: 60, 
@@ -214,7 +228,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
 
     const hasUnsavedChanges = useMemo(() => {
         if (view !== 'manage') return false;
-        // Se considera "sucio" si hay texto en observaciones, tags seleccionados, o se está editando una sesión previa
         return (
             sessionForm.observation.trim() !== '' || 
             sessionForm.tags.length > 0 || 
@@ -224,13 +237,11 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         );
     }, [view, sessionForm.observation, sessionForm.tags, editingLogId, editingLogIndex, signatureStep]);
 
-    // Comunicar estado dirty a App.tsx mediante window para el navbar
     useEffect(() => {
         (window as any).isAdvisoryDirty = hasUnsavedChanges;
         return () => { (window as any).isAdvisoryDirty = false; };
     }, [hasUnsavedChanges]);
 
-    // Escuchar intento de navegación desde el Navbar
     useEffect(() => {
         const handleNavAttempt = (e: any) => {
             setPendingExitAction(() => () => window.dispatchEvent(new CustomEvent('force-nav', { detail: e.detail })));
@@ -249,14 +260,12 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         }
     };
 
-    // --- EFFECT: Suggestions Click Outside ---
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => { if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) { setShowSuggestions(false); } };
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    // --- EFFECT: Init Activity ---
     useEffect(() => {
         const checkAndCreateActivity = async () => {
             if (activities.length > 0 && !activities.some(a => a.id === ADVISORY_ACTIVITY_ID)) {
@@ -266,7 +275,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         checkAndCreateActivity();
     }, [activities, addActivity, ADVISORY_ACTIVITY_ID, selectedYear]);
 
-    // Data filtering - SORTED BY LAST SESSION DATE (DESCENDING)
     const advisoryEnrollments = useMemo(() => {
         return enrollments
             .filter(e => e.activityId === ADVISORY_ACTIVITY_ID)
@@ -287,7 +295,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         return { students: advisoryEnrollments.length, sessions: totalSessions, hours: totalHours.toFixed(1) };
     }, [advisoryEnrollments]);
 
-    // --- Realtime Sync Logic (Local) ---
     useEffect(() => { setRealtimeLogs(null); }, [selectedEnrollmentId]);
 
     const fetchLatestLogs = async (id: string) => {
@@ -310,7 +317,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId);
     };
 
-    // --- Search & Enroll Handlers ---
     const handleSearchRutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value; setSearchRut(val); setSearchSurname(''); setSurnameSuggestions([]);
         if (val.length < 2) { setRutSuggestions([]); return; }
@@ -335,7 +341,6 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         const { name, value } = e.target; 
         setEnrollForm(prev => ({ ...prev, [name]: value }));
         
-        // Búsqueda en Base Maestra por RUT o Apellido Paterno mientras escribe
         if (name === 'rut' || name === 'paternalSurname') {
             setEnrollMsg(null);
             const rawInput = value.toLowerCase().trim();
@@ -672,8 +677,107 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         }
     };
 
-    const getQrUrl = () => { if (!selectedEnrollmentId || !currentSessionId) return ''; return `${window.location.origin}/?mode=sign&eid=${selectedEnrollmentId}&sid=${currentSessionId}`; };
+    const getQrUrl = (vCode?: string) => { 
+        const codeToUse = vCode || currentSessionId;
+        if (!selectedEnrollmentId || !codeToUse) return ''; 
+        const codeParam = vCode ? `&code=${vCode}` : `&sid=${currentSessionId}`;
+        const mode = vCode ? 'verify' : 'sign';
+        return `${window.location.origin}/?mode=${mode}&eid=${selectedEnrollmentId}${codeParam}`; 
+    };
+
     const handleCopyLink = () => { navigator.clipboard.writeText(getQrUrl()); alert("Enlace copiado al portapapeles."); };
+
+    // --- DOWNLOAD PDF HANDLER ---
+    const handleDownloadSessionPdf = async (log: SessionLog, student: User | undefined) => {
+        setIsDownloadingPdf(log.id || 'current');
+        try {
+            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+            const pageWidth = doc.internal.pageSize.getWidth();
+            
+            // Título
+            doc.setFillColor(100, 127, 188); // #647FBC
+            doc.rect(0, 0, pageWidth, 40, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(22);
+            doc.text("COMPROBANTE DE ASESORÍA", pageWidth / 2, 20, { align: 'center' });
+            doc.setFontSize(10);
+            doc.text("UNIDAD DE ACOMPAÑAMIENTO DOCENTE (UAD)", pageWidth / 2, 28, { align: 'center' });
+
+            // Datos del Docente
+            doc.setTextColor(50, 50, 50);
+            doc.setFontSize(12);
+            doc.text("DATOS DEL DOCENTE", 20, 55);
+            doc.setDrawColor(100, 127, 188);
+            doc.line(20, 57, 190, 57);
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(10);
+            doc.text(`Nombre: ${student?.names} ${student?.paternalSurname} ${student?.maternalSurname || ''}`, 20, 65);
+            doc.text(`RUT: ${student?.rut}`, 20, 71);
+            doc.text(`Facultad: ${student?.faculty || 'N/A'}`, 20, 77);
+            doc.text(`Departamento: ${student?.department || 'N/A'}`, 20, 83);
+
+            // Datos de la Sesión
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(12);
+            doc.text("DETALLE DE LA ATENCIÓN", 20, 100);
+            doc.line(20, 102, 190, 102);
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(10);
+            doc.text(`Fecha: ${formatDateCL(log.date)}`, 20, 110);
+            doc.text(`Duración: ${log.duration} Minutos`, 20, 116);
+            doc.text(`Modalidad: ${log.modality || 'Presencial'}`, 20, 122);
+            doc.text(`Lugar/Plataforma: ${log.location || 'N/A'}`, 20, 128);
+            doc.text(`Asesor: ${log.advisorName || 'N/A'}`, 20, 134);
+
+            // Observaciones
+            doc.setFont("helvetica", "bold");
+            doc.text("Observaciones:", 20, 145);
+            doc.setFont("helvetica", "italic");
+            const splitObs = doc.splitTextToSize(log.observation || "Sin observaciones registradas.", 170);
+            doc.text(splitObs, 20, 151);
+
+            // Tags
+            if (log.tags && log.tags.length > 0) {
+                const tagY = 151 + (splitObs.length * 5) + 5;
+                doc.setFont("helvetica", "bold");
+                doc.text("Conceptos Clave:", 20, tagY);
+                doc.setFont("helvetica", "normal");
+                doc.text(log.tags.join(", "), 55, tagY);
+            }
+
+            // Verificación y QR
+            const footerY = 220;
+            doc.setFillColor(248, 250, 252);
+            doc.rect(15, footerY - 10, 180, 50, 'F');
+            doc.setDrawColor(226, 232, 240);
+            doc.rect(15, footerY - 10, 180, 50, 'S');
+
+            doc.setTextColor(100, 116, 139);
+            doc.setFont("courier", "bold");
+            doc.setFontSize(9);
+            doc.text(`CÓDIGO DE VERIFICACIÓN: ${log.verificationCode || 'ADMIN-TEMP'}`, 20, footerY + 5);
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            doc.text("Documento validado mediante firma digital y registro electrónico.", 20, footerY + 12);
+            doc.text(`Fecha de Firma: ${log.signedAt ? new Date(log.signedAt).toLocaleString() : 'N/A'}`, 20, footerY + 17);
+
+            // QR Code
+            if (log.verificationCode) {
+                const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${window.location.origin}/?mode=verify&code=${log.verificationCode}`)}`;
+                const qrImg = await loadImageToPdf(qrUrl);
+                doc.addImage(qrImg, 'PNG', 155, footerY - 5, 35, 35);
+            }
+
+            doc.save(`Atencion_UAD_${student?.paternalSurname || 'Docente'}_${log.date}.pdf`);
+        } catch (err) {
+            alert("Error al generar el PDF de atención.");
+        } finally {
+            setIsDownloadingPdf(null);
+        }
+    };
 
     // --- POLLING FOR QR SIGNATURE ---
     useEffect(() => {
@@ -862,6 +966,21 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                                             </div>
                                                             <div className="flex flex-col items-end gap-1.5 relative z-50">
                                                                 <div className="flex items-center gap-1">
+                                                                    {log.verified && (
+                                                                        <button 
+                                                                            type="button" 
+                                                                            onClick={() => handleDownloadSessionPdf(log, student)} 
+                                                                            disabled={isDownloadingPdf === log.id}
+                                                                            className="p-1 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors" 
+                                                                            title="Descargar Comprobante PDF"
+                                                                        >
+                                                                            {isDownloadingPdf === log.id ? (
+                                                                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                                                            ) : (
+                                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                                            )}
+                                                                        </button>
+                                                                    )}
                                                                     <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEditLog(log, originalIndex); }} className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Editar"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
                                                                     <button type="button" onClick={(e) => handleDeleteSession(e, log.id, originalIndex)} className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Eliminar"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                                                                 </div>
