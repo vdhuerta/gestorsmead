@@ -237,6 +237,17 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         );
     }, [view, sessionForm.observation, sessionForm.tags, editingLogId, editingLogIndex, signatureStep]);
 
+    const isCurrentlyEditingPending = useMemo(() => {
+        if (!selectedEnrollmentId || (!editingLogId && editingLogIndex === null)) return false;
+        const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
+        if (!enrollment) return false;
+        const logs = realtimeLogs || enrollment.sessionLogs || [];
+        const log = editingLogId 
+            ? logs.find(l => l.id === editingLogId)
+            : (editingLogIndex !== null ? logs[editingLogIndex] : null);
+        return log ? !log.verified : false;
+    }, [selectedEnrollmentId, editingLogId, editingLogIndex, enrollments, realtimeLogs]);
+
     useEffect(() => {
         (window as any).isAdvisoryDirty = hasUnsavedChanges;
         return () => { (window as any).isAdvisoryDirty = false; };
@@ -646,6 +657,49 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
         setEditingLogId(null); setEditingLogIndex(null); setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [], advisorName: currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : '' }); setSignatureStep('form'); alert("Registro actualizado.");
     };
 
+    const handleSaveEditSF = async () => {
+        if (!selectedEnrollmentId || (!editingLogId && editingLogIndex === null)) return;
+        const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
+        if (!enrollment) return;
+        
+        const advisorToUse = sessionForm.advisorName || (currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : 'Asesor');
+
+        const updatedLogs = (enrollment.sessionLogs || []).map((log, i) => {
+            const isTarget = (editingLogId && log.id === editingLogId) || (editingLogIndex !== null && i === editingLogIndex);
+            if (isTarget) {
+                return { 
+                    ...log, 
+                    id: log.id || `SES-SF-EDIT-${Date.now()}`, 
+                    date: sessionForm.date, 
+                    duration: sessionForm.duration, 
+                    observation: sessionForm.observation, 
+                    location: sessionForm.location, 
+                    modality: sessionForm.modality, 
+                    tags: sessionForm.tags, 
+                    advisorName: advisorToUse,
+                    verified: true,
+                    authorizedByAdmin: true,
+                    verificationCode: log.verificationCode || `ADMIN-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+                    signedAt: log.signedAt || new Date().toISOString()
+                };
+            }
+            return log;
+        });
+
+        try {
+            await updateEnrollment(selectedEnrollmentId, { sessionLogs: updatedLogs });
+            await executeReload(); 
+            if (selectedEnrollmentId) await fetchLatestLogs(selectedEnrollmentId); 
+            setEditingLogId(null); 
+            setEditingLogIndex(null); 
+            setSessionForm({ date: new Date().toISOString().split('T')[0], duration: 60, observation: '', location: '', modality: 'Presencial', tags: [], advisorName: currentUser ? `${currentUser.names} ${currentUser.paternalSurname}` : '' }); 
+            setSignatureStep('form'); 
+            alert("Registro autorizado y guardado exitosamente.");
+        } catch (err) {
+            alert("Error al actualizar registro.");
+        }
+    };
+
     const handleDeleteSession = async (e: React.MouseEvent, logId: string | undefined, originalIndex: number) => {
         e.preventDefault();
         e.stopPropagation(); 
@@ -905,7 +959,15 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                                 <div className="flex justify-end gap-2">
                                                     <button onClick={handleCancelSession} className="bg-white border border-slate-300 text-slate-500 px-4 py-2 rounded-lg font-bold hover:bg-slate-50 hover:text-slate-700 transition-colors text-sm shadow-sm">Cancelar</button>
                                                     {editingLogId || editingLogIndex !== null ? (
-                                                        <button onClick={handleSaveEdit} className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 transition-colors shadow-md text-sm flex items-center gap-2">Guardar Cambios</button>
+                                                        <div className="flex gap-2">
+                                                            {isAdmin && isCurrentlyEditingPending && (
+                                                                <button onClick={handleSaveEditSF} className="bg-amber-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-amber-700 transition-colors shadow-md text-sm flex items-center gap-2">
+                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                                    Guardar SF
+                                                                </button>
+                                                            )}
+                                                            <button onClick={handleSaveEdit} className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 transition-colors shadow-md text-sm flex items-center gap-2">Guardar Cambios</button>
+                                                        </div>
                                                     ) : (
                                                         <div className="flex gap-2">
                                                             {isAdmin && (
@@ -1231,7 +1293,7 @@ export const AdvisoryManager: React.FC<AdvisoryManagerProps> = ({ currentUser })
                                                     type="button"
                                                     onClick={() => handleToggleEnrollCompetence(c.code)}
                                                     title={c.name}
-                                                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${enrollForm.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200 hover:text-emerald-400'}`}
+                                                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border transition-all ${enrollForm.competencyCodes.includes(c.code) ? 'bg-emerald-100 border-emerald-300 text-emerald-800 scale-105 shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200 hover:text-indigo-400'}`}
                                                 >
                                                     {c.code}
                                                 </button>
