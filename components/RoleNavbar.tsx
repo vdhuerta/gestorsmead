@@ -152,9 +152,11 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[], user: User 
         const list: { type: 'course-closing'|'course-active'|'chat'|'kpi-risk'|'kpi-critical'|'advisory-task'|'enrollment-task'|'grade-task', title: string, subtitle: string, urgency: 'high'|'medium'|'info', date?: string }[] = [];
         
         // HORA DE CHILE (America/Santiago) para comparación de tareas realizadas hoy
-        const chileDate = new Date(new Date().toLocaleString("en-US", {timeZone: "America/Santiago"}));
-        const todayStrChile = chileDate.toISOString().split('T')[0];
-        const currentYear = chileDate.getFullYear();
+        const nowChile = new Date(new Date().toLocaleString("en-US", {timeZone: "America/Santiago"}));
+        const todayStrChile = nowChile.toISOString().split('T')[0];
+        const currentYear = nowChile.getFullYear();
+
+        const myFullName = `${user.names} ${user.paternalSurname}`;
 
         // 1. CHAT - Mensajes sin leer
         unreadMessagesRuts.forEach(rut => {
@@ -162,57 +164,65 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[], user: User 
             list.push({
                 type: 'chat',
                 title: 'Nuevo Mensaje de Chat',
-                subtitle: `${sender?.names || 'Compañero'} te ha enviado un mensaje privado.`,
+                subtitle: `${sender?.names || 'Docente'} te ha enviado un mensaje privado.`,
                 urgency: 'high'
             });
         });
 
         // 2. TAREAS Y ACTIVIDADES DEL ASESOR REALIZADAS HOY (Hasta las 23:59 Chile)
-        const myFullName = `${user.names} ${user.paternalSurname}`;
-        
+        // Se asume que las columnas created_at y updated_at existen en la tabla enrollments
         enrollments.forEach(enr => {
             // A. ASESORÍAS (Basadas en SessionLog con fecha de hoy)
             if (enr.sessionLogs) {
                 enr.sessionLogs.forEach(log => {
-                    if (log.date === todayStrChile && (log.advisorName === myFullName || enr.responsible === myFullName)) {
+                    if (log.date === todayStrChile && log.advisorName === myFullName) {
                         list.push({
                             type: 'advisory-task',
-                            title: '✅ Asesoría Realizada',
-                            subtitle: `Has registrado una sesión con el RUT ${enr.rut} hoy.`,
+                            title: '✅ Asesoría Registrada',
+                            subtitle: `Atención completada para RUT ${enr.rut} el día de hoy.`,
                             urgency: 'info'
                         });
                     }
                 });
             }
 
-            // B. MATRÍCULAS Y NOTAS (Simuladas como "hoy" si el asesor es responsable en el periodo actual)
+            // B. MATRÍCULAS REALIZADAS HOY (Filtro por fecha de creación y responsable)
+            // Se usa el responsable del expediente para identificar las acciones del asesor
             if (enr.responsible === myFullName) {
-                const act = activities.find(a => a.id === enr.activityId);
-                if (act && act.year === currentYear) {
-                    if (enr.state === ActivityState.INSCRITO && (!enr.grades || enr.grades.length === 0)) {
-                        list.push({
-                            type: 'enrollment-task',
-                            title: '👤 Matrícula Registrada',
-                            subtitle: `Inscripción procesada para ${enr.rut} en "${act.name}".`,
-                            urgency: 'info'
-                        });
-                    } else if (enr.finalGrade && enr.finalGrade > 0) {
-                        list.push({
-                            type: 'grade-task',
-                            title: '📝 Nota Ingresada',
-                            subtitle: `Calificación final de ${enr.finalGrade} asignada a ${enr.rut}.`,
-                            urgency: 'info'
-                        });
-                    }
+                // Comparamos el día de creación del registro
+                // @ts-ignore (Asumiendo que created_at llega de la BD)
+                const createdAt = enr.created_at ? enr.created_at.split('T')[0] : null;
+                
+                if (createdAt === todayStrChile) {
+                    const act = activities.find(a => a.id === enr.activityId);
+                    list.push({
+                        type: 'enrollment-task',
+                        title: '👤 Matrícula Registrada',
+                        subtitle: `Has inscrito a ${enr.rut} en "${act?.name || 'actividad'}".`,
+                        urgency: 'info'
+                    });
+                }
+
+                // C. NOTAS INGRESADAS HOY (Filtro por actualización y responsable)
+                // @ts-ignore (Asumiendo que updated_at llega de la BD)
+                const updatedAt = enr.updated_at ? enr.updated_at.split('T')[0] : null;
+                // Si fue actualizado hoy y tiene notas ingresadas
+                if (updatedAt === todayStrChile && enr.finalGrade && enr.finalGrade > 0 && createdAt !== updatedAt) {
+                    list.push({
+                        type: 'grade-task',
+                        title: '📝 Nota Sincronizada',
+                        subtitle: `Calificación final ingresada hoy para el RUT ${enr.rut}.`,
+                        urgency: 'info'
+                    });
                 }
             }
         });
 
-        // 3. CURSOS - Cierres Próximos y Activos
+        // 3. CURSOS - Cierres Próximos
         activities.forEach(act => {
             if (act.endDate) {
                 const end = new Date(act.endDate + 'T12:00:00');
-                const diffTime = end.getTime() - chileDate.getTime();
+                const diffTime = end.getTime() - nowChile.getTime();
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                 if (diffDays >= 0 && diffDays <= 5) {
@@ -224,42 +234,16 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[], user: User 
                         date: act.endDate
                     });
                 }
-
-                if (act.startDate && act.startDate <= todayStrChile && (act.endDate && act.endDate >= todayStrChile)) {
-                    list.push({
-                        type: 'course-active',
-                        title: '📚 Curso en Ejecución',
-                        subtitle: `"${act.name}" se encuentra activo actualmente.`,
-                        urgency: 'info',
-                        date: act.startDate
-                    });
-                }
             }
         });
 
-        // 4. KPIs - Alumnos en Riesgo & Cursos Críticos
+        // 4. KPIs - Alumnos en Riesgo (Periodo Actual)
         const minGrade = config.minPassingGrade || 4.0;
-        const minAtt = config.minAttendancePercentage || 75;
         const activitiesThisYear = activities.filter(a => a.year === currentYear);
         const activityIdsThisYear = new Set(activitiesThisYear.map(a => a.id));
 
-        activitiesThisYear.filter(a => a.category === 'ACADEMIC' || a.category === 'POSTGRADUATE').forEach(act => {
-            const count = enrollments.filter(e => e.activityId === act.id).length;
-            if (count > 0 && count < 5) {
-                list.push({
-                    type: 'kpi-critical',
-                    title: '📉 Curso con Baja Matrícula',
-                    subtitle: `"${act.name}" solo tiene ${count} inscritos.`,
-                    urgency: 'medium'
-                });
-            }
-        });
-
         const atRiskCount = enrollments.filter(e => activityIdsThisYear.has(e.activityId)).filter(e => {
-            const hasStartedGrades = e.finalGrade !== undefined && e.finalGrade > 0;
-            const hasStartedAttendance = e.attendancePercentage !== undefined && e.attendancePercentage > 0;
-            if (!hasStartedGrades && !hasStartedAttendance) return false;
-            return (hasStartedGrades && e.finalGrade! < minGrade) || (hasStartedAttendance && e.attendancePercentage! < minAtt);
+            return (e.finalGrade !== undefined && e.finalGrade > 0 && e.finalGrade < minGrade);
         }).length;
 
         if (atRiskCount > 0) {
@@ -280,14 +264,12 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[], user: User 
     const getIcon = (type: string) => {
         switch(type) {
             case 'chat': return <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg></div>;
-            case 'advisory-task': return <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg></div>;
-            case 'enrollment-task': return <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg></div>;
-            case 'grade-task': return <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg></div>;
+            case 'advisory-task': return <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 font-bold">✅</div>;
+            case 'enrollment-task': return <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">👤</div>;
+            case 'grade-task': return <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">📝</div>;
             case 'course-closing': return <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>;
-            case 'course-active': return <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg></div>;
-            case 'kpi-risk': return <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-600"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg></div>;
-            case 'kpi-critical': return <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg></div>;
-            default: return <div className="w-8 h-8 rounded-full bg-slate-100"></div>;
+            case 'kpi-risk': return <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-bold">🚨</div>;
+            default: return <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">?</div>;
         }
     };
 
@@ -295,14 +277,14 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[], user: User 
         <div className="relative" ref={dropdownRef}>
             <button 
                 onClick={() => setIsOpen(!isOpen)} 
-                className={`p-2 rounded-full transition-all relative ${isOpen ? 'bg-indigo-100 text-indigo-600 scale-110 shadow-inner' : 'text-slate-400 hover:text-[#647FBC] hover:bg-slate-50'}`}
-                title="Mensajería y Alertas"
+                className={`p-2 rounded-full transition-all relative ${isOpen ? 'bg-indigo-100 text-indigo-600 scale-110 shadow-inner' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-50'}`}
+                title="Mensajería y Alertas de Tareas"
             >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                 </svg>
                 {notifications.length > 0 && (
-                    <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 border-2 border-white rounded-full text-[9px] text-white font-bold flex items-center justify-center animate-bounce">
+                    <span className="absolute top-1 right-1 w-4 h-4 bg-red-600 border-2 border-white rounded-full text-[9px] text-white font-bold flex items-center justify-center animate-bounce">
                         {notifications.length}
                     </span>
                 )}
@@ -310,26 +292,26 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[], user: User 
 
             {isOpen && (
                 <div className="absolute top-12 right-0 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden animate-fadeInUp">
-                    <div className="bg-[#647FBC] px-4 py-4 flex justify-between items-center text-white">
+                    <div className="bg-indigo-700 px-4 py-4 flex justify-between items-center text-white">
                         <div>
                             <h3 className="font-bold text-sm">Mensajería y Alertas</h3>
-                            <p className="text-[10px] opacity-80 uppercase font-bold tracking-widest">Resumen de Actividades Hoy</p>
+                            <p className="text-[10px] opacity-80 uppercase font-black tracking-widest">Actividades Realizadas Hoy</p>
                         </div>
-                        <span className="bg-white/20 px-2 py-1 rounded text-[10px] font-bold">{notifications.length} Alertas</span>
+                        <span className="bg-white/20 px-2 py-1 rounded text-[10px] font-bold">{notifications.length} Avisos</span>
                     </div>
                     
-                    <div className="max-h-[400px] overflow-y-auto custom-scrollbar bg-[#F9F8F6]">
+                    <div className="max-h-[400px] overflow-y-auto custom-scrollbar bg-slate-50">
                         {notifications.length === 0 ? (
                             <div className="p-10 text-center flex flex-col items-center gap-2">
                                 <svg className="w-12 h-12 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>
-                                <p className="text-xs text-slate-400 font-medium">No hay alertas para mostrar hoy.</p>
+                                <p className="text-xs text-slate-400 font-medium">No se registran actividades propias el día de hoy.</p>
                             </div>
                         ) : (
                             <div className="divide-y divide-slate-100">
                                 {notifications.map((notif, idx) => (
-                                    <div key={idx} className={`p-4 transition-colors hover:bg-white ${notif.urgency === 'high' ? 'bg-red-50/20' : ''}`}>
+                                    <div key={idx} className={`p-4 transition-colors hover:bg-white ${notif.urgency === 'high' ? 'bg-red-50/30' : ''}`}>
                                         <div className="flex gap-4">
-                                            <div className="flex-shrink-0 mt-0.5">
+                                            <div className="flex-shrink-0">
                                                 {getIcon(notif.type)}
                                             </div>
                                             <div className="flex-1 min-w-0">
@@ -340,14 +322,11 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[], user: User 
                                                     {notif.subtitle}
                                                 </p>
                                                 {notif.date && (
-                                                    <span className="text-[9px] font-mono text-indigo-400 mt-2 block font-bold">
-                                                        VENCIMIENTO: {notif.date}
+                                                    <span className="text-[9px] font-mono text-indigo-500 mt-2 block font-bold">
+                                                        FECHA TOPE: {notif.date}
                                                     </span>
                                                 )}
                                             </div>
-                                            {notif.urgency === 'high' && (
-                                                <div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1"></div>
-                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -356,7 +335,7 @@ const NotificationDropdown: React.FC<{ unreadMessagesRuts: string[], user: User 
                     </div>
                     
                     <div className="bg-white p-3 text-center border-t border-slate-100">
-                        <button onClick={() => setIsOpen(false)} className="text-[10px] text-[#647FBC] font-black uppercase tracking-widest hover:underline transition-all">
+                        <button onClick={() => setIsOpen(false)} className="text-[10px] text-indigo-700 font-black uppercase tracking-widest hover:underline transition-all">
                             Cerrar Panel
                         </button>
                     </div>

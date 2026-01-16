@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useData, normalizeRut } from '../context/DataContext';
 import { Activity, User, UserRole, Enrollment, ActivityState } from '../types';
@@ -716,11 +717,11 @@ export const GeneralActivityManager: React.FC<GeneralActivityManagerProps> = ({ 
                             </div>
                         </div>
                         <div className="overflow-hidden rounded-xl border border-slate-200">
-                            <table className="w-full text-sm text-left"><thead className="bg-slate-50 font-bold border-b"><tr><th className="px-6 py-3">Participante</th><th className="px-6 py-3">RUT</th><th className="px-6 py-3 text-center">Acción</th></tr></thead><tbody className="divide-y">
+                            <table className="w-full text-sm text-left"><thead className="bg-slate-50 font-bold border-b"><tr><th className="px-6 py-3">Participante</th><th className="px-6 py-3">RUT</th><th className="px-6 py-3 text-center">PARTICIPACIÓN</th><th className="px-6 py-3 text-center">Acción</th></tr></thead><tbody className="divide-y">
                                 {sortedActivityEnrollments.map(enr => { const u = users.find(user => normalizeRut(user.rut) === normalizeRut(enr.rut)); return (
-                                    <tr key={enr.id} className="hover:bg-slate-50"><td className="px-6 py-3 font-medium">{u ? `${u.names} ${u.paternalSurname}` : 'S/I'}</td><td className="px-6 py-3 font-mono text-xs">{enr.rut}</td><td className="px-6 py-3 text-center"><button onClick={() => handleUnenrollFromList(enr.id, u ? `${u.names} ${u.paternalSurname}` : enr.rut)} className="bg-red-50 text-red-600 border border-red-200 px-3 py-1 rounded text-[9px] font-black uppercase">RETIRAR</button></td></tr>
+                                    <tr key={enr.id} className="hover:bg-slate-50"><td className="px-6 py-3 font-medium">{u ? `${u.names} ${u.paternalSurname}` : 'S/I'}</td><td className="px-6 py-3 font-mono text-xs">{enr.rut}</td><td className="px-6 py-3 text-center font-bold text-teal-600">100%</td><td className="px-6 py-3 text-center"><button onClick={() => handleUnenrollFromList(enr.id, u ? `${u.names} ${u.paternalSurname}` : enr.rut)} className="bg-red-50 text-red-600 border border-red-200 px-3 py-1 rounded text-[9px] font-black uppercase">RETIRAR</button></td></tr>
                                 );})}
-                                {sortedActivityEnrollments.length === 0 && <tr><td colSpan={3} className="py-12 text-center text-slate-400 italic">No hay participantes registrados.</td></tr>}
+                                {sortedActivityEnrollments.length === 0 && <tr><td colSpan={4} className="py-12 text-center text-slate-400 italic">No hay participantes registrados.</td></tr>}
                             </tbody></table>
                         </div>
                     </div>
