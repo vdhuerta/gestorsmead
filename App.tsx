@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, UserRole } from './types';
 import { LoginSimulator } from './components/LoginSimulator';
@@ -59,7 +60,7 @@ const MainContent: React.FC = () => {
   
   const [activeChatPeer, setActiveChatPeer] = useState<{rut: string, names: string, photoUrl?: string} | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [unreadFrom, setUnreadFrom] = useState<string[]>([]); 
+  const [unreadFrom, setUnreadFrom] = useState<Record<string, number>>({}); 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -137,7 +138,10 @@ const MainContent: React.FC = () => {
               if (msg.to === user.rut) {
                   setChatMessages(prev => [...prev, msg]);
                   if (!activeChatPeer || activeChatPeer.rut !== msg.from) {
-                      setUnreadFrom(prev => [...new Set([...prev, msg.from])]);
+                      setUnreadFrom(prev => ({
+                          ...prev,
+                          [msg.from]: (prev[msg.from] || 0) + 1
+                      }));
                   }
               }
           })
@@ -180,11 +184,14 @@ const MainContent: React.FC = () => {
 
   const handleOpenChat = (peer: {rut: string, names: string, photoUrl?: string}) => {
       setActiveChatPeer(peer);
-      setUnreadFrom(prev => prev.filter(r => r !== peer.rut));
+      setUnreadFrom(prev => {
+          const next = { ...prev };
+          delete next[peer.rut];
+          return next;
+      });
   };
 
   const handleTabChange = (newTab: TabType) => {
-      // Detección de cambios sin guardar en Postítulos y Asesorías
       const isPostgraduateDirty = (window as any).isPostgraduateDirty;
       const isAdvisoryDirty = (window as any).isAdvisoryDirty;
 
@@ -370,7 +377,7 @@ const MainContent: React.FC = () => {
         activeTab={activeTab} 
         onTabChange={handleTabChange} 
         onLogout={handleLogout} 
-        unreadMessagesRuts={unreadFrom}
+        unreadMessagesRuts={Object.keys(unreadFrom)}
       />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
         {renderContent()}
@@ -390,9 +397,23 @@ const MainContent: React.FC = () => {
             </div>
             {user.systemRole === UserRole.ASESOR && onlinePeers.length > 0 && (
                 <div className="flex -space-x-3 items-center pb-1">
-                    {onlinePeers.map((peer) => (
+                    {onlinePeers.map((peer) => {
+                        const count = unreadFrom[peer.rut] || 0;
+                        return (
                         <div key={peer.rut} className="relative group/peer cursor-pointer" onClick={() => handleOpenChat(peer)}>
-                            <div className={`w-10 h-10 rounded-full border-2 shadow-md bg-slate-200 overflow-hidden relative z-10 hover:z-20 transition-all hover:scale-110 active:scale-95 ${unreadFrom.includes(peer.rut) ? 'border-amber-500 ring-2 ring-amber-300 animate-bounce' : 'border-white'}`}>
+                            {/* BURBUJA DE DIÁLOGO PARA MENSAJES NO LEÍDOS */}
+                            {count > 0 && (
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-[60] animate-bounce pointer-events-auto">
+                                    <div className="bg-indigo-600 border-2 border-white rounded-2xl px-4 py-2 shadow-2xl whitespace-nowrap">
+                                        <p className="text-[10px] font-black text-white uppercase tracking-wider">
+                                            Tienes {count} {count === 1 ? 'mensaje' : 'mensajes'}
+                                        </p>
+                                    </div>
+                                    <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-indigo-600 mx-auto -mt-0.5"></div>
+                                </div>
+                            )}
+
+                            <div className={`w-10 h-10 rounded-full border-2 shadow-md bg-slate-200 overflow-hidden relative z-10 hover:z-20 transition-all hover:scale-110 active:scale-95 ${count > 0 ? 'border-indigo-600 ring-4 ring-indigo-200 animate-pulse' : 'border-white'}`}>
                                 {peer.photoUrl ? (
                                     <img src={peer.photoUrl} alt={peer.names} className="w-full h-full object-cover" />
                                 ) : (
@@ -403,7 +424,7 @@ const MainContent: React.FC = () => {
                             </div>
                             <div className="absolute w-3 h-3 bg-green-500 border-2 border-white rounded-full bottom-0 right-0 z-20"></div>
                         </div>
-                    ))}
+                    )})}
                 </div>
             )}
         </div>
